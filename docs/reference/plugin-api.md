@@ -48,7 +48,7 @@ A plugin may ask a person for settings in two scopes, each declared in its manif
 | Scope | Manifest field | Where the web app shows it | Kept by | Routes | A launcher gets it as |
 |---|---|---|---|---|---|
 | Each repository, such as the Dockerfile a sandbox builds its runs' image from | `project_settings` | The repository's page (`/projects/<id>`), under the plugin's name | the repository's [project settings](harness-configuration.md#project-settings), a file `plugins/<plugin>/<key>` each (a server without `[harness]` has none) | [`GET` and `PUT /v1/repositories/{id}/plugin-settings`](desktop-api.md#get-v1repositoriesidplugin-settings) | `project_settings` of the run's repository |
-| The whole server, such as a registry every image comes from | `app_settings` | The Plugin settings page (`/plugin-settings`), under the plugin's name | plugin name and key | [`GET /v1/plugins/settings` and `PUT /v1/plugins/{plugin}/settings`](desktop-api.md#get-v1pluginssettings) | `app_settings` |
+| The whole server, such as a registry every image comes from | `app_settings` | The Plugins page (`/plugins`, which `/plugin-settings` redirects to), in a section under the plugin's name | plugin name and key | [`GET /v1/plugins/settings` and `PUT /v1/plugins/{plugin}/settings`](desktop-api.md#get-v1pluginssettings) | `app_settings` |
 
 A launcher gets both in every [`LaunchRequest`](#the-method-launch); no other kind is handed them yet. Both scopes
 declare their settings the same way, each a `PluginSetting`:
@@ -94,7 +94,7 @@ host. It is drawn again from the saved values after a save or a revert.
 | Host field | Type | Meaning |
 |---|---|---|
 | `plugin`, `version` | string | The plugin's name and version. |
-| `scope` | `"app"` or `"project"` | The Plugin settings page, or a repository's page. |
+| `scope` | `"app"` or `"project"` | The Plugins page, or a repository's page. |
 | `repository` | number or null | The repository's id in the `project` scope. |
 | `settings` | array | The settings the plugin declares in this scope, each with its `value`, as [`GET /v1/repositories/{id}/plugin-settings`](desktop-api.md#get-v1repositoriesidplugin-settings) lists them. |
 | `values` | object | The saved values to start from, by key. |

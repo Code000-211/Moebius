@@ -224,6 +224,7 @@ export function InboxPage() {
                 <Empty
                   centered
                   title="Nothing needs you"
+                  body="What arrives here: cards assigned to you, mentions of you, changes to cards you follow, and decisions that wait for you."
                   icon={<CheckCircleIcon className="size-6 text-complete-text" weight="fill" />}
                   action={
                     <Link to="/fleet" className="text-accent-text no-underline hover:underline">

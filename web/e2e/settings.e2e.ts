@@ -1,17 +1,13 @@
 /**
- * Settings as one page in a real browser: the sub-navigation reaches Models, Plugins and Retro without leaving the
+ * Settings as one page in a real browser: the sub-navigation reaches Models, Plugins and Kinds of issues without leaving the
  * layout, keeps the address on reload, and narrows by what is typed in its search.
  */
-import { mkdtempSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import { type Browser, chromium, type Page } from "playwright";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
-import { startServer, type TestServer, usesRealServer } from "./server";
+import { startServer, type TestServer } from "./server";
 
 let browser: Browser;
 let server: TestServer;
-const directories: string[] = [];
 
 beforeAll(async () => {
   browser = await chromium.launch({
@@ -23,26 +19,12 @@ afterAll(async () => {
 });
 afterEach(async () => {
   await server.stop().catch(() => {});
-  for (const directory of directories.splice(0))
-    rmSync(directory, { recursive: true, force: true });
 });
-
-/** Gives a real server a project with a board, as the fake starts with one: Column scripts lists the board's columns. */
-async function withProject(page: Page) {
-  if (!usesRealServer) return;
-  const directory = mkdtempSync(join(tmpdir(), "moebius-e2e-repo-"));
-  directories.push(directory);
-  const response = await page.request.post(`${server.url}/v1/repositories`, {
-    headers: { "X-Moebius": "1", Authorization: `Bearer ${server.token}` },
-    data: { name: "demo", url: directory },
-  });
-  expect(response.ok(), await response.text()).toBe(true);
-}
 
 const nav = (page: Page) => page.getByRole("navigation", { name: "Settings" });
 
 describe("Settings", () => {
-  it("reaches Models, Plugins and Column scripts from one layout and keeps the address on reload", async () => {
+  it("reaches Models, Plugins and Kinds of issues from one layout and keeps the address on reload", async () => {
     server = await startServer();
     const page = await (await browser.newContext()).newPage();
     page.setDefaultTimeout(8000);
@@ -52,7 +34,7 @@ describe("Settings", () => {
     for (const [label, path] of [
       ["Models", "models"],
       ["Plugins", "plugins"],
-      ["Column scripts", "column-scripts"],
+      ["Kinds of issues", "kinds"],
     ] as const) {
       await nav(page).getByRole("link", { name: label, exact: true }).click();
       await page.waitForURL(`**/${path}`);
@@ -62,9 +44,9 @@ describe("Settings", () => {
     }
     await page.reload();
     await nav(page).waitFor();
-    expect(page.url()).toMatch(/\/column-scripts$/);
+    expect(page.url()).toMatch(/\/kinds$/);
     expect(
-      await nav(page).getByRole("link", { name: "Column scripts" }).getAttribute("aria-current"),
+      await nav(page).getByRole("link", { name: "Kinds of issues" }).getAttribute("aria-current"),
     ).toBe("page");
   });
 
@@ -82,7 +64,7 @@ describe("Settings", () => {
     await nav(page).getByText("No settings match.").waitFor();
   });
 
-  it("opens Profile, Notifications and Repositories from the navigation and by address, with no Ask field", async () => {
+  it("opens Profile, My tokens and Members from the navigation and by address, with no Ask field", async () => {
     server = await startServer();
     const page = await (await browser.newContext()).newPage();
     page.setDefaultTimeout(8000);
@@ -91,28 +73,26 @@ describe("Settings", () => {
     await nav(page).waitFor();
     for (const [label, path] of [
       ["Profile", "profile"],
-      ["Notifications", "notifications"],
-      ["Repositories", "repositories"],
+      ["My tokens", "tokens"],
+      ["Members", "people"],
     ] as const) {
       await nav(page).getByRole("link", { name: label, exact: true }).click();
       await page.waitForURL(`**/${path}`);
-      await page.getByRole("heading", { level: 2, name: label }).waitFor();
+      await page.getByRole("heading", { name: label, exact: true }).first().waitFor();
       await expect.poll(() => page.getByLabel("Ask Moebius").count()).toBe(0);
       await page.reload();
-      await page.getByRole("heading", { level: 2, name: label }).waitFor();
+      await page.getByRole("heading", { name: label, exact: true }).first().waitFor();
     }
-    await page.getByRole("link", { name: /Add a repository/ }).waitFor();
   });
 
-  it("lists the decided entries in their groups, and opens the four added ones with content", async () => {
+  it("lists exactly the nine entries in the two groups, and Server > General shows the nightly times", async () => {
     server = await startServer();
     const page = await (await browser.newContext()).newPage();
     page.setDefaultTimeout(8000);
     await page.goto(server.loginUrl);
-    await withProject(page);
     await page.goto(`${server.url}/settings`);
     await nav(page).waitFor();
-    const groups = ["You", "Agents", "Automation", "Insight", "Server"];
+    const groups = ["You", "Server"];
     const shown = await nav(page).evaluate((element, names) => {
       const out: Array<[string, string]> = [];
       let group = "";
@@ -126,26 +106,16 @@ describe("Settings", () => {
     expect(shown).toEqual([
       ["You", "Profile"],
       ["You", "Appearance"],
-      ["You", "Notifications"],
-      ["You", "Keyboard"],
-      ["Agents", "Models"],
-      ["Agents", "Plugins"],
-      ["Automation", "Column scripts"],
-      ["Automation", "Schedules"],
+      ["You", "Keyboard shortcuts"],
+      ["You", "My tokens"],
       ["Server", "General"],
-      ["Server", "Repositories"],
+      ["Server", "Models"],
+      ["Server", "Plugins"],
+      ["Server", "Kinds of issues"],
       ["Server", "Members"],
     ]);
-    for (const [label, path, content] of [
-      ["Column scripts", "column-scripts", "Open"],
-      ["Schedules", "schedules", "Retro"],
-    ] as const) {
-      await nav(page).getByRole("link", { name: label, exact: true }).click();
-      await page.waitForURL(`**/${path}`);
-      await page.getByRole("heading", { level: 2, name: label }).waitFor();
-      await page.getByText(content, { exact: false }).first().waitFor();
-      await expect.poll(() => page.getByLabel("Ask Moebius").count()).toBe(0);
-    }
+    await page.getByRole("heading", { name: "Nightly", exact: true }).waitFor();
+    await page.getByText("Retro at", { exact: false }).first().waitFor();
   });
 
   it("keeps Show thinking expanded on the server, so it is still on after a reload", async () => {

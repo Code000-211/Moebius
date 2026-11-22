@@ -1401,7 +1401,7 @@ describe("settings", () => {
     for (const box of [
       "Server",
       "Board and budgets",
-      "Nightly schedule",
+      "Nightly",
       "Harness",
       "Pi-Bolt",
       "GitHub",

@@ -331,4 +331,33 @@ describe("the legacy table", () => {
       expect(await landed("/workflows/release")).toBe("/projects");
     });
   });
+
+  describe("the old Settings pages that are gone", () => {
+    beforeEach(() => window.localStorage.clear());
+
+    it("leads each to its new home, keeping the query", async () => {
+      projects = [project(3, [5])];
+      const table: Array<[string, string]> = [
+        ["/notifications", "/inbox"],
+        ["/schedules", "/projects/3/workflows?runs=scheduled"],
+        ["/column-scripts", "/projects/3/settings/columns"],
+        ["/column-scripts?project=3", "/projects/3/settings/columns"],
+        ["/repositories", "/projects/3/settings/repositories"],
+        ["/plugin-settings", "/plugins"],
+        ["/plugin-settings?x=1", "/plugins?x=1"],
+      ];
+      for (const [old, now] of table) {
+        expect(await landed(old), old).toBe(now);
+        cleanup();
+      }
+    });
+
+    it("leads the two that belong to a project to the list of projects when none can be told", async () => {
+      projects = [project(3, [5]), project(4, [6])];
+      for (const old of ["/schedules", "/column-scripts", "/repositories"]) {
+        expect(await landed(old), old).toBe("/projects");
+        cleanup();
+      }
+    });
+  });
 });

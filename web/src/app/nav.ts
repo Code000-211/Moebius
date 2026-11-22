@@ -11,19 +11,15 @@
  */
 import {
   ArrowsClockwiseIcon,
-  BellIcon,
   BookOpenIcon,
-  BracketsCurlyIcon,
   ChartLineUpIcon,
   ChatCircleIcon,
   ClockIcon,
   CpuIcon,
-  FadersHorizontalIcon,
   FlaskIcon,
   FolderIcon,
   GaugeIcon,
   GearIcon,
-  GitBranchIcon,
   GraduationCapIcon,
   GraphIcon,
   type Icon,
@@ -53,7 +49,7 @@ export const SIDEBAR_GROUPS = ["", "Projects", "Workspace", "Build", "Insight"] 
 export type SidebarGroup = (typeof SIDEBAR_GROUPS)[number];
 
 /** The groups of the Settings navigation, in order. */
-export const SETTINGS_GROUPS = ["You", "Agents", "Automation", "Server"] as const;
+export const SETTINGS_GROUPS = ["You", "Server"] as const;
 export type SettingsGroup = (typeof SETTINGS_GROUPS)[number];
 
 export interface NavEntry {
@@ -67,8 +63,6 @@ export interface NavEntry {
   sidebar?: SidebarGroup;
   /** The group of the Settings navigation the place is an entry of, and the name it carries there. */
   settings?: { group: SettingsGroup; label?: string };
-  /** A place Settings reaches without listing it in its navigation: the sidebar chooses Settings on it. */
-  inSettings?: true;
   /** What the command bar finds the place by, besides its name and group. */
   words?: string;
 }
@@ -157,19 +151,11 @@ export const NAV: readonly NavEntry[] = [
     words: "theme dark light",
   },
   {
-    path: "notifications",
-    label: "Notifications",
-    icon: BellIcon,
-    shownTo: everyone,
-    settings: { group: "You" },
-    words: "alerts",
-  },
-  {
     path: "shortcuts",
     label: "Keyboard shortcuts",
     icon: KeyboardIcon,
     shownTo: everyone,
-    settings: { group: "You", label: "Keyboard" },
+    settings: { group: "You" },
     words: "keys",
   },
   {
@@ -177,8 +163,8 @@ export const NAV: readonly NavEntry[] = [
     label: "My tokens",
     icon: KeyIcon,
     shownTo: everyone,
+    settings: { group: "You" },
     words: "api access",
-    inSettings: true,
   },
   {
     path: "agents",
@@ -189,27 +175,11 @@ export const NAV: readonly NavEntry[] = [
     words: "coder reviewer skills mcp servers tools",
   },
   {
-    path: "models",
-    label: "Models",
-    icon: CpuIcon,
-    shownTo: everyone,
-    settings: { group: "Agents" },
-    words: "providers",
-  },
-  {
     path: "agents/skills",
     label: "Skills",
     icon: SparkleIcon,
     shownTo: owner,
     words: "agents",
-  },
-  {
-    path: "plugins",
-    label: "Plugins",
-    icon: PlugIcon,
-    shownTo: everyone,
-    settings: { group: "Agents" },
-    words: "extensions",
   },
   {
     path: "agents/mcp-servers",
@@ -239,22 +209,6 @@ export const NAV: readonly NavEntry[] = [
     icon: ClockIcon,
     shownTo: everyone,
     words: "scheduled chat",
-  },
-  {
-    path: "column-scripts",
-    label: "Column scripts",
-    icon: BracketsCurlyIcon,
-    shownTo: everyone,
-    settings: { group: "Automation" },
-    words: "luau",
-  },
-  {
-    path: "schedules",
-    label: "Schedules",
-    icon: ClockIcon,
-    shownTo: everyone,
-    settings: { group: "Automation" },
-    words: "cron",
   },
   {
     path: "insights",
@@ -304,16 +258,33 @@ export const NAV: readonly NavEntry[] = [
     path: "settings",
     label: "Settings",
     icon: GearIcon,
-    shownTo: everyone,
+    shownTo: owner,
     settings: { group: "Server", label: "General" },
     words: "preferences",
   },
   {
-    path: "repositories",
-    label: "Repositories",
-    icon: GitBranchIcon,
-    shownTo: everyone,
+    path: "models",
+    label: "Models",
+    icon: CpuIcon,
+    shownTo: owner,
     settings: { group: "Server" },
+    words: "providers",
+  },
+  {
+    path: "plugins",
+    label: "Plugins",
+    icon: PlugIcon,
+    shownTo: owner,
+    settings: { group: "Server" },
+    words: "extensions settings",
+  },
+  {
+    path: "kinds",
+    label: "Kinds of issues",
+    icon: ShapesIcon,
+    shownTo: owner,
+    settings: { group: "Server" },
+    words: "types",
   },
   {
     path: "people",
@@ -322,21 +293,6 @@ export const NAV: readonly NavEntry[] = [
     shownTo: owner,
     settings: { group: "Server" },
     words: "people users",
-  },
-  {
-    path: "kinds",
-    label: "Kinds of issues",
-    icon: ShapesIcon,
-    shownTo: owner,
-    words: "types",
-    inSettings: true,
-  },
-  {
-    path: "plugin-settings",
-    label: "Plugin settings",
-    icon: FadersHorizontalIcon,
-    shownTo: everyone,
-    inSettings: true,
   },
   {
     path: "terminal",
@@ -411,13 +367,11 @@ export function searchEntries(
 }
 
 /**
- * Whether `pathname` is a page the sidebar chooses Settings on: an entry of its navigation, or a place it reaches,
- * unless the sidebar has a row of its own for the page (Agents, Rules, Insights and Improve).
+ * Whether `pathname` is a page the sidebar chooses Settings on: an entry of its navigation,
+ * unless the sidebar has a row of its own for the page.
  */
 export function inSettingsArea(pathname: string): boolean {
   const first = pathname.replace(/^\/+/, "").split("/")[0] ?? "";
   const entry = entryByPath(first);
-  return (
-    entry !== undefined && entry.sidebar === undefined && (!!entry.settings || !!entry.inSettings)
-  );
+  return entry !== undefined && entry.sidebar === undefined && !!entry.settings;
 }
