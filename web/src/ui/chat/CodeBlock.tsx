@@ -30,12 +30,16 @@ export function CodeBlock({
   language,
   file,
   code,
+  wrapped,
 }: {
   language?: string;
   file?: string;
   code: string;
+  /** Breaks long lines at the edge of the block whatever the person's setting is, for a file that is read whole. */
+  wrapped?: boolean;
 }) {
-  const wrap = useWrapLines();
+  const setting = useWrapLines();
+  const wrap = wrapped ?? setting;
   return (
     <div className="reveal-copy my-4 overflow-hidden rounded-panel bg-code-bg">
       <div className="flex h-[30px] items-center justify-between gap-4 pr-1 pl-3 font-mono text-[12px] text-code-head">

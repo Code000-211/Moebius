@@ -29,7 +29,7 @@ import { Property } from "../../ui/page/Property";
 import { until } from "../automations/model";
 import { workflowPath, workflowRunPath } from "../pages";
 import { HookAddress } from "./HookAddress";
-import { lastRunLine, runStatus, triggerName } from "./model";
+import { runStatus, triggerName } from "./model";
 import {
   kindTitle,
   outputName,
@@ -108,10 +108,9 @@ export function WorkflowOverview({
           {last ? (
             <span className="flex flex-wrap items-center gap-2">
               <Tag tone={runStatus(last.status).tone}>{runStatus(last.status).label}</Tag>
-              <span>
-                {lastRunLine(last)}
-                {last.started_at === null ? "" : ` · ${ago(now, last.started_at)}`}
-              </span>
+              {last.started_at === null ? null : (
+                <span className="text-secondary">{ago(now, last.started_at)}</span>
+              )}
               <Link
                 className="rounded-round text-accent-text underline-offset-4 hover:underline"
                 to={workflowRunPath(last.id)}

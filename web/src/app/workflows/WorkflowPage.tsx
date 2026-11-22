@@ -267,7 +267,7 @@ export function WorkflowPage() {
             </div>
           ) : (
             <div className="max-w-4xl" data-testid="workflow-file">
-              <CodeBlock language="TOML" code={file} />
+              <CodeBlock language="TOML" code={file} wrapped />
             </div>
           )}
         </TabPanel>

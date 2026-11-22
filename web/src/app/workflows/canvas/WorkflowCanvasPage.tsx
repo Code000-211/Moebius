@@ -250,6 +250,15 @@ function Canvas({
     setWires(flow.edges);
   }, [flow, setCards, setWires]);
 
+  // The pane of a chosen step takes room from the graph when it opens and gives it back when it closes: the view then
+  // fits the whole graph again, so no node is left under the pane.
+  const paneOpen = selection !== null;
+  // biome-ignore lint/correctness/useExhaustiveDependencies: refits only when the pane opens or closes
+  useEffect(() => {
+    const timer = setTimeout(() => void board.fitView({ padding: 0.2 }), 60);
+    return () => clearTimeout(timer);
+  }, [paneOpen]);
+
   const add = useCallback(
     (kind: NodeKind, params: Record<string, unknown>, at?: { x: number; y: number }) => {
       const withNode = addNode(draft, kind.kind, at ?? nextPosition(draft), params);

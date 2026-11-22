@@ -241,7 +241,7 @@ describe("the Overview", () => {
     show(DEFINITION);
     expect(await screen.findByText("0 6 * * 1")).toBeTruthy();
     expect(await screen.findByText(/· next .*\(in /)).toBeTruthy();
-    expect(await screen.findByText(/Last run: failed/)).toBeTruthy();
+    expect((await screen.findAllByText("Failed")).length).toBeGreaterThan(0);
     expect(screen.getByRole("link", { name: /Open run 7/ }).getAttribute("href")).toBe(
       "/workflow-runs/7",
     );
@@ -249,7 +249,7 @@ describe("the Overview", () => {
 
   it("names a successful last run as done, as the list does", async () => {
     show(DEFINITION, [{ ...RUNS[0], status: "succeeded" }]);
-    expect(await screen.findByText(/Last run: done/)).toBeTruthy();
+    expect((await screen.findAllByText("Done")).length).toBeGreaterThan(0);
   });
 
   it("says a workflow that has not run, and one with no next firing", async () => {
