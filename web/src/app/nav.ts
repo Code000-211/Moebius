@@ -135,8 +135,8 @@ export const NAV: readonly NavEntry[] = [
     words: "filters saved",
   },
   {
-    path: "issues",
-    label: "Issues",
+    path: "views/all-issues",
+    label: "All issues",
     icon: ListChecksIcon,
     shownTo: everyone,
     words: "all issues list",
