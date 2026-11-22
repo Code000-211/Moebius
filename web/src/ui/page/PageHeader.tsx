@@ -14,7 +14,7 @@
  * buttons. It measures itself (a `ResizeObserver` on the header) and, when its content does not fit, gives way in
  * order: the primary button drops its label and keeps its icon (`HeaderPrimary`, the label stays as its name and
  * tooltip), then the tabs that do not fit move from the right into a last tab "More" (`Tabs`), the chosen tab among
- * them shown there. The title keeps a few letters; it is the last thing cut. The rules are in `fitRules.ts`.
+ * them shown there. The title keeps a few letters, cut inside its own box so it never draws over the tabs, and is the last thing cut. The rules are in `fitRules.ts`.
  *
  * In a narrow window (under 1000px) the sidebar is hidden and a button at the left of the header brings it back over
  * the page.
@@ -109,7 +109,7 @@ export function PageHeader({
     watch.observe(node);
     setFitting({ level: 0 });
     return () => watch.disconnect();
-  }, [oneRow, tabCount]);
+  }, [oneRow, tabCount, title]);
   const fit = useMemo(() => ({ ...partsOfLevel(level, tabCount), setTabCount }), [level, tabCount]);
   if (inArea) {
     return (
@@ -140,7 +140,14 @@ export function PageHeader({
           oneRow ? "h-12 flex-nowrap" : "flex-wrap",
         )}
       >
-        <div className="flex min-w-0 items-center gap-1">
+        <div
+          className={cn(
+            "flex min-w-0 items-center gap-1",
+            // One row: a few letters of the title stay, and what is longer is cut inside this box, so the title never
+            // draws over the tabs; what does not fit after that collapses.
+            oneRow && "min-w-20 overflow-hidden",
+          )}
+        >
           {sidebar?.narrow && (
             <IconButton
               icon={SidebarIcon}
@@ -153,13 +160,7 @@ export function PageHeader({
             />
           )}
           {back}
-          <h1
-            className={cn(
-              "m-0 min-w-0 truncate text-md font-semibold tracking-tight text-text",
-              // The title gives way last: a few letters stay, and what does not fit then collapses.
-              oneRow && "min-w-16",
-            )}
-          >
+          <h1 className="m-0 min-w-0 truncate text-md font-semibold tracking-tight text-text">
             {title}
           </h1>
           {badge}

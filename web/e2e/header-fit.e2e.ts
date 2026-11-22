@@ -76,6 +76,26 @@ async function measure(page: Page) {
       end,
       limit: rect.right - Number.parseFloat(getComputedStyle(header).paddingRight),
       controlsLeft: controls?.left ?? null,
+      // Each child of the header must end before the next begins: title, tabs, actions.
+      touching: Array.from(header.children).flatMap((child, at, all) => {
+        const next = all[at + 1];
+        if (!next) return [];
+        const gap = next.getBoundingClientRect().left - child.getBoundingClientRect().right;
+        return gap < -0.5 ? [`${at}/${at + 1} overlap by ${-gap}`] : [];
+      }),
+      // What the title draws must lie inside its own box.
+      titleSpill: (() => {
+        const title = header.querySelector("h1");
+        const box = title?.parentElement;
+        if (!title || !box) return 0;
+        const range = document.createRange();
+        range.selectNodeContents(title);
+        return Math.max(
+          0,
+          Math.min(range.getBoundingClientRect().right, title.getBoundingClientRect().right) -
+            box.getBoundingClientRect().right,
+        );
+      })(),
       overflow: header.scrollWidth - header.clientWidth,
       height: rect.height,
     };
@@ -91,7 +111,11 @@ async function sweep(page: Page, desktop: boolean) {
         const m = await measure(page);
         const clear =
           m.end <= m.limit + 0.5 && (m.controlsLeft === null || m.end <= m.controlsLeft);
-        return clear && m.overflow <= 0 && m.height <= 48.5
+        return clear &&
+          m.touching.length === 0 &&
+          m.titleSpill <= 0.5 &&
+          m.overflow <= 0 &&
+          m.height <= 48.5
           ? "fits"
           : JSON.stringify({ width, ...m });
       })
