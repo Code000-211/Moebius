@@ -89,7 +89,7 @@ export function ViewsPage({ allIssues = false }: { allIssues?: boolean }) {
   if (board !== null) return <Navigate to={board} replace />;
   return (
     <div data-testid="views-page" className="flex flex-col gap-4">
-      <PageHeader title="Views" primary={allIssues ? <NewIssueButton /> : undefined} />
+      <PageHeader title="Views" primary={<NewIssueButton />} />
       <ul className="m-0 list-none border-t border-hairline p-0" aria-label="Views">
         <li>
           <Link
