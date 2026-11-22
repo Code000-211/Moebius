@@ -499,7 +499,7 @@ Then write the message for the channel. Keep it short and plain: one line per ch
         ],
         edges: [
           { from: "trigger", to: "triage", port: "out" },
-          { from: "triage", to: "approve", port: "out" },
+          { from: "triage", to: "approve", port: "summary" },
           { from: "approve", to: "post", port: "out" },
         ],
       },
