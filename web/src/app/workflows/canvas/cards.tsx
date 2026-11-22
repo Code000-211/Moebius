@@ -38,12 +38,21 @@ export function NodeCard({ data, selected }: NodeProps) {
       className={cn(
         "rounded-card border border-hairline-strong bg-panel px-3 py-3",
         WIDTH,
+        // The names of the ports it leaves by sit in the right edge, one row each, so the card is as tall as they are.
+        card.outputs.length > 1 && "min-h-20",
         selected && "canvas-node--selected",
         card.problems.length > 0 && "canvas-node--problem",
       )}
     >
       <CardHead id={card.id} kind={card.kindLabel ?? card.kind} run={card.run} />
-      <p className="m-0 mt-1 line-clamp-2 break-words text-xs text-secondary" title={card.summary}>
+      <p
+        className={cn(
+          "m-0 mt-1 line-clamp-2 break-words text-xs text-secondary",
+          // The right edge is for the names of the ports the node leaves by.
+          card.outputs.length > 0 && "pr-14",
+        )}
+        title={card.summary}
+      >
         {card.summary === "" ? "Takes no parameters" : card.summary}
       </p>
       <Problems problems={card.problems} />

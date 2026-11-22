@@ -313,18 +313,20 @@ function Canvas({
   return (
     <div className="flex h-full min-h-0 flex-col" data-testid="canvas-page">
       <div className="flex h-10 shrink-0 items-center gap-3 border-b border-hairline pb-2">
-        <Select
-          aria-label="Run to show"
-          value={runId === null ? "" : String(runId)}
-          onChange={(value) => setRunId(value === "" ? null : Number(value))}
-          options={[
-            ["", "No run picked"],
-            ...(runs.data ?? []).map((entry): [string, string] => [
-              String(entry.id),
-              `Run #${entry.id} · ${entry.status}`,
-            ]),
-          ]}
-        />
+        <div className="w-56">
+          <Select
+            aria-label="Run to show"
+            value={runId === null ? "" : String(runId)}
+            onChange={(value) => setRunId(value === "" ? null : Number(value))}
+            options={[
+              ["", "No run picked"],
+              ...(runs.data ?? []).map((entry): [string, string] => [
+                String(entry.id),
+                `Run #${entry.id} · ${entry.status}`,
+              ]),
+            ]}
+          />
+        </div>
         <span
           className={cn("ml-auto text-sm", dirty ? "text-attention-text" : "text-secondary")}
           data-testid="canvas-state"

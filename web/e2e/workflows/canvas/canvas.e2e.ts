@@ -170,7 +170,7 @@ describe.skipIf(usesRealServer)("the workflow canvas", () => {
   it("draws the graph the file holds, its start in front of it", async () => {
     await openCanvas();
     await shows(card("trigger"), "Trigger", "Schedule");
-    await shows(card("build"), "build", "agent");
+    await shows(card("build"), "build", "Agent");
     await shows(card("test"), "test");
     await thereAre(wires(), 3);
     await shows(state(), "Saved");
