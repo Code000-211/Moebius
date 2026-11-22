@@ -13,7 +13,7 @@ import { SkeletonList } from "../../ui/page/Skeleton";
 export function RunnersPanel() {
   const list = useQuery({ queryKey: keys.runners, queryFn: readRunners });
   return (
-    <div data-testid="runners-panel" className="max-w-3xl">
+    <div data-testid="runners-panel">
       {list.isError ? (
         <ReadFailed
           error={list.error}
