@@ -48,10 +48,15 @@ describe.skipIf(usesRealServer)("the fleet with 500 runs", () => {
     expect(server.openStreams?.() ?? 0).toBeLessThanOrEqual(drawn);
     expect(server.watchedRuns?.() ?? 0).toBeLessThanOrEqual(drawn);
 
-    // The run that waits for the person is first; the list has no group rows.
+    // The runs that wait for the person come first (the chat and the fake's workflow run that waits at a node); the
+    // list has no group rows.
     await expect.poll(() => page.getByTestId("group-row").count()).toBe(0);
-    await rows.first().getByText("Which branch?").waitFor();
-    await rows.first().getByText("Asks you").waitFor();
+    await rows.filter({ hasText: "Which branch?" }).getByText("Asks you").waitFor();
+    for (const at of [0, 1])
+      await rows
+        .nth(at)
+        .getByText(/Asks you|Your turn/)
+        .waitFor();
 
     // Stop is only on the selected row (the first, until one is chosen) and on the hovered one.
     expect(await rows.first().getAttribute("data-selected")).toBe("true");
@@ -71,12 +76,19 @@ describe.skipIf(usesRealServer)("the Finished tab", () => {
     await page.waitForURL(/\/fleet\?tab=finished$/);
     const rows = page.getByTestId("list-row");
     await rows.first().waitFor();
-    // Three runs of the fake have ended (a failed, a succeeded, a stopped one); the two going on are not among them.
-    await expect.poll(() => rows.count()).toBe(3);
-    await expect.poll(() => page.getByTestId("outcome-failed").count()).toBe(1);
+    // Four runs of the fake have ended (two failed, a succeeded, a stopped one); the two going on are not among them.
+    // and the fake's failed workflow run, which says its project.
+    await expect.poll(() => rows.count()).toBe(4);
+    await rows.filter({ hasText: "release" }).getByText(/demo/).waitFor();
+    await expect.poll(() => page.getByTestId("outcome-failed").count()).toBe(2);
     await expect.poll(() => page.getByTestId("outcome-succeeded").count()).toBe(1);
     await expect.poll(() => page.getByTestId("outcome-stopped").count()).toBe(1);
-    await page.getByTestId("group-row").first().getByText("Today").waitFor();
+    // The fake's runs ended minutes ago, so near midnight UTC they fall under Yesterday.
+    await page
+      .getByTestId("group-row")
+      .first()
+      .getByText(/^(Today|Yesterday)$/)
+      .waitFor();
 
     await page.reload();
     await rows.first().waitFor();
@@ -84,9 +96,54 @@ describe.skipIf(usesRealServer)("the Finished tab", () => {
     await expect
       .poll(() => page.getByRole("tab", { name: "Finished" }).getAttribute("aria-selected"))
       .toBe("true");
-    await expect.poll(() => rows.count()).toBe(3);
+    await expect.poll(() => rows.count()).toBe(4);
 
     await page.getByRole("tab", { name: "Active" }).click();
     await page.waitForURL(/\/fleet$/);
+  });
+});
+
+describe.skipIf(usesRealServer)("the tabs of the Fleet", () => {
+  it("has Runs, Runners and Ports, each at an address that a reload keeps", async () => {
+    await fresh();
+    await page.goto(`${server.url}/fleet`);
+    await page.getByRole("heading", { name: "Fleet", level: 1 }).waitFor();
+    // The workflow run that waits at a node is among the runs, with the name of its project.
+    await page.getByTestId("list-row").filter({ hasText: "deploy" }).getByText(/demo/).waitFor();
+
+    await page.getByRole("tab", { name: /^Runners/ }).click();
+    await page.waitForURL(/\/fleet\/runners$/);
+    await page.getByText("build.example.com").waitFor();
+    await page.getByText("0 of 2 running").waitFor();
+    expect(await page.getByRole("button", { name: "Pause all" }).count()).toBe(0);
+
+    await page.getByRole("tab", { name: /^Ports/ }).click();
+    await page.waitForURL(/\/fleet\/ports$/);
+    await page.getByTestId("port-row").first().waitFor();
+
+    await page.reload();
+    await page.getByTestId("port-row").first().waitFor();
+    await expect
+      .poll(() => page.getByRole("tab", { name: /^Ports/ }).getAttribute("aria-selected"))
+      .toBe("true");
+
+    await page.getByRole("tab", { name: "Runs" }).click();
+    await page.waitForURL(/\/fleet$/);
+  });
+
+  it("sends the old addresses of Runners and Ports to their tabs, and Settings no longer lists Runners", async () => {
+    await fresh();
+    await page.goto(`${server.url}/runners`);
+    await page.waitForURL(/\/fleet\/runners$/);
+    await page.goto(`${server.url}/ports`);
+    await page.waitForURL(/\/fleet\/ports$/);
+    await page.goto(`${server.url}/settings`);
+    await page.getByRole("navigation", { name: "Settings" }).waitFor();
+    expect(
+      await page
+        .getByRole("navigation", { name: "Settings" })
+        .getByRole("link", { name: "Runners", exact: true })
+        .count(),
+    ).toBe(0);
   });
 });

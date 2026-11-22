@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import type { ReactNode } from "react";
 import { MemoryRouter, Route, Routes, useLocation } from "react-router";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { keys } from "../../api/keys";
@@ -29,7 +30,12 @@ function Where() {
   return <p data-testid="where">{at.pathname}</p>;
 }
 
-function show(role: string, intake: boolean, onTerminal = vi.fn()) {
+function show(
+  role: string,
+  intake: boolean,
+  onTerminal = vi.fn(),
+  extra: { actions?: ReactNode; primary?: ReactNode } = {},
+) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   client.setQueryData(keys.session, { person: { role } });
   client.setQueryData(keys.requests(7), [
@@ -45,7 +51,12 @@ function show(role: string, intake: boolean, onTerminal = vi.fn()) {
           <Route
             path="*"
             element={
-              <ProjectHeader project={project(intake)} tab="board" onTerminal={onTerminal} />
+              <ProjectHeader
+                project={project(intake)}
+                tab="board"
+                onTerminal={onTerminal}
+                {...extra}
+              />
             }
           />
         </Routes>
@@ -70,6 +81,28 @@ describe("the project header", () => {
     expect(screen.getByRole("link", { name: "Project settings" }).getAttribute("href")).toBe(
       "/projects/7/settings",
     );
+  });
+
+  it("orders the page's controls, the gear and menu, Moebius and the primary button", () => {
+    show("member", false, vi.fn(), {
+      actions: <button type="button">Filter</button>,
+      primary: <button type="button">New issue</button>,
+    });
+    const right = screen
+      .getAllByRole("button")
+      .concat(screen.getAllByRole("link", { name: "Project settings" }))
+      .filter((each) => each.getAttribute("role") !== "tab");
+    // Document order, whatever the element: Filter, the gear, the `...` menu, Moebius, New issue.
+    right.sort((a, b) =>
+      a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING ? -1 : 1,
+    );
+    expect(right.map((each) => each.textContent || each.getAttribute("aria-label"))).toEqual([
+      "Filter",
+      "Project settings",
+      "More project actions",
+      "Moebius",
+      "New issue",
+    ]);
   });
 
   it("puts the tab in the address", () => {

@@ -3,8 +3,9 @@
 //! - `GET /v1/packages/search?q=`: the packages of the registries whose name, description or kind contains the text.
 //! - `GET /v1/packages`: what is installed, with the newer version the nightly check found.
 //! - `GET /v1/packages/{name}`: every version of a package, and what is installed of it.
-//! - `POST /v1/packages` `{name, version?, registry?, repository?}`: installs a package. A plugin is installed by a
-//!   person only; the Moebius agent may propose a workflow, rules or skills package.
+//! - `POST /v1/packages` `{name, version?, registry?, repository?, project?}`: installs a package. A workflow package
+//!   needs `project`, a rules package may name a `repository`. A plugin is installed by a person only; the Moebius
+//!   agent may propose a workflow, rules or skills package.
 //! - `POST /v1/packages/{name}/update` and `DELETE /v1/packages/{name}`: update or remove, by a person only.
 
 use axum::Extension;
@@ -966,24 +967,48 @@ mod tests {
         let clone = clone.as_path();
         let _ = &repo;
 
-        // Without a repository named, a server with two repositories cannot tell which (here there is one more).
-        fx.state
-            .app
-            .store
-            .add_repository("other", "/srv/other", "none", "main")
-            .unwrap();
+        // A workflow package is installed into a project: without one, or with one that is not there, it is refused,
+        // and the message lists the projects.
         let (status, refused) = fx.install(json!({"name": "review-flow"})).await;
         assert_eq!(status, 422);
-        assert!(refused.as_str().unwrap().contains("--repository"));
+        let refused = refused.as_str().unwrap();
+        assert!(
+            refused.contains("--project") && refused.contains("demo"),
+            "{refused}"
+        );
+        let (status, refused) = fx
+            .install(json!({"name": "review-flow", "project": "gone"}))
+            .await;
+        assert_eq!(status, 422);
+        assert!(refused.as_str().unwrap().contains("demo"));
+        // A repository does not stand in for the project.
         assert_eq!(
-            fx.install(json!({"name": "review-flow", "repository": "gone"}))
+            fx.install(json!({"name": "review-flow", "repository": "demo"}))
                 .await
                 .0,
             422
         );
 
+        // Rules go to a repository: with two, one must be named.
+        fx.state
+            .app
+            .store
+            .add_repository("other", "/srv/other", "none", "main")
+            .unwrap();
+        let (status, refused) = fx.install(json!({"name": "careful"})).await;
+        assert_eq!(status, 422);
+        assert!(refused.as_str().unwrap().contains("--repository"));
+        assert_eq!(
+            fx.install(json!({"name": "careful", "repository": "gone"}))
+                .await
+                .0,
+            422
+        );
+
+        // The project is given by name or id; the files land in its folder and the lock records it.
+        let project = fx.state.app.store.project_by_name("demo").unwrap().unwrap();
         let (status, done) = fx
-            .install(json!({"name": "review-flow", "repository": "demo"}))
+            .install(json!({"name": "review-flow", "project": project.id.to_string()}))
             .await;
         assert_eq!(status, 200, "{done}");
         let change = done["change"].as_i64().unwrap();
@@ -1012,7 +1037,7 @@ mod tests {
                 .any(|i| i.kind == "ready_to_merge" && i.data["change"] == change),
             "{inbox:?}"
         );
-        assert!(fx.lock().contains("repository = \"demo\""));
+        assert!(fx.lock().contains("project = \"demo\""));
         assert!(fx.lock().contains(&format!("change = {change}")));
 
         // Rules are added to the repository's own rules file, after what is there.
@@ -1293,7 +1318,7 @@ mod tests {
         let (status, done) = as_agent(
             reqwest::Method::POST,
             "/v1/packages",
-            Some(json!({"name": "review-flow", "repository": "demo"})),
+            Some(json!({"name": "review-flow", "project": "demo"})),
         )
         .await;
         assert_eq!(status, 200, "{done}");

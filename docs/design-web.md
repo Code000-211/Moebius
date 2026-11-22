@@ -50,7 +50,7 @@ One voice for labels, messages, errors, and generated text.
 - On failure, say what happened and what to do next. End with an action only when there is one.
 - Labels: short verbs for actions (Save, Try again), nouns for destinations (Settings, History). Prefer 2-4 words. Icon-only controls get accessible names; helper text states a consequence or constraint.
 - One term per concept. Keep a glossary so names match across navigation, controls, messages, and docs.
-- The Agents page is a list of 36px rows (name, model and protocol, and at the right Built in or Broken); a row, `?agent=` or `?new=1` opens the agent in the editor window (the one the rules use: about 576px, Save, Cancel, Delete at the left, "Discard changes?" before a draft is lost). A save is a toast and closes the window; Browse Pi packages closes it, keeping the draft, because the package sheet lies beside the page.
+- The Agents page (tab Agents of Agents | Skills | MCP servers) is a list of 36px rows (name, model and protocol, and at the right Built in or Broken); a row, `?agent=` or `?new=1` opens the agent in the editor window (the one the rules use: about 576px, Save, Cancel, Delete at the left, "Discard changes?" before a draft is lost). A save is a toast and closes the window; Browse Pi packages closes it, keeping the draft, because the package sheet lies beside the page.
 - A new agent starts with one plain choice, before any field: Blank, or From an existing agent (a list of the Coder and the Reviewer, which always exist, and the person's own; never the agents Moebius runs for itself), then Continue. The editor of a copy has the name empty and the rest filled in, and a name that is taken is refused beside Save in words. The editor of any agent has a box of the six engineering skills, one toggle each, showing the skills of its name until a person chooses; a copy is saved with the list the source has. An agent that has no model says so on its card ("Needs a model", in `--text-muted`, a word and not a coloured tag) rather than showing an empty line.
 - The same state has the same words wherever it is said: "Needs you" for what waits for a person (the Inbox tab and group, the sidebar, a run, a Fleet row, a card), "Running" for what an agent is working on right now; "Built in" for anything Moebius brings itself — an agent, a skill, a script, a plugin. A second name for one state ("Your turn", "Waits for you", "Live", "In the server") makes a person learn a synonym.
 
@@ -214,16 +214,20 @@ The window is a tinted sidebar and the white page, meeting at one hairline (see 
 
 1. The workspace and server switch, with the search button beside it (it opens the command palette).
 2. Inbox, with the count of what needs you (a grey number, said even when it is 0), My issues, and Fleet with a green dot and "n running" while anything runs.
-3. Projects: one row per project.
-4. Workspace: Wiki, Cycles, Views, More. More holds the rare pages that have no row of their own.
-5. Settings, alone at the bottom, with its word.
+3. Chat, after Fleet.
+4. Projects: its name leads to the project list and a `+` at its end opens a menu (New project, Add repository); one row per project, opening its board.
+5. Workspace: Wiki, Views.
+6. Build: Agents, Rules. Agents is one page with the tabs Agents | Skills | MCP servers, each at an address of its own (`/agents`, `/agents/skills`, `/agents/mcp-servers`; the shared piece is `app/shell/SectionTabs.tsx`); Rules is `/rules`. Their editors keep the centred window. Insight: Insights, Improve. Both are an owner's; for anyone else the groups are not drawn. Workflows are not here: a workflow belongs to a project ([ADR 0025](adr/0025-workflows-belong-to-a-project.md)), as do Cycles, Milestones and Intake. More is gone.
+7. Get started, a row above Settings only while a step is missing, and Settings, alone at the bottom, with its word.
+
+The rows of 1, 2 and 5 to 7 are rows of one table, `web/src/app/nav.ts` (path, label, who is shown it, group, command-bar keywords), which the sidebar, the command bar and the navigation of Settings all read; a page is listed once. Terminal and the quick window are not rows: they are in the command bar and in the project's `...` menu. [ADR 0024](adr/0024-navigation-by-what-you-do.md) decides the list; the mockup is `design/navigation/ia1.png`.
 
 There is no "live" box and no second heading, no repeated counts and no shortcut keys shown. The chosen row is a grey pill (`--nav-selected`, radius 8, no border or shadow), in medium weight; the workspace switch has no box.
 
 Below about 1000px the sidebar is hidden and a button in the page header lays it over the page.
 
 ### Page header
-48px, one line: the page title (14px semibold), then its tabs, then on the right at most quiet text buttons (Filter, Display) and one primary button (New issue), and, in the desktop app, the window buttons after a hairline.
+48px, one line: the page title (14px semibold), then its tabs, then on the right, in this order on every page: at most quiet text buttons (Filter, Display), the page's gear or `...` menu, the Moebius button and one primary button (New issue), and, in the desktop app, the window buttons after a hairline. `PageHeader` takes them as `actions`, `menu` and `primary`, so the order is the component's and not each page's.
 
 - A tab is a word in `--text-muted`, 26px high; the active tab is `--accent-text` in 550 weight with a 2px underline of `--accent` that sits on the header's bottom rule. No pill, no box. A count after a tab's word is 12px in the tab's colour.
 - Text buttons (Filter, Display) have no border; the primary button is `--accent-fill` with a white label, 28px high, with a plus when it makes a new thing.
@@ -236,7 +240,7 @@ Inbox, My issues, the project list and Fleet are one kind of list. Lists are vir
 - **Row (36px):** the status icon, the id in mono (12px, `--text-muted`), the full title (medium weight; one line, cut with an ellipsis at the end), one pale reason or activity (`--text-muted`), then, pushed to the right: the person's avatar, only where a person owns the item (an agent's run has none), then the age (12px, tabular, `--text-muted`, right-aligned in a column of fixed width).
 - **Group rows** carry a name only ("Needs you", "Running", "Earlier"), 12px medium in `--text-secondary` on `--group-fill`, 30px high. No count, because the rows are the count.
 - **The one action a row needs is on the row.** A row that needs you carries a quiet "Approve" button (a 24px outlined button: a 1px `--hairline-strong` border, label in `--accent-text`; the filled form drawn on one Fleet row of the mockup z3 is not the standard); on Fleet, "Stop" and the cost appear on the selected or hovered row only. The run waiting for you is the first row of Fleet. A row opens the card in a centred window.
-- **Fleet** has the tabs Active and Finished and, on the right of the header, "Pause all": a 28px button with a pause icon and a 1px `--hairline-strong` border, the one header button with a border, because it stops work.
+- **Fleet** has the tabs Runs, Runners and Ports in its header, each at an address of its own (`/fleet`, `/fleet/runners`, `/fleet/ports`); Runners and Ports say how many there are, Runs says no count. Runs has the tabs Active and Finished under the header (`?tab=finished`) and lists the runs of cards, chats and workflows of every project, the project's name on a workflow run's pale line. Runners is the read-only list of the SSH machines with how many runs each has; Ports is the table of the ports the server listens on, with the SSH command that forwards each. Each tab has a skeleton while it is read and an empty state of one short line. On the Runs tab, on the right of the header, "Pause all": a 28px button with a pause icon and a 1px `--hairline-strong` border, the one header button with a border, because it stops work.
 - **Loading** is skeleton rows in `--hairline` in the layout the rows will have; nothing is written in them. **Empty** is an icon, one very short line ("Nothing needs you") and one action ("Open Fleet").
 - The selected row has the indigo edge and tint; a row under the pointer has `--row-hover`.
 - **The code.** One row and one list serve all four pages. `ListRow` and `GroupRow` (`web/src/ui/page/ListRow.tsx`) are the 36px row (class `h-9`, a 1px hairline under it, no shadow; the selected edge is a pseudo element, not a shadow) and the 30px group row; the row takes an optional action, avatar and age and carries the class `group/row`, so a part of it can show on the selected or hovered row only without changing its height. `VirtualList` (`web/src/ui/page/VirtualList.tsx`, on react-virtuoso) draws rows and group rows as one flat `role="list"` of `role="listitem"`s with `aria-posinset` and `aria-setsize` counted over the whole list. The selection is kept by key: up, down, Home and End move it (group rows are skipped), Enter opens it, and Shift with an arrow or a click chooses the range from the ordered keys, not from the DOM. While loading it draws skeleton rows, and with nothing in it the `empty` slot. Tests of a list in jsdom use `mockViewport` (`virtualListTest.ts`, whose file says what it mocks); `web/e2e/list.e2e.ts` builds a page of 2000 rows (`web/e2e/fixtures/`, not part of the app) and checks in Chromium that few are in the DOM, that a row is 36px with no shadow and that the last is reachable.
@@ -255,7 +259,7 @@ Inbox, My issues, the project list and Fleet are one kind of list. Lists are vir
 
 ## Settings
 
-One page. At its left a sub-navigation with a search field and these groups, in this order: You (Profile, Appearance, Notifications, Keyboard), Agents (Agents, Models, Skills, Plugins), Automation (Rules, Workflows, Column scripts, Schedules), Insight (Analytics, Retro, Lessons, Export), Server (General, Repositories, Runners, Members). The rarely used areas live here and not in the sidebar. A group name is a small muted label, and the chosen item is `--accent-text` on `--accent-tint`, in medium weight.
+One page. At its left a sub-navigation with a search field and these groups, in this order: You (Profile, Appearance, Notifications, Keyboard), Agents (Models, Plugins), Automation (Column scripts, Schedules), Insight (Analytics, Retro, Lessons, Export), Server (General, Repositories, Members). The groups are read from the same table as the sidebar (`nav.ts`); until the Settings reduction of ADR 0024 lands, Analytics and Retro are entries of both, and the sidebar then chooses their own row, not Settings. Agents (with Skills and MCP servers) and Rules are Build's and no longer in Settings. A group name is a small muted label, and the chosen item is `--accent-text` on `--accent-tint`, in medium weight.
 
 Appearance has these rows: Theme (System, Light, Dark), Density (Compact or Default; Default keeps the 36px rows, and what Compact changes is settled by the issue that builds it), Show thinking expanded, Wrap long lines, Reduce motion and Blur on menus.
 
@@ -263,8 +267,37 @@ The content is rows of a label at the left and its control at the right, separat
 
 ## Other pages
 
-The same rules apply. Wiki: the tree at the left, the text, an outline of its headings at the right. Cycles and milestones (tabs of a project, under its header): a timeline. A run: a timeline bar and its steps. Analytics: figures and a table. A workflow: the canvas, with a step opened in a centred window. The palette: a plain list; Tab sends what was typed to the agent. The terminal: dark in both themes, a full page. Errors and confirmations are a toast at the bottom right (a confirmation offers Undo). Sign-in and connect: a centred card with "Stay signed in", on by default.
+The same rules apply. Wiki: the tree at the left, the text, an outline of its headings at the right. Cycles and milestones (tabs of a project, under its header): a timeline. A run: a timeline bar and its steps. Analytics: figures and a table. A workflow: the canvas, with a step opened in a centred window; its definition and its runs are in the project's Workflows tab (below). The palette: a plain list; Tab sends what was typed to the agent. The terminal: dark in both themes, a full page. Errors and confirmations are a toast at the bottom right (a confirmation offers Undo). Sign-in and connect: a centred card with "Stay signed in", on by default.
 
+
+### The Workflows tab of a project
+
+A workflow belongs to one project ([ADR 0025](adr/0025-workflows-belong-to-a-project.md)), so everything about workflows
+is in that project's tab (`web/src/app/workflows/WorkflowsTab.tsx`; mockup `docs/design/navigation/ia2.png`, which the owner
+extended: the definitions moved from Build into the tab). Under the project header, two lists drawn as ordinary rows on
+the panel, with no card:
+
+- **Workflows**: one 36px row per definition of this project, with the workflow icon, its name (a link to the
+  definition at `/projects/:id/workflows/:name`, which links to the canvas at `.../canvas`), what it is for in muted
+  text, what starts it (Manual, Schedule, Event, Webhook) and a status tag with the age of its last run. "New workflow"
+  (a blank canvas) and "New scheduled workflow" (the automation template, in the editor window) sit at the right of the
+  section title, as secondary buttons.
+- **Runs**: a tab row `All | Scheduled | Failed`, in the address as `?runs=`, over this project's runs newest first,
+  each a row of the workflow's name, `repository · status` in muted text (`failed at "deploy"` in the error colour) and
+  its age at the far right. A row opens the run, whose page links back to this tab. **Scheduled** first lists the
+  project's schedule-trigger workflows with their schedule and when each fires next (`in 3 h`), a word where one is
+  off or failed, and Edit, which opens the automation in the editor window (`?automation=<id>`); the scheduled runs
+  follow.
+
+The one primary button of the header, "Run a workflow here", is at its far right. It opens a dialog that asks which of
+the project's manual workflows to run, the repository (only the project's own, the home one first and chosen) and one
+field for each input the workflow's manual trigger names. A trigger input of type `repository` is a choice among the
+same repositories. The server's refusal is shown in the dialog in its own words. Delete on a definition shows the
+server's refusal in the same way.
+
+The old Workflows and Automations pages are gone: `/workflows`, `/workflows/:name`, `/workflows/:name/canvas` and
+`/automations` redirect to the project named by `?project=`, else the one opened last or the only one, else the list of
+projects.
 
 ## Components
 - Buttons: one clear primary action, quieter alternatives, consistent sizing. A button is as wide as its label, never the width of the row it happens to sit in. An action that starts a new thing says it with a plus, on the page header and in an empty place alike, so the same verb is drawn the same way wherever a person meets it. A destructive action is the `danger` variant wherever it appears, including the button that opens the question.
@@ -358,7 +391,7 @@ a surface rather than a list of rows. What that asks for, once:
 - **Fades only, up to 120ms**, ease-out (`--motion-fast` 80ms, `--motion-routine` 120ms; nothing is slower). A menu, a window, the palette, a toast and a tooltip fade in; a row's hover fill changes in the same time. Nothing slides, scales, lifts or springs, and nothing moves that the person did not cause. A card does not lift on hover, and a panel that opens does not push the page across.
 - **Reduce motion.** Appearance has a "Reduce motion" switch, which starts from the system's preference (the switch is kept in this browser, `src/motion.ts`, and written as `data-reduce-motion` on the root; the system's own request keeps working without it). It turns every transition off, ends every animation before it is seen, and stops the running ring, which then shows as a still ring (`src/styles/tailwind.css`, outside every layer so no utility outranks it; `e2e/motion.e2e.ts` holds it).
 - **No infinite animation** except the running ring, and none on a card that is off screen.
-- **Blur only where it is small.** A menu, a tooltip and the command palette may blur what is behind them (`backdrop-filter`, 16px at most) over a translucent `--panel`. A centred window, a panel and the page header do not: a window sits on a dimmed page, which is not blurred. Appearance has a "Blur on menus" switch, and blur is off by itself where the machine has no GPU rasterisation; the surface is then the opaque `--panel`.
+- **Blur only where it is small.** A menu, a tooltip and the command palette may blur what is behind them (`backdrop-filter`, 16px at most) over a `--panel` of 94% (never so thin that the text behind shows through; in the dark theme the layer is the opaque `--panel`). A centred window, a panel and the page header do not: a window sits on a dimmed page, which is not blurred. Appearance has a "Blur on menus" switch, and blur is off by itself where the machine has no GPU rasterisation; the surface is then the opaque `--panel`.
 - Activity indicators stay subtle and carry real status text.
 - Meaningful images get useful alternative text and room enough to inspect. No decorative symbols that imply intelligence without explaining it.
 - Skip decorative gradients, glows and grain, progress without context, unsupported time estimates, unnecessary celebration, and redundant success messages.

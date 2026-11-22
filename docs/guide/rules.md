@@ -51,7 +51,7 @@ dropped, and the server's text stands. When a name is repeated within one file, 
 
 ### Change the server's rules in the web app
 
-The Rules page of the web app shows the built-in patterns, the rules in
+Build > Rules in the web app (`/rules`) shows the built-in patterns, the rules in
 prose and the rules of each repository, with how many calls each rule refused in the last week. Every rule in prose is
 a card with its name and text and a pencil: the pencil grows the card into an editor of the name and the text, with
 Save, Cancel and Delete rule (which asks first). Under the last rule an empty "Add a rule" card adds one at the end of

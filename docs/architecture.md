@@ -396,14 +396,16 @@ finds the server again by that directory: it answers, or it is started again wit
     schedule. Each firing is stored (`firings` table: `started` with its chat and workflow run, `skipped` or `failed`
     with the reason, also when the run's `chat` node cannot start the chat) and published as `automation_fired`, naming
     the workflow run.
-12i. **The workflow schedules.** (Workflows a project owns, ADR 0025, are read the same way from `projects/<project>/workflows/` after the server-wide ones, one project at a time: the minute is kept per (project, workflow) with `Store::record_project_schedule_firing`, and the run goes through `App::start_project_workflow_run`, which applies the repository rule.) The same minute, `server/schedule.rs` asks `schedule::on_workflow_schedules`, which reads
-    every workflow file the harness configuration repository holds, one at a time (`workflows::definition::read`), and
-    for each one whose trigger is a `schedule` (`workflows/trigger/schedule.rs`) asks whether its cron came due after
-    the minute that workflow last fired at (`Store::schedule_firing`, at most five minutes back) and up to now. A file
+12i. **The workflow schedules.** The same minute, `server/schedule.rs` asks `schedule::on_workflow_schedules`, which reads
+    every workflow file in the `projects/<project>/workflows/` folder of each project (ADR 0025), one project and one file
+    at a time (`workflows::definition::read`), and for each one whose trigger is a `schedule`
+    (`workflows/trigger/schedule.rs`) asks whether its cron came due after the minute that workflow last fired at, kept
+    per (project, workflow) by the project's id (`Store::schedule_firing`, at most five minutes back) and up to now. A file
     that cannot be read wakes no schedule of its own and is published as `retro_error`, while the schedules of the
-    other workflows go on. The minute it fired at is recorded (`Store::record_schedule_firing`) before the run starts,
-    so one occurrence starts one run across a restart; the run goes through `App::start_workflow_run` with the
-    repository the trigger names and the value the firing gives (`fired` and the inputs' defaults). A firing that
+    other workflows go on. The minute it fired at is recorded (`Store::record_project_schedule_firing`) before the run starts,
+    so one occurrence starts one run across a restart; the run goes through `App::start_project_workflow_run`, which
+    applies the repository rule (the trigger's repository must be one of the project's) and records the project on the
+    run, with the value the firing gives (`fired` and the inputs' defaults). A firing that
     starts no run is written to the log and spends the occurrence, so a workflow is not started every minute it is
     awake. An automation is such a workflow, fired here instead of starting a run of its own definition's repository
     when it works in the harness configuration repository.
@@ -632,6 +634,7 @@ At the top:
 | `app/reproduce.rs` | Test first: a repository's opt-in (the project's `test-first`), what a run names in the `REPRODUCE:` lines of its summary, and the runs of that reproduction test on the change and on the commit it starts from with the test's files added. |
 | `app/workflows/mod.rs` | The wiring that turns a stored workflow into a run, recording the run and its nodes in the store and on the bus. |
 | `app/workflows/run.rs` | Starting a workflow run from its definition or its name, driving it off the request path, and recording and publishing each node and the run's end as they happen. |
+| `app/workflows/migrate.rs` | The one-time migration of the server-wide workflow files to their projects (ADR 0025): the repository and home-project rules, one commit through `HarnessRepo::move_workflows_to_projects` (the project each file goes to is recorded first in `workflow_moves`), and the idempotent store step that gives the runs, schedule rows and automations of a moved file to its project, repeated at every start so a crash between the two is repaired. What stays is listed for Get started. |
 | `app/workflows/project.rs` | The workflows a project owns (ADR 0025): which repository a run of one belongs to (one of the project's repositories, its own files when it has none, the only one by default, a refusal that names the choices otherwise) and the door that starts it. |
 | `app/workflows/approval.rs` | The part of a run that waits for a person: the wait of the `approval` node, the decision coming back through the resume route, and driving again the runs a stopped server left waiting. |
 | `app/workflows/chat.rs` | The part of a run that starts the chat of a `chat` node, in the run's repository, and records that chat on the firing the run carries. |
@@ -773,9 +776,9 @@ At the top:
 | `server/api/chats.rs` | Chats with an agent (start, write, offer, end, seen, settings) and what grilling chats ended in. |
 | `server/api/harness.rs` | The agents, skills and MCP servers of the harness configuration repository, and `POST /v1/harness/setup`. |
 | `server/api/rules.rs` | The rules page and the rules in prose. |
-| `server/api/workflows.rs` | The workflows of the harness configuration repository: list, read, save and delete, saving and deleting as commits, a person's decision on a waiting run, and cancelling a run of one. |
-| `server/api/workflow_hooks.rs` | `POST /api/hooks/{path}` and `POST /api/hooks/{repository}/{path}`, the door a workflow's `webhook` trigger answers on: the credential it asks for, the run its body starts, and its ceiling of runs going at once. |
-| `server/api/workflow_runs.rs` | `GET /v1/workflows/{name}/run-inputs` and `POST /v1/workflows/{name}/runs`: the inputs a manual trigger names, and starting a run by hand with them. |
+| `server/api/workflows.rs` | The workflows a project owns, addressed as `/v1/projects/{id}/workflows/...` (the routes that name a workflow without its project answer `410`): list, read, save and delete, saving and deleting as commits, a person's decision on a waiting run, and cancelling a run of one. |
+| `server/api/workflow_hooks.rs` | `POST /api/hooks/projects/{project}/{path}` and `POST /api/hooks/projects/{project}/{repository}/{path}` (and the deprecated `POST /api/hooks/{path}` and `POST /api/hooks/{repository}/{path}`), the door a workflow's `webhook` trigger answers on: the credential it asks for, the run its body starts, and its ceiling of runs going at once. |
+| `server/api/workflow_runs.rs` | `GET /v1/projects/{id}/workflows/{name}/run-inputs` and `POST /v1/projects/{id}/workflows/{name}/runs` (their forms without a project answer `410`): the inputs a manual trigger names, and starting a run by hand with them. |
 | `server/api/settings.rs` | `moebius.toml`, the API keys and the restart, and what the Models, Plugins and Get started pages show. |
 | `server/api/lessons.rs` | The lessons: list, read, edit and delete. |
 | `server/api/extensions.rs` | `/v1/extensions/...`: search, info, the installed packages, and proposals to install, update and remove; and the refusal of an agent's merge of a change that touches a package. |
@@ -971,7 +974,7 @@ At the top:
 |---|---|
 | `workflows/mod.rs` | What the workflows folder holds, and what the rest of the crate uses from it. |
 | `workflows/decorate.rs` | The expressions in a node's parameters: evaluating `{{ ... }}` in the sandbox column scripts use, with the trigger, the node's input and earlier nodes in scope. |
-| `workflows/definition.rs` | The workflow file (`workflows/<name>.toml`): its trigger, nodes and edges, parsing it whole, validating its graph, and reading and listing it from the harness configuration repository; saving and deleting it are commits in `harness/repo/edits.rs`. |
+| `workflows/definition.rs` | The workflow file (`projects/<project>/workflows/<name>.toml`): its trigger, nodes and edges, parsing it whole, validating its graph, and reading and listing it from the harness configuration repository; saving and deleting it are commits in `harness/repo/edits.rs`. |
 | `workflows/nodes/mod.rs` | The node kinds: the `Node` trait, the ports and metadata a kind reports, the value and port a node returns, and the registry that maps a kind name and its parameters to a node. |
 | `workflows/nodes/agent/mod.rs` | The `agent` node: its kind, its parameters, its ports and metadata, and the value it takes from the fenced JSON block the agent ends with. |
 | `workflows/nodes/agent/run.rs` | Running an agent node: the workflow run's repository checked out into the worktree the run owns, the prompt filled from the run, the agent started through the picker, and its transcript kept in its run's log. |

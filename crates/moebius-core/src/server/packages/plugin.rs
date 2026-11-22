@@ -235,6 +235,7 @@ impl Packages<'_> {
             sha256,
             program: Some(program.display().to_string()),
             repository: None,
+            project: None,
             change: None,
             files: vec![],
             rules: vec![],

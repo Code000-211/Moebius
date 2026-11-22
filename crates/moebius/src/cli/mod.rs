@@ -252,7 +252,7 @@ impl Operate {
             Chat { command } => chats::chat(command),
             Grillings => chats::grillings(),
             Grilling { command } => chats::grilling(command, get),
-            Automation { command } => automations::automation(command),
+            Automation { command } => automations::automation(command, get),
             Runners => agents::runners(),
             Pause { reason } => agents::pause("pause", reason),
             Resume { reason } => agents::pause("resume", reason),
@@ -634,7 +634,15 @@ pub(crate) mod tests {
         );
         assert_eq!(route(&["server", "restart"]).1, "/v1/server/restart");
         assert_eq!(route(&["agent", "delete", "Old"]).0, "DELETE");
-        assert_eq!(route(&["workflow", "list"]).1, "/v1/workflows");
+        assert_eq!(
+            plan_with(&["workflow", "list", "--project", "3"], &mut |_| Ok(
+                json!([{"id": 3, "name": "Web"}])
+            ))
+            .unwrap()
+            .0
+            .path,
+            "/v1/projects/3/workflows"
+        );
         assert_eq!(
             route(&["workflow", "cancel", "12"]),
             (

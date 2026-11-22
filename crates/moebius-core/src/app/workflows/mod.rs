@@ -6,9 +6,9 @@
 
 pub mod approval;
 pub mod chat;
+pub mod migrate;
 pub mod project;
 pub mod run;
 pub mod stopping;
 
 pub use approval::DecisionRequest;
-pub use run::WorkflowSource;

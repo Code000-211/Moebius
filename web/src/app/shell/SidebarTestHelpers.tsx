@@ -37,6 +37,10 @@ export const ROUTES: Record<string, unknown> = {
     harness_changes: [],
     inbox: [],
   },
+  "/v1/projects": [
+    { id: 1, name: "moebius-platform", key: "MP" },
+    { id: 2, name: "notes", key: "NO" },
+  ],
   "/v1/health": { version: "0.9.0" },
   "/v1/start": { done: true, steps: [], warnings: [] },
 };
@@ -45,6 +49,7 @@ export function show({
   at = "/inbox",
   session,
   snapshot,
+  start,
   onSearch = () => {},
   narrow,
   open,
@@ -59,10 +64,13 @@ export function show({
   at?: string;
   /** What the server answers to the snapshot, when a test needs another. */
   snapshot?: unknown;
+  /** What the server answers to the steps of Get started, when a test needs a step missing. */
+  start?: unknown;
   onSearch?: () => void;
 } = {}) {
   const routes: Record<string, unknown> = { ...ROUTES };
   if (snapshot !== undefined) routes["/v1/snapshot"] = snapshot;
+  if (start !== undefined) routes["/v1/start"] = start;
   vi.stubGlobal(
     "fetch",
     vi.fn(async (path: string) => ({

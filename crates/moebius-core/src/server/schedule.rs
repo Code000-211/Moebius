@@ -108,8 +108,8 @@ impl Server {
     }
 }
 
-/// Wakes the workflows on a `schedule` trigger: every workflow whose cron came due since that workflow last fired
-/// starts a run, and the minute it fired at is recorded, so one occurrence starts one run even when the server
+/// Wakes the workflows on a `schedule` trigger: every workflow of every project (ADR 0025) whose cron came due since
+/// that workflow last fired starts a run, and the minute it fired at is recorded, so one occurrence starts one run even when the server
 /// restarts in between. The runs started come back in name order.
 ///
 /// A firing is recorded before its run starts, so an occurrence goes once whether a run comes of it or not: what is
@@ -124,58 +124,7 @@ pub(crate) fn on_workflow_schedules(
     let Some(harness) = harness else {
         return Ok(Vec::new());
     };
-    let mut started = Vec::new();
-    for name in workflow_names(harness.path())? {
-        let definition = match definition::read(harness.path(), &name) {
-            Ok(definition) => definition,
-            Err(error) => {
-                app.bus.publish(Event::RetroError {
-                    message: error.to_string(),
-                });
-                continue;
-            }
-        };
-        let Some(trigger) = schedule::of(&definition) else {
-            continue;
-        };
-        let fired_at = app
-            .store
-            .schedule_firing(&name)?
-            .as_deref()
-            .and_then(cron::parse_minute);
-        let Some(at) = trigger.due(fired_at, now) else {
-            continue;
-        };
-        app.store
-            .record_schedule_firing(&name, &cron::format_minute(at))?;
-        if crate::app::is_automation(&definition) {
-            let Some(runs) = runs else {
-                eprintln!("moebius: automation {name} fires on its schedule with no harness");
-                continue;
-            };
-            match app.fire_automation_definition(runs, &name, &definition, at) {
-                Ok(firing) => {
-                    if let Some(id) = firing.workflow_run_id
-                        && let Some(run) = app.store.workflow_run(id)?
-                    {
-                        started.push(run);
-                    }
-                }
-                Err(why) => eprintln!(
-                    "moebius: automation {name} fires on its schedule and starts no run: {why}"
-                ),
-            }
-            continue;
-        }
-        match start_on_schedule(app, &name, &trigger, at) {
-            Ok(run) => started.push(run),
-            Err(why) => {
-                eprintln!("moebius: workflow {name} fires on its schedule and starts no run: {why}")
-            }
-        }
-    }
-    started.extend(on_project_workflow_schedules(app, harness, now)?);
-    Ok(started)
+    on_project_workflow_schedules(app, harness, runs, now)
 }
 
 /// The same for the workflows the projects own (ADR 0025), project by project and in name order. A project's workflow
@@ -185,6 +134,7 @@ pub(crate) fn on_workflow_schedules(
 fn on_project_workflow_schedules(
     app: &Arc<App>,
     harness: &HarnessRepo,
+    runs: Option<&dyn Runs>,
     now: PrimitiveDateTime,
 ) -> crate::app::Result<Vec<WorkflowRun>> {
     let mut started = Vec::new();
@@ -225,6 +175,24 @@ fn on_project_workflow_schedules(
                 &name,
                 &cron::format_minute(at),
             )?;
+            if crate::app::is_automation(&definition) {
+                let Some(runs) = runs else {
+                    eprintln!("moebius: automation {name} fires on its schedule with no harness");
+                    continue;
+                };
+                // An automation keeps a row of firings, and skips a firing while the chat of the one before runs.
+                match app.fire_automation_definition(runs, &project, &name, &definition, at) {
+                    Ok(firing) => {
+                        if let Some(id) = firing.workflow_run_id
+                            && let Some(run) = app.store.workflow_run(id)?
+                        {
+                            started.push(run);
+                        }
+                    }
+                    Err(why) => report_refused_firing(app, &project.name, &name, &why),
+                }
+                continue;
+            }
             match app.start_project_workflow_run(
                 project.id,
                 &name,
@@ -232,64 +200,21 @@ fn on_project_workflow_schedules(
                 trigger.firing_value(at),
             ) {
                 Ok(run) => started.push(run),
-                Err(why) => eprintln!(
-                    "moebius: workflow {name} of the project {} fires on its schedule and starts no run: {why}",
-                    project.name
-                ),
+                Err(why) => report_refused_firing(app, &project.name, &name, &why),
             }
         }
     }
     Ok(started)
 }
 
-/// The names of the workflow files in `root`, in name order: what the schedule reads, one file at a time, so a file
-/// that cannot be read leaves the others alone.
-fn workflow_names(root: &std::path::Path) -> crate::app::Result<Vec<String>> {
-    let dir = root.join(definition::DIRECTORY);
-    let entries = match std::fs::read_dir(&dir) {
-        Ok(entries) => entries,
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
-        Err(error) => return Err(error.into()),
-    };
-    let mut names = Vec::new();
-    for entry in entries {
-        let entry = entry?;
-        let path = entry.path();
-        if path.extension().is_some_and(|ext| ext == "toml")
-            && let Some(name) = path.file_stem().and_then(|name| name.to_str())
-        {
-            names.push(name.to_string());
-        }
-    }
-    names.sort();
-    Ok(names)
-}
-
-/// The run one firing starts, through the one door a trigger has into a run. The trigger's `repository` names the
-/// repository the run belongs to; a name the server does not have starts no run, since a run belongs to a
-/// repository and not to a guess at one.
-fn start_on_schedule(
-    app: &Arc<App>,
-    name: &str,
-    trigger: &schedule::ScheduleTrigger,
-    at: PrimitiveDateTime,
-) -> crate::app::Result<WorkflowRun> {
-    let wanted = trigger.repository.as_deref().ok_or_else(|| {
-        crate::app::AppError::Invalid(format!(
-            "the {name} workflow's schedule names no repository, and a run belongs to one"
-        ))
-    })?;
-    let repository = app
-        .store
-        .repositories()?
-        .into_iter()
-        .find(|repository| repository.name == wanted)
-        .ok_or_else(|| {
-            crate::app::AppError::Invalid(format!(
-                "the {name} workflow's schedule names the repository {wanted}, which the server does not have"
-            ))
-        })?;
-    app.start_workflow_run(name, repository.id, trigger.firing_value(at))
+/// Says that the scheduled firing of the workflow `workflow` of the project `project` starts no run: in the log and as
+/// an event, so that a schedule that never runs is not silent. The minute is recorded, so it is said once for it.
+fn report_refused_firing(app: &App, project: &str, workflow: &str, why: &crate::app::AppError) {
+    let message = format!(
+        "workflow {workflow} of the project {project} fires on its schedule and starts no run: {why}"
+    );
+    eprintln!("moebius: {message}");
+    app.bus.publish(Event::RetroError { message });
 }
 
 #[cfg(test)]
@@ -418,12 +343,22 @@ port = "out"
         testing::use_harness(&app, dir);
         app.add_repository("demo", origin.to_str().unwrap())
             .unwrap();
-        let folder = app.harness_repo().unwrap().path().join("workflows");
+        let folder = app
+            .harness_repo()
+            .unwrap()
+            .path()
+            .join("projects/demo/workflows");
         std::fs::create_dir_all(&folder).unwrap();
         for (name, text) in files {
             std::fs::write(folder.join(format!("{name}.toml")), text).unwrap();
         }
         app
+    }
+
+    /// The local minute the schedule of the workflow `name` of the project `demo` last fired at.
+    fn fired(app: &App, name: &str) -> Option<String> {
+        let demo = app.store.project_by_name("demo").unwrap().unwrap();
+        app.store.project_schedule_firing(demo.id, name).unwrap()
     }
 
     /// The workflows the server has woken at the local minute `now`.
@@ -465,10 +400,7 @@ port = "out"
             })
         );
         assert_eq!(
-            app.store
-                .schedule_firing("nightly-triage")
-                .unwrap()
-                .as_deref(),
+            fired(&app, "nightly-triage").as_deref(),
             Some("2026-11-09 03:30")
         );
     }
@@ -628,7 +560,7 @@ port = "out"
             error.data["message"]
         );
         // Nothing of it is remembered: the file stays as it is until the person who wrote it fixes it.
-        assert_eq!(app.store.schedule_firing("broken").unwrap(), None);
+        assert_eq!(fired(&app, "broken"), None);
     }
 
     #[test]
@@ -644,12 +576,9 @@ port = "out"
         let started = wake(&app, datetime!(2026-11-09 03:30:00));
         let names: Vec<&str> = started.iter().map(|run| run.workflow.as_str()).collect();
         assert_eq!(names, ["nightly-triage"]);
-        assert_eq!(app.store.schedule_firing("broken").unwrap(), None);
+        assert_eq!(fired(&app, "broken"), None);
         assert_eq!(
-            app.store
-                .schedule_firing("nightly-triage")
-                .unwrap()
-                .as_deref(),
+            fired(&app, "nightly-triage").as_deref(),
             Some("2026-11-09 03:30")
         );
     }
@@ -681,7 +610,7 @@ port = "out"
         );
         assert!(wake(&app, datetime!(2026-11-09 03:30:00)).is_empty());
         assert_eq!(
-            app.store.schedule_firing("on-card").unwrap(),
+            fired(&app, "on-card"),
             None,
             "a workflow that is not on a schedule records no firing"
         );
@@ -697,9 +626,55 @@ port = "out"
         );
         // The occurrence is spent all the same: the workflow waits for its next minute rather than try every
         // minute it is awake.
-        assert_eq!(
-            app.store.schedule_firing("stray").unwrap().as_deref(),
-            Some("2026-11-09 03:30")
+        assert_eq!(fired(&app, "stray").as_deref(), Some("2026-11-09 03:30"));
+    }
+
+    #[test]
+    fn a_scheduled_run_a_project_refuses_is_said_as_an_event() {
+        let dir = tempfile::tempdir().unwrap();
+        let app = app_with_workflows(dir.path(), &[]);
+        let second = dir.path().join("second");
+        let repository = app
+            .add_repository("second", second.to_str().unwrap())
+            .unwrap();
+        let demo = app.store.project_by_name("demo").unwrap().unwrap();
+        app.add_repository_to_project(
+            &crate::decide::Actor::first_owner(),
+            demo.id,
+            repository.id,
+            "two repositories",
+        )
+        .unwrap();
+        // The project has two repositories and the schedule names none, so the run is refused.
+        let without_repository = NIGHTLY.replace(", repository = \"demo\"", "");
+        let definition = definition::parse("nightly-triage", &without_repository).unwrap();
+        app.harness_repo()
+            .unwrap()
+            .save_project_workflow(
+                &app,
+                &crate::decide::Actor::first_owner(),
+                "demo",
+                "nightly-triage",
+                &definition,
+            )
+            .unwrap();
+        let mut events = app.bus.subscribe();
+        assert!(wake(&app, datetime!(2026-11-09 03:30:00)).is_empty());
+        let mut said = Vec::new();
+        while let Ok(event) = events.try_recv() {
+            said.push(event);
+        }
+        let refused: Vec<_> = said
+            .iter()
+            .filter(|event| event.kind == "retro_error")
+            .collect();
+        assert_eq!(refused.len(), 1, "{said:?}");
+        let message = refused[0].data["message"].as_str().unwrap();
+        assert!(
+            message.contains("nightly-triage")
+                && message.contains("demo")
+                && message.contains("more than one repository"),
+            "{message}"
         );
     }
 }

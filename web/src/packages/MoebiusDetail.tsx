@@ -2,11 +2,13 @@
  * A package of the Moebius registries opened in the sheet: what it is, its versions with whether each works with this
  * Moebius, where its files go, and what can be done with it. A plugin is installed at once; a workflow, rules or
  * skills package is proposed as a change a person merges, and the sheet says so before the press, with a choice of
- * the repository when there are several. An installed package is updated (when a newer version works) or removed.
+ * the repository when there are several. A workflow package belongs to a project, so installing one needs the
+ * project chosen (the only one is chosen already). An installed package is updated (when a newer version works) or removed.
  */
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { installPackage, packageInfo, removePackage, updatePackage } from "../api/calls/packages";
+import { listProjects as readProjects } from "../api/calls/projects";
 import { keys } from "../api/keys";
 import { Tag } from "../ui/chat/Tag";
 import { Button } from "../ui/components/Button";
@@ -34,6 +36,8 @@ export function MoebiusDetail({
 }) {
   const info = useQuery({ queryKey: keys.packageInfo(name), queryFn: () => packageInfo(name) });
   const [chosen, setChosen] = useState<string | null>(null);
+  const [chosenProject, setChosenProject] = useState<string | null>(null);
+  const projects = useQuery({ queryKey: keys.projects, queryFn: () => readProjects() });
 
   if (info.isPending) {
     return (
@@ -64,9 +68,18 @@ export function MoebiusDetail({
       ? newest.version
       : null;
   const repository = chosen ?? repositories[0] ?? null;
+  const projectNames = (projects.data ?? []).map((each) => each.name);
+  const project =
+    chosenProject !== null && projectNames.includes(chosenProject)
+      ? chosenProject
+      : projectNames.length === 1
+        ? (projectNames[0] ?? null)
+        : null;
+  const needsProject = kind === "workflow";
   const request = {
     name,
     registry,
+    ...(needsProject && project !== null ? { project } : {}),
     ...(needsRepository(kind) && repositories.length > 1 && repository !== null
       ? { repository }
       : {}),
@@ -149,9 +162,23 @@ export function MoebiusDetail({
               />
             </div>
           )}
+          {needsProject && (
+            <div className="flex max-w-60 flex-col gap-1">
+              <Select
+                aria-label="Project"
+                options={[
+                  ["", "Choose a project"],
+                  ...projectNames.map((each): [string, string] => [each, each]),
+                ]}
+                value={project ?? ""}
+                onChange={(each) => setChosenProject(each === "" ? null : each)}
+              />
+              <span className="text-sm text-secondary">A workflow belongs to one project.</span>
+            </div>
+          )}
           <div>
             <Button
-              disabled={actions.busy}
+              disabled={actions.busy || (needsProject && project === null)}
               onClick={() =>
                 void actions.run(
                   () => installPackage(request),

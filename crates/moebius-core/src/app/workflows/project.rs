@@ -9,6 +9,7 @@ use serde_json::Value;
 
 use crate::app::{App, AppError, Result};
 use crate::store::{Project, Repository, WorkflowRun};
+use crate::workflows::definition::WorkflowDefinition;
 
 impl App {
     /// The repository a run of a workflow of the project `project` belongs to. `requested` is the name a trigger gives
@@ -70,9 +71,9 @@ impl App {
     }
 
     /// Stores a run of the workflow `workflow` of the project `project_id`, started with `value`, and drives it on its
-    /// own thread, as [`Self::start_workflow_run`] does for a workflow kept server-wide. The run records the project and
-    /// belongs to the repository [`Self::workflow_run_repository`] picks from `repository`, the name the trigger gave.
-    /// Nothing is stored when the workflow cannot be read or the repository is refused.
+    /// own thread. The run records the project and belongs to the repository [`Self::workflow_run_repository`] picks
+    /// from `repository`, the name the trigger gave. Nothing is stored when the workflow cannot be read or the
+    /// repository is refused.
     pub fn start_project_workflow_run(
         self: &Arc<Self>,
         project_id: i64,
@@ -84,12 +85,28 @@ impl App {
         let definition = self
             .harness_repo()?
             .project_workflow(&project.name, workflow)?;
-        let repository = self.workflow_run_repository(&project, repository)?;
+        self.start_project_workflow_run_with(
+            &project, workflow, definition, repository, value, None,
+        )
+    }
+
+    /// The same for a `definition` that is already read, started for the firing `firing` of an automation when there
+    /// is one (linked to it before the run's thread starts, so that its first node finds it).
+    pub(crate) fn start_project_workflow_run_with(
+        self: &Arc<Self>,
+        project: &Project,
+        workflow: &str,
+        definition: WorkflowDefinition,
+        repository: Option<&str>,
+        value: Value,
+        firing: Option<i64>,
+    ) -> Result<WorkflowRun> {
+        let repository = self.workflow_run_repository(project, repository)?;
         self.start_workflow_run_with(
             definition,
             repository.id,
             value,
-            (None, Some((project.id, workflow))),
+            (firing, Some((project.id, workflow))),
         )
     }
 }

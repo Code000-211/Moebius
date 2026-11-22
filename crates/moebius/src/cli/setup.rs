@@ -119,6 +119,7 @@ pub fn server(command: &ServerCommand) -> Plan {
 pub fn show_doctor(view: &Value) -> String {
     let steps = view["steps"].as_array().into_iter().flatten();
     let warnings = view["warnings"].as_array().into_iter().flatten();
+    let pending = view["pending"].as_array().into_iter().flatten();
     steps
         .map(|step| {
             let state = if step["done"] == true {
@@ -133,6 +134,14 @@ pub fn show_doctor(view: &Value) -> String {
             )
         })
         .chain(warnings.map(|warning| format!("{:<8} {}", "warning", cell(warning))))
+        .chain(pending.map(|item| {
+            format!(
+                "{:<8} {}: {}",
+                "pending",
+                cell(&item["key"]),
+                cell(&item["detail"])
+            )
+        }))
         .collect::<Vec<_>>()
         .join("\n")
 }

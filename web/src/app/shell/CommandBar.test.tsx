@@ -8,6 +8,7 @@ import { useState } from "react";
 import { MemoryRouter } from "react-router";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { keys } from "../../api/keys";
+import { NAV } from "../nav";
 import { AgentProvider, useAgent } from "./AgentContext";
 import { CommandBar } from "./CommandBar";
 import { PaletteFocusFor, PaletteFocusProvider } from "./palette/focus";
@@ -185,10 +186,14 @@ describe("the palette", () => {
   });
 
   it("keeps the commands of the focus while they match and finds the rest by kind", async () => {
-    open([
-      { id: "assign", label: "Assign to me", key: "a", run: () => {} },
-      { id: "block", label: "Block…", key: "b", run: () => {} },
-    ]);
+    open(
+      [
+        { id: "assign", label: "Assign to me", key: "a", run: () => {} },
+        { id: "block", label: "Block…", key: "b", run: () => {} },
+      ],
+      "#7 Focus card",
+      true,
+    );
     const field = await screen.findByRole("combobox");
     fireEvent.change(field, { target: { value: "block" } });
     expect(screen.getAllByRole("option").map((o) => o.textContent)).toEqual(["Block…"]);
@@ -204,9 +209,29 @@ describe("the palette", () => {
     fireEvent.change(field, { target: { value: "place" } });
     await screen.findByRole("option", { name: "Parser" });
     fireEvent.change(field, { target: { value: "page retro" } });
-    expect(screen.getAllByRole("option").map((o) => o.textContent)).toEqual(["Retro"]);
+    expect(screen.getAllByRole("option").map((o) => o.textContent)).toEqual(["Improve"]);
     fireEvent.change(field, { target: { value: "zzzz" } });
     expect(await screen.findByText("Nothing matches.")).toBeTruthy();
+  });
+
+  it("reaches every path of the table, by its name or its words, and leaves the owner's out for a member", async () => {
+    open([], "#7 Focus card", true);
+    const field = await screen.findByRole("combobox");
+    for (const entry of NAV) {
+      fireEvent.change(field, { target: { value: entry.label } });
+      const options = screen.getAllByRole("option").map((o) => o.textContent ?? "");
+      expect(
+        options.some((o) => o.includes(entry.label)),
+        entry.path,
+      ).toBe(true);
+    }
+    cleanup();
+    open();
+    const member = await screen.findByRole("combobox");
+    fireEvent.change(member, { target: { value: "Agents" } });
+    expect(screen.queryByRole("option", { name: "Agents" })).toBeNull();
+    fireEvent.change(member, { target: { value: "Terminal" } });
+    expect(screen.getAllByRole("option").map((o) => o.textContent)).toContain("Terminal");
   });
 
   it("finds the wiki's pages by the words typed and opens the one chosen", async () => {

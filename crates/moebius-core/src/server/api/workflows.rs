@@ -1,40 +1,70 @@
-//! The workflow door the canvas, the command line and the tests use (see [`crate::workflows::definition`]).
+//! The workflow door the canvas, the command line and the tests use (see [`crate::workflows::definition`]). A workflow
+//! belongs to one project (ADR 0025) and is addressed as (project, name):
 //!
-//! - `GET /v1/workflows`: every workflow of the harness configuration repository, named, described, with its trigger
-//!   kind and how many nodes it has.
-//! - `GET /v1/workflows/{name}`: one workflow's file and its parsed form.
-//! - `PUT /v1/workflows/{name}` `{file}` or `{definition}`: validates and commits the workflow. An invalid definition
-//!   is refused with the validation message and the file is untouched.
-//! - `DELETE /v1/workflows/{name}`: commits the workflow's deletion, refused while a run of it is queued, running or
-//!   waiting.
+//! - `GET /v1/projects/{id}/workflows`: the project's workflows, named, described, with their trigger kind and how many
+//!   nodes each has.
+//! - `GET /v1/projects/{id}/workflows/{name}`: one workflow's file and its parsed form.
+//! - `PUT /v1/projects/{id}/workflows/{name}` `{file}` or `{definition}`: validates and commits the workflow (the
+//!   canvas's save). An invalid definition is refused with the validation message and the file is untouched.
+//! - `DELETE /v1/projects/{id}/workflows/{name}`: commits the workflow's deletion, refused while a run of it is queued,
+//!   running or waiting.
 //! - `POST /v1/workflows/runs/{id}/cancel`: cancels a run of a workflow and ends it `cancelled`.
 //! - `POST /v1/workflows/runs/{run_id}/resume` `{decision, value?, reason?}`: records a person's decision on a run that
 //!   waits for one (`workflow_approval` in the inbox); a second decision on a finished wait is refused.
+//!
+//! The routes that name a workflow without its project (`GET /v1/workflows`, `GET`, `PUT` and `DELETE
+//! /v1/workflows/{name}`) are gone: they answer `410` with the route that replaces each ([`gone`]).
 
 use axum::Router;
 use axum::extract::{Path as UrlPath, State};
+use axum::http::StatusCode;
 use axum::routing::{get, post};
 use serde::{Deserialize, Serialize};
 
 use super::{ApiError, ApiState, blocking};
-use crate::app::AppError;
 use crate::app::workflows::DecisionRequest;
 use crate::app::workflows::stopping::CancelWorkflowRunError;
-use crate::store::WorkflowRun;
+use crate::app::{App, AppError, Sight};
+use crate::harness::repo::HarnessRepo;
+use crate::store::{Project, WorkflowRun};
 use crate::workflows::definition::{self, WorkflowDefinition};
 
 /// The routes of workflows.
 pub(super) fn routes() -> Router<ApiState> {
     Router::new()
-        .route("/v1/workflows", get(list))
-        .route("/v1/workflows/{name}", get(show).put(save).delete(delete))
+        .route("/v1/projects/{id}/workflows", get(project_list))
+        .route(
+            "/v1/projects/{id}/workflows/{name}",
+            get(project_show).put(project_save).delete(project_delete),
+        )
+        .route(
+            "/v1/workflows",
+            get(|| gone("GET /v1/projects/{id}/workflows")),
+        )
+        .route(
+            "/v1/workflows/{name}",
+            get(|| gone("GET /v1/projects/{id}/workflows/{name}"))
+                .put(|| gone("PUT /v1/projects/{id}/workflows/{name}"))
+                .delete(|| gone("DELETE /v1/projects/{id}/workflows/{name}")),
+        )
         .route("/v1/workflows/runs/{id}/cancel", post(cancel_run))
         .route("/v1/workflows/runs/{run_id}/resume", post(resume))
+}
+
+/// The answer of a route that does not name a project, which is gone: `410` and the route that replaces it (ADR 0025).
+pub(super) async fn gone(replacement: &'static str) -> ApiError {
+    ApiError(
+        StatusCode::GONE,
+        format!("this route is gone: workflows belong to a project; use {replacement}"),
+    )
 }
 
 /// One workflow as the list names it.
 #[derive(Debug, Serialize)]
 struct Summary {
+    /// The project that owns the workflow.
+    project: i64,
+    project_name: String,
     name: String,
     description: String,
     trigger_kind: String,
@@ -56,12 +86,15 @@ struct LastRun {
 /// One workflow's file and parsed form.
 #[derive(Debug, Serialize)]
 struct View {
+    project: i64,
+    project_name: String,
     name: String,
     file: String,
     definition: WorkflowDefinition,
 }
 
-/// What `PUT /v1/workflows/{name}` takes: either the file's text or its parsed form.
+/// What `PUT` takes: either the file's text or its parsed form, and for the deprecated route the project a new
+/// workflow goes to.
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct SaveRequest {
@@ -69,6 +102,9 @@ struct SaveRequest {
     file: Option<String>,
     #[serde(default)]
     definition: Option<WorkflowDefinition>,
+    /// The project the workflow belongs to; on a route that names the project it must be that one.
+    #[serde(default)]
+    project: Option<i64>,
 }
 
 /// What saving a workflow answers: the saved workflow and the commit it made.
@@ -81,35 +117,40 @@ struct Saved {
     commit: Option<String>,
 }
 
-/// What deleting a workflow answers: the name and the commit it made.
+/// What deleting a workflow answers: the project, the name and the commit it made.
 #[derive(Debug, Serialize)]
 struct Deleted {
+    project: i64,
     name: String,
     /// The short id of the commit; left out when there was nothing to commit.
     #[serde(skip_serializing_if = "Option::is_none")]
     commit: Option<String>,
 }
 
-async fn list(
-    State(state): State<ApiState>,
-    axum::Extension(by): axum::Extension<crate::decide::Actor>,
-) -> Result<axum::Json<Vec<Summary>>, ApiError> {
-    let repo = harness(&state)?;
-    blocking(&state.app, move |app| {
-        let sight = app.sight(&by)?;
-        let mut summaries = Vec::new();
-        for (name, definition) in repo.workflows()? {
-            let last_run = super::workflow_runs::visible_runs(app, &sight, Some(&name), 1)?
-                .into_iter()
-                .next()
-                .map(|run| LastRun {
-                    id: run.id,
-                    status: run.status,
-                    created_at: run.created_at,
-                    started_at: run.started_at,
-                    finished_at: run.finished_at,
-                });
+/// The workflows of `projects`, in project order and then name order, as the list names them.
+fn summaries(
+    app: &App,
+    sight: &Sight,
+    repo: &HarnessRepo,
+    projects: &[Project],
+) -> Result<Vec<Summary>, AppError> {
+    let mut summaries = Vec::new();
+    for project in projects {
+        for (name, definition) in repo.project_workflows(&project.name)? {
+            let last_run =
+                super::workflow_runs::visible_runs(app, sight, Some(project.id), Some(&name), 1)?
+                    .into_iter()
+                    .next()
+                    .map(|run| LastRun {
+                        id: run.id,
+                        status: run.status,
+                        created_at: run.created_at,
+                        started_at: run.started_at,
+                        finished_at: run.finished_at,
+                    });
             summaries.push(Summary {
+                project: project.id,
+                project_name: project.name.clone(),
                 name,
                 description: definition.description,
                 trigger_kind: definition
@@ -121,41 +162,86 @@ async fn list(
                 last_run,
             });
         }
-        Ok(summaries)
+    }
+    Ok(summaries)
+}
+
+async fn project_list(
+    State(state): State<ApiState>,
+    axum::Extension(by): axum::Extension<crate::decide::Actor>,
+    UrlPath(project): UrlPath<i64>,
+) -> Result<axum::Json<Vec<Summary>>, ApiError> {
+    let repo = harness(&state)?;
+    blocking(&state.app, move |app| {
+        let sight = app.sight(&by)?;
+        let project = app.project(project)?;
+        summaries(app, &sight, &repo, &[project])
     })
     .await
 }
 
-async fn show(
+async fn project_show(
     State(state): State<ApiState>,
-    UrlPath(name): UrlPath<String>,
+    UrlPath((project, name)): UrlPath<(i64, String)>,
 ) -> Result<axum::Json<View>, ApiError> {
     let repo = harness(&state)?;
-    blocking(&state.app, move |_| view(&repo, &name)).await
+    blocking(&state.app, move |app| {
+        view(&repo, &app.project(project)?, &name)
+    })
+    .await
 }
 
-async fn save(
-    State(state): State<ApiState>,
-    axum::Extension(by): axum::Extension<crate::decide::Actor>,
-    UrlPath(name): UrlPath<String>,
-    axum::Json(request): axum::Json<SaveRequest>,
-) -> Result<axum::Json<Saved>, ApiError> {
-    let repo = harness(&state)?;
+/// The definition a save carries, and the project it names, if it names one.
+fn definition_of(
+    name: &str,
+    request: SaveRequest,
+) -> Result<(WorkflowDefinition, Option<i64>), AppError> {
     let definition = match (request.file, request.definition) {
         (Some(file), None) => {
-            definition::parse(&name, &file).map_err(|error| AppError::Invalid(error.to_string()))?
+            definition::parse(name, &file).map_err(|error| AppError::Invalid(error.to_string()))?
         }
         (None, Some(definition)) => definition,
         _ => {
-            return Err(AppError::Invalid("send exactly one of file and definition".into()).into());
+            return Err(AppError::Invalid(
+                "send exactly one of file and definition".into(),
+            ));
         }
     };
+    Ok((definition, request.project))
+}
+
+fn save_in(
+    app: &App,
+    repo: &HarnessRepo,
+    by: &crate::decide::Actor,
+    project: &Project,
+    name: &str,
+    definition: &WorkflowDefinition,
+) -> Result<Saved, AppError> {
+    let commit = repo.save_project_workflow(app, by, &project.name, name, definition)?;
+    Ok(Saved {
+        view: view(repo, project, name)?,
+        commit,
+    })
+}
+
+async fn project_save(
+    State(state): State<ApiState>,
+    axum::Extension(by): axum::Extension<crate::decide::Actor>,
+    UrlPath((project, name)): UrlPath<(i64, String)>,
+    axum::Json(request): axum::Json<SaveRequest>,
+) -> Result<axum::Json<Saved>, ApiError> {
+    let repo = harness(&state)?;
+    let (definition, named) = definition_of(&name, request)?;
+    if named.is_some_and(|named| named != project) {
+        return Err(AppError::Invalid(format!(
+            "the workflow is saved in the project {project}, which the address names, not in the project {}",
+            named.unwrap_or_default()
+        ))
+        .into());
+    }
     blocking(&state.app, move |app| {
-        let commit = repo.save_workflow(app, &by, &name, &definition)?;
-        Ok(Saved {
-            view: view(&repo, &name)?,
-            commit,
-        })
+        save_in(app, &repo, &by, &app.project(project)?, &name, &definition)
     })
     .await
 }
@@ -184,17 +270,39 @@ async fn cancel_run(
     .await
 }
 
-async fn delete(
+async fn project_delete(
     State(state): State<ApiState>,
     axum::Extension(by): axum::Extension<crate::decide::Actor>,
-    UrlPath(name): UrlPath<String>,
+    UrlPath((project, name)): UrlPath<(i64, String)>,
 ) -> Result<axum::Json<Deleted>, ApiError> {
     let repo = harness(&state)?;
     blocking(&state.app, move |app| {
-        let commit = repo.delete_workflow(app, &by, &name)?;
-        Ok(Deleted { name, commit })
+        delete_in(app, &repo, &by, &app.project(project)?, name)
     })
     .await
+}
+
+fn delete_in(
+    app: &App,
+    repo: &HarnessRepo,
+    by: &crate::decide::Actor,
+    project: &Project,
+    name: String,
+) -> Result<Deleted, AppError> {
+    let commit = repo.delete_project_workflow(app, by, &project.name, &name)?;
+    // A workflow file that holds an automation is the automation: its row goes with it, so that nothing is left on the
+    // page that no file fires.
+    if let Some(automation) = app
+        .store
+        .automation_with_project_workflow_key(project.id, &name)?
+    {
+        app.store.delete_automation(automation.id)?;
+    }
+    Ok(Deleted {
+        project: project.id,
+        name,
+        commit,
+    })
 }
 
 /// What resuming a run answers: the run the decision was recorded against, and the status it went to.
@@ -222,9 +330,7 @@ async fn resume(
 }
 
 /// The harness configuration repository, or the conflict that the server has none.
-fn harness(
-    state: &ApiState,
-) -> Result<std::sync::Arc<crate::harness::repo::HarnessRepo>, ApiError> {
+pub(super) fn harness(state: &ApiState) -> Result<std::sync::Arc<HarnessRepo>, ApiError> {
     if let Some(repo) = state.harness_repo.clone() {
         return Ok(repo);
     }
@@ -234,16 +340,19 @@ fn harness(
 }
 
 /// One workflow's file and parsed form.
-fn view(repo: &crate::harness::repo::HarnessRepo, name: &str) -> crate::app::Result<View> {
+fn view(repo: &HarnessRepo, project: &Project, name: &str) -> Result<View, AppError> {
     // A name that is no workflow is not found, rather than a file that cannot be read.
-    let file = definition::file_for(name).map_err(|error| AppError::Invalid(error.to_string()))?;
+    let file = definition::project_file_for(&project.name, name)
+        .map_err(|error| AppError::Invalid(error.to_string()))?;
     if !repo.path().join(file).is_file() {
         return Err(AppError::NotFound(format!("workflow {name}")));
     }
-    let definition = repo.workflow(name)?;
-    let file = definition::read_text(repo.path(), name)
+    let definition = repo.project_workflow(&project.name, name)?;
+    let file = definition::read_project_text(repo.path(), &project.name, name)
         .map_err(|error| AppError::Invalid(error.to_string()))?;
     Ok(View {
+        project: project.id,
+        project_name: project.name.clone(),
         name: name.to_string(),
         file,
         definition,
@@ -340,7 +449,7 @@ port = "out"
 
     async fn put(state: &ApiState, addr: &str, name: &str, body: Value) -> reqwest::Response {
         reqwest::Client::new()
-            .put(format!("http://{addr}/v1/workflows/{name}"))
+            .put(format!("http://{addr}/v1/projects/1/workflows/{name}"))
             .bearer_auth(&*state.token)
             .json(&body)
             .send()
@@ -350,7 +459,7 @@ port = "out"
 
     async fn delete(state: &ApiState, addr: &str, name: &str) -> reqwest::Response {
         reqwest::Client::new()
-            .delete(format!("http://{addr}/v1/workflows/{name}"))
+            .delete(format!("http://{addr}/v1/projects/1/workflows/{name}"))
             .bearer_auth(&*state.token)
             .send()
             .await
@@ -397,13 +506,18 @@ port = "out"
 
     /// Starts a workflow run that waits for a person, and returns its id once it does.
     async fn waiting(state: &ApiState, harness: &HarnessRepo, value: Value) -> i64 {
-        let folder = harness.path().join("workflows");
+        let folder = harness.path().join("projects/radiance/workflows");
         std::fs::create_dir_all(&folder).unwrap();
         std::fs::write(folder.join("asking.toml"), APPROVAL).unwrap();
-        let repository = state.app.store.repositories().unwrap().first().unwrap().id;
+        let project = state
+            .app
+            .store
+            .project_by_name("radiance")
+            .unwrap()
+            .unwrap();
         let run = state
             .app
-            .start_workflow_run("asking", repository, value)
+            .start_project_workflow_run(project.id, "asking", None, value)
             .unwrap();
         testing::until("the run waits for a decision", || {
             state
@@ -471,7 +585,7 @@ port = "out"
         let (_dir, state, addr, harness) = started().await;
         let response = put(&state, &addr, "release", json!({ "file": WORKFLOW })).await;
         assert_eq!(response.status(), 200);
-        let before: Value = testing::get(&state, &addr, "/v1/workflows/release").await;
+        let before: Value = testing::get(&state, &addr, "/v1/projects/1/workflows/release").await;
 
         let response = put(
             &state,
@@ -487,11 +601,14 @@ port = "out"
             "the refusal says why: {refusal}"
         );
         assert!(
-            harness.path().join("workflows/release.toml").is_file(),
+            harness
+                .path()
+                .join("projects/radiance/workflows/release.toml")
+                .is_file(),
             "the file is not removed"
         );
 
-        let after: Value = testing::get(&state, &addr, "/v1/workflows/release").await;
+        let after: Value = testing::get(&state, &addr, "/v1/projects/1/workflows/release").await;
         assert_eq!(after["file"], before["file"]);
         assert_eq!(after["definition"], before["definition"]);
     }
@@ -506,7 +623,7 @@ port = "out"
         let saved: Value = serde_json::from_str(&body).unwrap();
         assert!(saved["commit"].is_string(), "{body}");
 
-        let shown: Value = testing::get(&state, &addr, "/v1/workflows/release").await;
+        let shown: Value = testing::get(&state, &addr, "/v1/projects/1/workflows/release").await;
         assert_eq!(shown["name"], "release");
         assert_eq!(shown["definition"]["name"], "release");
         assert_eq!(shown["definition"]["nodes"][0]["position"]["x"], 12.5);
@@ -516,10 +633,12 @@ port = "out"
             definition::WorkflowDefinition::parse(WORKFLOW, "workflows/release.toml").unwrap();
         assert_eq!(shown["definition"], serde_json::to_value(expected).unwrap());
 
-        let listed: Value = testing::get(&state, &addr, "/v1/workflows").await;
+        let listed: Value = testing::get(&state, &addr, "/v1/projects/1/workflows").await;
         assert_eq!(
             listed,
             json!([{
+                "project": 1,
+                "project_name": "radiance",
                 "name": "release",
                 "description": "Build the change and run its tests.",
                 "trigger_kind": "test",
@@ -548,7 +667,7 @@ port = "out"
         )
         .await;
         assert_eq!(response.status(), 200, "{}", response.text().await.unwrap());
-        let shown: Value = testing::get(&state, &addr, "/v1/workflows/release").await;
+        let shown: Value = testing::get(&state, &addr, "/v1/projects/1/workflows/release").await;
         assert_eq!(shown["definition"]["nodes"][1]["position"]["y"], 4.5);
     }
 
@@ -665,12 +784,17 @@ port = "out"
         let run = state
             .app
             .store
-            .add_workflow_run("release", repository, "test", &json!({}))
+            .add_project_workflow_run(1, "release", repository, "test", &json!({}))
             .unwrap();
 
         let response = delete(&state, &addr, "release").await;
         assert_eq!(response.status(), 409);
-        assert!(harness.path().join("workflows/release.toml").is_file());
+        assert!(
+            harness
+                .path()
+                .join("projects/radiance/workflows/release.toml")
+                .is_file()
+        );
 
         state
             .app
@@ -692,9 +816,14 @@ port = "out"
         let deleted: Value = serde_json::from_str(&body).unwrap();
         assert!(deleted["commit"].is_string(), "{body}");
 
-        let shown = get_response(&state, &addr, "/v1/workflows/release").await;
+        let shown = get_response(&state, &addr, "/v1/projects/1/workflows/release").await;
         assert_eq!(shown.status(), 404);
-        assert!(!harness.path().join("workflows/release.toml").is_file());
+        assert!(
+            !harness
+                .path()
+                .join("projects/radiance/workflows/release.toml")
+                .is_file()
+        );
         assert!(
             log(&harness).contains("Delete the workflow release"),
             "{}",
@@ -876,7 +1005,7 @@ port = "out"
         );
         let run = waiting(&state, &harness, json!({ "version": "1.0.0" })).await;
 
-        let list: Value = testing::get(&state, &addr, "/v1/workflows").await;
+        let list: Value = testing::get(&state, &addr, "/v1/projects/1/workflows").await;
         let release = list
             .as_array()
             .unwrap()
@@ -899,7 +1028,7 @@ port = "out"
             "a workflow that never ran"
         );
 
-        let shown: Value = testing::get(&state, &addr, "/v1/workflows/release").await;
+        let shown: Value = testing::get(&state, &addr, "/v1/projects/1/workflows/release").await;
         same_keys(&shown, &fixtures["show"], "show");
 
         let runs: Value = testing::get(&state, &addr, "/v1/workflow-runs?workflow=asking").await;
@@ -919,12 +1048,319 @@ port = "out"
     async fn a_workflow_or_run_that_does_not_exist_is_not_found_without_the_operating_systems_words()
      {
         let (_dir, state, addr, _harness) = started().await;
-        for path in ["/v1/workflows/nothing", "/v1/workflow-runs/999"] {
+        for path in ["/v1/projects/1/workflows/nothing", "/v1/workflow-runs/999"] {
             let response = get_response(&state, &addr, path).await;
             assert_eq!(response.status(), 404, "{path}");
             let body = response.text().await.unwrap();
             assert!(!body.contains("os error"), "{body}");
             assert!(!body.contains("cannot be read"), "{body}");
         }
+    }
+
+    async fn send(
+        state: &ApiState,
+        addr: &str,
+        method: &str,
+        path: &str,
+        body: Option<Value>,
+    ) -> reqwest::Response {
+        let mut request = reqwest::Client::new()
+            .request(method.parse().unwrap(), format!("http://{addr}{path}"))
+            .bearer_auth(&*state.token);
+        if let Some(body) = body {
+            request = request.json(&body);
+        }
+        request.send().await.unwrap()
+    }
+
+    /// The text of the release workflow with another description, so that two projects' files differ.
+    fn release_saying(description: &str) -> Value {
+        json!({ "file": WORKFLOW.replace("Build the change and run its tests.", description) })
+    }
+
+    #[tokio::test]
+    async fn a_workflow_is_saved_read_listed_and_deleted_in_its_project_and_names_repeat() {
+        let (_dir, state, addr, harness) = started().await;
+        let radiance = state
+            .app
+            .store
+            .project_by_name("radiance")
+            .unwrap()
+            .unwrap()
+            .id;
+        let other = state.app.add_project("Other", "OTH").unwrap().id;
+
+        let saved = send(
+            &state,
+            &addr,
+            "PUT",
+            &format!("/v1/projects/{radiance}/workflows/release"),
+            Some(release_saying("In radiance.")),
+        )
+        .await;
+        assert_eq!(saved.status(), 200);
+        let saved: Value = saved.json().await.unwrap();
+        assert_eq!(
+            (saved["project"].as_i64(), saved["project_name"].as_str()),
+            (Some(radiance), Some("radiance"))
+        );
+        assert!(saved["commit"].is_string());
+        let saved = send(
+            &state,
+            &addr,
+            "PUT",
+            &format!("/v1/projects/{other}/workflows/release"),
+            Some(release_saying("In other.")),
+        )
+        .await;
+        assert_eq!(saved.status(), 200);
+        assert!(
+            harness
+                .path()
+                .join("projects/Other/workflows/release.toml")
+                .is_file()
+        );
+
+        // Each project sees its own file of that name.
+        for (project, says) in [(radiance, "In radiance."), (other, "In other.")] {
+            let shown: Value = testing::get(
+                &state,
+                &addr,
+                &format!("/v1/projects/{project}/workflows/release"),
+            )
+            .await;
+            assert_eq!(shown["definition"]["description"], says);
+            assert_eq!(shown["project"], project);
+            let listed: Value =
+                testing::get(&state, &addr, &format!("/v1/projects/{project}/workflows")).await;
+            assert_eq!(listed.as_array().unwrap().len(), 1);
+            assert_eq!(listed[0]["description"], says);
+            assert_eq!(listed[0]["project"], project);
+        }
+        // A body that names another project than the address is refused; nothing is written.
+        let mismatch = send(
+            &state,
+            &addr,
+            "PUT",
+            &format!("/v1/projects/{radiance}/workflows/extra"),
+            Some(json!({ "file": WORKFLOW, "project": other })),
+        )
+        .await;
+        assert_eq!(mismatch.status(), 422);
+        assert!(
+            !harness
+                .path()
+                .join("projects/radiance/workflows/extra.toml")
+                .exists()
+        );
+
+        // Deleting one leaves the other, and a project that has none of that name does not find it.
+        let deleted = send(
+            &state,
+            &addr,
+            "DELETE",
+            &format!("/v1/projects/{other}/workflows/release"),
+            None,
+        )
+        .await;
+        assert_eq!(deleted.status(), 200);
+        let deleted: Value = deleted.json().await.unwrap();
+        assert_eq!(deleted["project"], other);
+        assert_eq!(
+            send(
+                &state,
+                &addr,
+                "GET",
+                &format!("/v1/projects/{other}/workflows/release"),
+                None
+            )
+            .await
+            .status(),
+            404
+        );
+        assert_eq!(
+            send(
+                &state,
+                &addr,
+                "GET",
+                &format!("/v1/projects/{radiance}/workflows/release"),
+                None
+            )
+            .await
+            .status(),
+            200
+        );
+        // A project the server does not have is not found.
+        assert_eq!(
+            send(&state, &addr, "GET", "/v1/projects/999/workflows", None)
+                .await
+                .status(),
+            404
+        );
+    }
+
+    #[tokio::test]
+    async fn the_routes_that_name_no_project_are_gone_and_name_their_replacement() {
+        let (_dir, state, addr, harness) = started().await;
+        assert_eq!(
+            put(&state, &addr, "solo", json!({ "file": WORKFLOW }))
+                .await
+                .status(),
+            200
+        );
+        let file = harness.path().join("projects/radiance/workflows/solo.toml");
+        assert!(file.is_file());
+        for (method, path, body, replacement) in [
+            (
+                "GET",
+                "/v1/workflows",
+                None,
+                "GET /v1/projects/{id}/workflows",
+            ),
+            (
+                "GET",
+                "/v1/workflows/solo",
+                None,
+                "GET /v1/projects/{id}/workflows/{name}",
+            ),
+            (
+                "PUT",
+                "/v1/workflows/solo",
+                Some(json!({ "file": WORKFLOW })),
+                "PUT /v1/projects/{id}/workflows/{name}",
+            ),
+            (
+                "DELETE",
+                "/v1/workflows/solo",
+                None,
+                "DELETE /v1/projects/{id}/workflows/{name}",
+            ),
+            (
+                "GET",
+                "/v1/workflows/solo/run-inputs",
+                None,
+                "GET /v1/projects/{id}/workflows/{name}/run-inputs",
+            ),
+            (
+                "POST",
+                "/v1/workflows/solo/runs",
+                Some(json!({})),
+                "POST /v1/projects/{id}/workflows/{name}/runs",
+            ),
+        ] {
+            let response = send(&state, &addr, method, path, body.clone()).await;
+            assert_eq!(response.status(), 410, "{method} {path}");
+            let message = response.text().await.unwrap();
+            assert!(
+                message.contains(&format!(
+                    "this route is gone: workflows belong to a project; use {replacement}"
+                )),
+                "{message}"
+            );
+            // A workflow that does not exist is answered the same: nothing says what exists.
+            let missing = path.replace("solo", "nothing");
+            let response = send(&state, &addr, method, &missing, body).await;
+            assert_eq!(response.status(), 410, "{method} {missing}");
+            assert_eq!(response.text().await.unwrap(), message);
+        }
+        // Nothing was deleted or changed by the gone routes.
+        assert!(file.is_file());
+    }
+
+    /// A member of the organisation, a viewer and an owner who is not the first one, with their tokens.
+    fn people(state: &ApiState) -> [String; 2] {
+        use crate::server::api::TOKEN_PREFIX;
+        let make = |handle: &str, role: crate::store::Role, n: usize| {
+            let person = state.app.store.add_person(handle, handle, role).unwrap();
+            let token = format!("{TOKEN_PREFIX}{n:064}");
+            state
+                .app
+                .store
+                .add_access_token(person.id, "test", &token)
+                .unwrap();
+            token
+        };
+        [
+            make("mia", crate::store::Role::Member, 11),
+            make("vic", crate::store::Role::Viewer, 12),
+        ]
+    }
+
+    #[tokio::test]
+    async fn only_an_owner_changes_a_projects_workflows_and_a_member_starts_runs() {
+        let (_dir, state, addr, _harness) = started().await;
+        let [member, viewer] = people(&state);
+        let radiance = state
+            .app
+            .store
+            .project_by_name("radiance")
+            .unwrap()
+            .unwrap()
+            .id;
+        let path = format!("/v1/projects/{radiance}/workflows/release");
+        let call = |token: String, method: &'static str, path: String, body: Value| {
+            let addr = addr.clone();
+            async move {
+                reqwest::Client::new()
+                    .request(method.parse().unwrap(), format!("http://{addr}{path}"))
+                    .bearer_auth(token)
+                    .json(&body)
+                    .send()
+                    .await
+                    .unwrap()
+                    .status()
+                    .as_u16()
+            }
+        };
+        let owner = state.token.to_string();
+        // The owner saves it; a member and a viewer may not save or delete it.
+        assert_eq!(
+            call(
+                owner.clone(),
+                "PUT",
+                path.clone(),
+                json!({ "file": WORKFLOW })
+            )
+            .await,
+            200
+        );
+        for token in [&member, &viewer] {
+            assert_eq!(
+                call(
+                    token.clone(),
+                    "PUT",
+                    path.clone(),
+                    json!({ "file": WORKFLOW })
+                )
+                .await,
+                403
+            );
+            assert_eq!(
+                call(token.clone(), "DELETE", path.clone(), json!({})).await,
+                403
+            );
+            // Everyone reads.
+            assert_eq!(
+                call(token.clone(), "GET", path.clone(), json!({})).await,
+                200
+            );
+            assert_eq!(
+                call(
+                    token.clone(),
+                    "GET",
+                    format!("/v1/projects/{radiance}/workflows"),
+                    json!({})
+                )
+                .await,
+                200
+            );
+        }
+        // Starting a run needs a member: a viewer is refused, a member gets as far as the workflow's trigger.
+        let runs = format!("{path}/runs");
+        assert_eq!(
+            call(viewer.clone(), "POST", runs.clone(), json!({})).await,
+            403
+        );
+        assert_ne!(call(member.clone(), "POST", runs, json!({})).await, 403);
     }
 }

@@ -117,6 +117,7 @@ fn private(state: &ApiState) -> Private {
                 enabled: false,
             },
             "",
+            None,
         )
         .unwrap();
     let research = store
@@ -346,7 +347,10 @@ async fn every_route_of_a_private_project_s_things_is_404_to_a_non_member() {
     assert_eq!(response.status(), 404);
     let name = store_name(&state, private.repository);
     let response = reqwest::Client::new()
-        .post(format!("http://{addr}/v1/workflows/release/runs"))
+        .post(format!(
+            "http://{addr}/v1/projects/{}/workflows/release/runs",
+            private.project
+        ))
         .bearer_auth(&private.ben)
         .json(&json!({"repository": name}))
         .send()
@@ -542,6 +546,74 @@ async fn the_runs_of_a_workflow_of_a_private_project_are_left_out_for_a_non_memb
         assert_eq!(status, 404, "{body}");
         assert!(!body.to_string().contains("secret"), "{body}");
     }
+}
+
+/// The workflows of a private project are 404 to someone who is no member, and the lists that span projects leave
+/// them out.
+#[tokio::test]
+async fn the_workflows_of_a_private_project_are_invisible_to_a_non_member() {
+    let (dir, state, addr) = start().await;
+    let private = private(&state);
+    let harness = crate::harness::repo::testing::use_harness(&state.app, dir.path());
+    let project = state.app.store.project(private.project).unwrap().unwrap();
+    let folder = harness
+        .path()
+        .join(format!("projects/{}/workflows", project.name));
+    std::fs::create_dir_all(&folder).unwrap();
+    std::fs::write(
+        folder.join("secret.toml"),
+        "name = \"secret\"\ndescription = \"Hidden.\"\n\n[[trigger]]\nkind = \"manual\"\n",
+    )
+    .unwrap();
+    let base = format!("/v1/projects/{}/workflows", private.project);
+
+    for path in [
+        base.clone(),
+        format!("{base}/secret"),
+        format!("{base}/secret/run-inputs"),
+    ] {
+        assert_eq!(
+            call(&addr, &private.lea, "GET", &path).await.0,
+            200,
+            "{path}"
+        );
+        for token in [&private.ben, &private.olga] {
+            assert_eq!(call(&addr, token, "GET", &path).await.0, 404, "{path}");
+        }
+    }
+    for token in [&private.ben, &private.olga] {
+        let (status, _) = call(&addr, token, "POST", &format!("{base}/secret/runs")).await;
+        assert_eq!(status, 404);
+    }
+    assert_eq!(
+        call(&addr, &private.olga, "PUT", &format!("{base}/secret"))
+            .await
+            .0,
+        404
+    );
+    assert_eq!(
+        call(&addr, &private.olga, "DELETE", &format!("{base}/secret"))
+            .await
+            .0,
+        404
+    );
+
+    // The routes that name no project are gone for everyone, and answer alike whether the workflow exists or not: a
+    // `410` says nothing about a private project.
+    for token in [&private.lea, &private.ben, &private.olga] {
+        let (status, listed) = call(&addr, token, "GET", "/v1/workflows").await;
+        assert_eq!(status, 410, "{listed}");
+        assert!(!listed.to_string().contains("secret"), "{listed}");
+        let (hidden, hidden_body) = call(&addr, token, "GET", "/v1/workflows/secret").await;
+        let (missing, missing_body) = call(&addr, token, "GET", "/v1/workflows/nothing").await;
+        assert_eq!((hidden, missing), (410, 410));
+        assert_eq!(hidden_body, missing_body);
+    }
+    let (status, _) = call(&addr, &private.olga, "PUT", "/v1/workflows/secret").await;
+    assert_eq!(status, 410);
+    let (status, _) = call(&addr, &private.olga, "DELETE", "/v1/workflows/secret").await;
+    assert_eq!(status, 410);
+    assert!(folder.join("secret.toml").is_file(), "nothing is deleted");
 }
 
 #[tokio::test]

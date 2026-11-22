@@ -12,6 +12,7 @@ function automation(extra: Partial<Automation> = {}): Automation {
     agent: "Moebius",
     prompt: "Triage.",
     repository_id: 1,
+    project_id: 1,
     harness_repository: false,
     enabled: true,
     next_firing: NOW + 3 * 3600,
@@ -48,30 +49,31 @@ describe("a save", () => {
   it("says what is missing and sends nothing", () => {
     const form = newForm();
     expect(form.schedule).toBe("0 8 * * *");
-    expect(request(form)).toEqual({ problem: "Give the automation a name." });
-    expect(request({ ...form, name: "x", schedule: "0 8 * *" })).toEqual({
+    expect(request(form, 3)).toEqual({ problem: "Give the automation a name." });
+    expect(request({ ...form, name: "x", schedule: "0 8 * *" }, 3)).toEqual({
       problem:
         "A schedule has five fields: minute, hour, day of the month, month, day of the week.",
     });
-    expect(request({ ...form, name: "x" })).toEqual({
+    expect(request({ ...form, name: "x" }, 3)).toEqual({
       problem: "Write the prompt its chats start with.",
     });
   });
 
   it("sends the trimmed fields and the place", () => {
     const form = { ...formOf(automation()), name: " Triage ", prompt: " Go. " };
-    expect(request(form)).toEqual({
+    expect(request(form, 3)).toEqual({
       ok: {
         name: "Triage",
         schedule: "0 8 * * 1-5",
         agent: "Moebius",
         prompt: "Go.",
+        project: 3,
         repository: 1,
         harness: false,
         enabled: true,
       },
     });
-    const harness = request({ ...form, place: "harness" });
+    const harness = request({ ...form, place: "harness" }, 3);
     expect(harness).toMatchObject({ ok: { repository: null, harness: true } });
   });
 });

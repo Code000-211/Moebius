@@ -60,15 +60,20 @@ first on, `DELETE` turns it off) and `localize`. A repository's own `.moebius/` 
 
 ## Workflows
 
-A workflow is a file `workflows/<name>.toml` of the harness configuration repository: a trigger, nodes with a
-`position` and the edges between them. List what exists, read one, save one from a file, and delete one:
+A workflow belongs to one project: it is a file `projects/<project name>/workflows/<name>.toml` of the harness
+configuration repository, with a trigger, nodes with a `position` and the edges between them. A project's id and name
+are in `"$MOEBIUS" api GET /v1/projects`. List what a project has, read one, save one from a file, and delete one; give
+the project with `--project` (its name or id):
 
 ```sh
-"$MOEBIUS" workflow list
-"$MOEBIUS" workflow show release
-"$MOEBIUS" workflow save release release.toml
-"$MOEBIUS" workflow delete release
+"$MOEBIUS" workflow list --project Web
+"$MOEBIUS" workflow show release --project Web
+"$MOEBIUS" workflow save release release.toml --project Web
+"$MOEBIUS" workflow delete release --project Web
 ```
+
+Without `--project` the commands use the server's only project, and fail naming the projects when there are several.
+The routes that name a workflow without its project are gone (`410`); use the routes of `/v1/projects/{id}/workflows`.
 
 `save` replaces the whole file and commits it, so read it first (`workflow show`) and keep every node's `position`;
 an invalid definition is refused with the message and the file stays as it was. `delete` is refused while a run of the
@@ -145,7 +150,7 @@ the token (`docs/reference/configuration.md`, `[github]`).
 ## Skills and MCP servers
 
 Both live in the harness configuration repository and are named in an agent's `skills` and `mcp`. A server without
-one cannot have them. Only the person can set one up: the "Set up" button of the Skills, MCP servers or Agents page of
+one cannot have them. Only the person can set one up: the "Set up" button of the Agents page (its Agents, Skills and MCP servers tabs) of
 the app (`POST /v1/harness/setup`, which refuses you with `403`) moves the agents and rules of `moebius.toml` into a new
 repository and restarts the server. Tell the person that, and do not try to make one yourself.
 

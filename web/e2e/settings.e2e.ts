@@ -1,5 +1,5 @@
 /**
- * Settings as one page in a real browser: the sub-navigation reaches Models, Rules and Retro without leaving the
+ * Settings as one page in a real browser: the sub-navigation reaches Models, Plugins and Retro without leaving the
  * layout, keeps the address on reload, and narrows by what is typed in its search.
  */
 import { mkdtempSync, rmSync } from "node:fs";
@@ -42,7 +42,7 @@ async function withProject(page: Page) {
 const nav = (page: Page) => page.getByRole("navigation", { name: "Settings" });
 
 describe("Settings", () => {
-  it("reaches Models, Rules and Retro from one layout and keeps the address on reload", async () => {
+  it("reaches Models, Plugins and Retro from one layout and keeps the address on reload", async () => {
     server = await startServer();
     const page = await (await browser.newContext()).newPage();
     page.setDefaultTimeout(8000);
@@ -51,7 +51,7 @@ describe("Settings", () => {
     await nav(page).waitFor();
     for (const [label, path] of [
       ["Models", "models"],
-      ["Rules", "rules"],
+      ["Plugins", "plugins"],
       ["Retro", "retro"],
     ] as const) {
       await nav(page).getByRole("link", { name: label, exact: true }).click();
@@ -128,13 +128,8 @@ describe("Settings", () => {
       ["You", "Appearance"],
       ["You", "Notifications"],
       ["You", "Keyboard"],
-      ["Agents", "Agents"],
       ["Agents", "Models"],
-      ["Agents", "Skills"],
       ["Agents", "Plugins"],
-      ["Agents", "MCP servers"],
-      ["Automation", "Rules"],
-      ["Automation", "Workflows"],
       ["Automation", "Column scripts"],
       ["Automation", "Schedules"],
       ["Insight", "Analytics"],
@@ -143,14 +138,11 @@ describe("Settings", () => {
       ["Insight", "Export"],
       ["Server", "General"],
       ["Server", "Repositories"],
-      ["Server", "Runners"],
       ["Server", "Members"],
     ]);
     for (const [label, path, content] of [
       ["Column scripts", "column-scripts", "Open"],
       ["Schedules", "schedules", "Retro"],
-      // The fake has a runner; a new real server has none and says so.
-      ["Runners", "runners", usesRealServer ? "No runner." : "build.example.com"],
       ["Export", "export", "Open Decisions"],
     ] as const) {
       await nav(page).getByRole("link", { name: label, exact: true }).click();

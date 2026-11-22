@@ -1,12 +1,12 @@
 /**
  * The sub-navigation of Settings: a search field and the entries in their groups. Typing narrows the entries across
- * the groups; a search that matches nothing says so in one line. Entries come from `settingsEntries.ts`.
+ * the groups; a search that matches nothing says so in one line. Entries come from the table of `nav.ts`.
  */
 import { useState } from "react";
 import { NavLink } from "react-router";
 import { SearchIcon } from "../../ui/icons";
 import { cn } from "../../ui/lib/cn";
-import { type SettingsEntry, searchEntries } from "./settingsEntries";
+import { type SettingsEntry, searchEntries } from "../nav";
 
 export function SettingsNav({ entries }: { entries: readonly SettingsEntry[] }) {
   const [query, setQuery] = useState("");

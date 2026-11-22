@@ -114,6 +114,8 @@ const openProperties = async (number: number) => {
 const closeProperties = async (number: number) => {
   await page.keyboard.press("Escape");
   await properties(number).waitFor({ state: "detached" });
+  // The card menu that opened it plays its exit animation with the focus still on its item; wait for it to be gone.
+  await page.getByRole("menu").waitFor({ state: "detached" });
 };
 /** The properties of the card numbered `number`, with the fold "More properties" open, once they are drawn. */
 const unfolded = async (number: number) => {
@@ -220,7 +222,7 @@ describe("the board page", () => {
     // A tab is in the address, the same header stays, and Board comes back at the board's address.
     await tabs.getByRole("tab", { name: "Workflows" }).click();
     await page.waitForURL("**/projects/1/workflows");
-    await page.getByText("Workflows is coming to the web app soon").waitFor();
+    await page.getByRole("button", { name: "Run a workflow here" }).waitFor();
     await tabs.getByRole("tab", { name: "Milestones" }).click();
     await page.waitForURL("**/projects/1/milestones");
     await tabs.getByRole("tab", { name: "Board" }).click();
@@ -604,12 +606,12 @@ describe("live data", () => {
       expect(made.ok(), await made.text()).toBe(true);
       ids.push(((await made.json()) as { id: number }).id);
     }
-    await page.goto(`${server.url}/issues`);
+    await page.goto(`${server.url}/views/all-issues`);
     await page.getByTestId("list-row").filter({ hasText: "First issue" }).click();
-    await page.waitForURL(`**/issues?**card=${ids[0]}`);
+    await page.waitForURL(`**/views/all-issues?**card=${ids[0]}`);
     await dock().getByText("First issue").first().waitFor();
     await page.goBack();
-    await page.getByTestId("issues-page").waitFor();
+    await page.getByTestId("all-issues").waitFor();
   });
 
   it.skipIf(usesRealServer)("links the pull request of a card from the dock", async () => {

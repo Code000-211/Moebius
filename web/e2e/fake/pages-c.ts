@@ -26,6 +26,8 @@ export interface PagesCFake {
   readonly research: Array<Json & { id: number; status: string }>;
   /** What `GET /v1/retros` lists. A test that needs more days than the four writes them here. */
   readonly days: Array<{ date: string; status: string; errors: number; proposals: number }>;
+  /** The automations as the server lists them now: each is a schedule workflow of its project, `automation-<id>`. */
+  automationList(): Array<{ id: number; name: string; project_id: number }>;
 }
 
 type Json = Record<string, unknown>;
@@ -155,6 +157,7 @@ export function createPagesCFake(
       prompt:
         "Triage the issues opened since yesterday: label them and say which are ready to start.",
       repository_id: 1,
+      project_id: 1,
       harness_repository: false,
       enabled: true,
       next_firing: IN(3),
@@ -167,6 +170,7 @@ export function createPagesCFake(
       agent: "Coder",
       prompt: "Look for outdated dependencies and offer an upgrade.",
       repository_id: null,
+      project_id: 1,
       harness_repository: false,
       enabled: true,
       next_firing: IN(48),
@@ -645,6 +649,7 @@ export function createPagesCFake(
         agent: body.agent,
         prompt: String(body.prompt).trim(),
         repository_id: body.repository ?? null,
+        project_id: body.project ?? 1,
         harness_repository: body.harness === true,
         enabled: body.enabled !== false,
         next_firing: body.enabled === false ? null : IN(8),
@@ -775,6 +780,7 @@ export function createPagesCFake(
             agent: body.agent,
             prompt: String(body.prompt).trim(),
             repository_id: body.repository ?? null,
+            project_id: body.project ?? automation.project_id,
             harness_repository: body.harness === true,
             enabled: body.enabled !== false,
             next_firing: body.enabled === false ? null : IN(8),
@@ -882,6 +888,12 @@ export function createPagesCFake(
     scripts,
     research,
     days: retroDays,
+    automationList: () =>
+      automations.map((each) => ({
+        id: each.id,
+        name: String(each.name),
+        project_id: Number(each.project_id),
+      })),
     refuseNext(method, path, status, message) {
       refusals.set(`${method} ${path}`, { status, message });
     },

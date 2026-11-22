@@ -1020,7 +1020,7 @@ describe("the fleet", () => {
       server.broadcast?.({ kind: "run_started", data: { run: chat } });
       server.broadcast?.({ kind: "lagged", data: { missed: 1 } });
 
-      await expect.poll(() => page.getByTestId("list-row").count()).toBe(2);
+      await expect.poll(() => page.getByTestId("list-row").count()).toBe(3);
       const tiles = page.getByTestId("list-row");
       const card = tiles.filter({ hasText: "Add a feature" });
       // The runs are one list of rows with no group rows; a row says what the step is in plain words, not the command.
@@ -1110,7 +1110,7 @@ describe("the fleet", () => {
         repository_id: 1,
       }) as number;
       server.broadcast?.({ kind: "run_started", data: { run: chat } });
-      await expect.poll(() => page.getByTestId("list-row").count()).toBe(2);
+      await expect.poll(() => page.getByTestId("list-row").count()).toBe(3);
       const tiles = page.getByTestId("list-row");
       await expect
         .poll(() => page.getByRole("search", { name: "Filter the runs" }).count())
@@ -1134,7 +1134,7 @@ describe("the fleet", () => {
       await page.getByText("No run matches").waitFor();
       await page.getByRole("button", { name: "Filter · 2" }).click();
       await page.getByRole("menuitem", { name: "Clear filters" }).click();
-      await expect.poll(() => page.getByTestId("list-row").count()).toBe(2);
+      await expect.poll(() => page.getByTestId("list-row").count()).toBe(3);
       expect(path()).toBe("/fleet");
     },
   );

@@ -16,6 +16,7 @@ import { keys } from "../../api/keys";
 import type { Card } from "../../api/types/board";
 import { modalIsOpen } from "../../ui/lib/shortcuts";
 import { Notice } from "../../ui/page/Notice";
+import { ALL_ISSUES_PATH } from "../pages";
 import { NewIssueDialog } from "./NewIssueDialog";
 
 /** What opens the form: the repository (the page's own when left out), a parent, and who hears of the card made. */
@@ -71,11 +72,11 @@ export function NewIssueProvider({ children }: { children: ReactNode }) {
   const [chosen, setChosen] = useState<number | null>(null);
   const [said, setSaid] = useState<string | null>(null);
   const boards = data.data?.boards ?? [];
-  // A project's pages are about the repository they name, else the project's home repository; so is the Issues page
+  // A project's pages are about the repository they name, else the project's home repository; so is the All issues view
   // filtered to one project.
   const at = projectOf(location.pathname, location.search);
   const filtered =
-    location.pathname === "/issues"
+    location.pathname === ALL_ISSUES_PATH
       ? Number(new URLSearchParams(location.search).get("project")) || null
       : (at?.project ?? null);
   const projects = useQuery({

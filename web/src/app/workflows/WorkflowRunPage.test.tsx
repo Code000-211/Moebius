@@ -14,6 +14,8 @@ const LONG = "the workspace compiled and the tests began to run\n".repeat(40);
 
 const FAILED: WorkflowRun = {
   id: 41,
+  project: 1,
+  project_name: "demo",
   workflow: "release",
   repository_id: 1,
   trigger: "schedule",
@@ -141,5 +143,23 @@ describe("a run that waits", () => {
     show(WAITING);
     const approve = await screen.findByRole("region", { name: "Node approve" });
     expect(approve.getAttribute("aria-current")).toBe("step");
+  });
+});
+
+describe("the way back from a run", () => {
+  it("leads to the Workflows tab of the project the run belongs to, and its definition", async () => {
+    show(FAILED);
+    const back = await screen.findByRole("link", { name: /demo workflows/ });
+    expect(back.getAttribute("href")).toBe("/projects/1/workflows");
+    expect(screen.getByRole("link", { name: "Open definition" }).getAttribute("href")).toBe(
+      "/projects/1/workflows/release",
+    );
+  });
+
+  it("leads to the list of projects for a run from before workflows belonged to projects", async () => {
+    show({ ...FAILED, project: null, project_name: null });
+    const back = await screen.findByRole("link", { name: /Projects/ });
+    expect(back.getAttribute("href")).toBe("/projects");
+    expect(screen.queryByRole("link", { name: "Open definition" })).toBeNull();
   });
 });

@@ -1,6 +1,8 @@
 //! The workflow commands: list the workflows of the harness configuration repository, show one, save a file as one,
 //! run one by hand with the inputs its `manual` trigger names, and delete one. Saving and deleting are commits on
-//! that repository. A run of a workflow is cancelled by its id.
+//! that repository. A workflow belongs to a project: `--project` (a name or an id) says which, and without it the
+//! commands use the server's only project, or fail naming the projects when there are several. A run of a workflow is
+//! cancelled by its id.
 
 use clap::Subcommand;
 use serde_json::{Map, Value, json};
@@ -11,11 +13,18 @@ use super::{Plan, Request, Show, json_input, read_input};
 #[derive(Debug, Subcommand)]
 pub enum WorkflowCommand {
     /// The workflows, with their trigger kind and how many nodes they have.
-    List,
+    List {
+        /// The project whose workflows to list, by name or id; needed when the server has more than one project.
+        #[arg(long)]
+        project: Option<String>,
+    },
     /// One workflow: its file and its parsed form.
     Show {
         /// The workflow's name.
         name: String,
+        /// The project it belongs to, by name or id; needed when the server has more than one project.
+        #[arg(long)]
+        project: Option<String>,
     },
     /// Add a workflow or replace it, committed to the harness configuration repository.
     Save {
@@ -23,6 +32,9 @@ pub enum WorkflowCommand {
         name: String,
         /// The TOML file to save, or `-` for standard input.
         file: String,
+        /// The project it belongs to, by name or id; needed when the server has more than one project.
+        #[arg(long)]
+        project: Option<String>,
     },
     /// Start a run by hand, giving the inputs the workflow's `manual` trigger names.
     Run {
@@ -41,11 +53,17 @@ pub enum WorkflowCommand {
         /// alternative to `--input`.
         #[arg(long, conflicts_with = "input")]
         inputs: Option<String>,
+        /// The project the workflow belongs to, by name or id; needed when the server has more than one project.
+        #[arg(long)]
+        project: Option<String>,
     },
     /// Delete a workflow; a run of it queued or running refuses the deletion.
     Delete {
         /// The workflow's name.
         name: String,
+        /// The project it belongs to, by name or id; needed when the server has more than one project.
+        #[arg(long)]
+        project: Option<String>,
     },
     /// Cancel a run and stop its nodes; a run that has ended refuses the cancel.
     Cancel {
@@ -54,24 +72,102 @@ pub enum WorkflowCommand {
     },
 }
 
+/// The id of the project `given` names, a name (in any case) or an id, looked up with `get`.
+pub fn project_id(
+    get: &mut dyn FnMut(&str) -> Result<Value, String>,
+    given: &str,
+) -> Result<i64, String> {
+    let projects = get("/v1/projects")?;
+    let projects: &[Value] = projects.as_array().map_or(&[], Vec::as_slice);
+    let found = projects
+        .iter()
+        .find(|p| {
+            p["name"]
+                .as_str()
+                .is_some_and(|n| n.eq_ignore_ascii_case(given))
+        })
+        .or_else(|| {
+            let id = given.parse::<i64>().ok()?;
+            projects.iter().find(|p| p["id"].as_i64() == Some(id))
+        });
+    match found.and_then(|p| p["id"].as_i64()) {
+        Some(id) => Ok(id),
+        None => {
+            let names: Vec<&str> = projects.iter().filter_map(|p| p["name"].as_str()).collect();
+            Err(format!(
+                "there is no project {given}; the projects are {}",
+                names.join(", ")
+            ))
+        }
+    }
+}
+
+/// The route of the workflows (`name` none) or of one workflow: in the project `project` names, or in the server's
+/// only project when it names none.
+fn route(
+    get: &mut dyn FnMut(&str) -> Result<Value, String>,
+    project: &Option<String>,
+    name: Option<&str>,
+) -> Result<String, String> {
+    let id = match project {
+        Some(project) => project_id(get, project)?,
+        None => only_project(get)?,
+    };
+    let base = format!("/v1/projects/{id}/workflows");
+    Ok(match name {
+        Some(name) => format!("{base}/{name}"),
+        None => base,
+    })
+}
+
+/// The id of the one project the server has; with none or several, an error that says to name one.
+fn only_project(get: &mut dyn FnMut(&str) -> Result<Value, String>) -> Result<i64, String> {
+    let projects = get("/v1/projects")?;
+    let projects: &[Value] = projects.as_array().map_or(&[], Vec::as_slice);
+    if let [only] = projects
+        && let Some(id) = only["id"].as_i64()
+    {
+        return Ok(id);
+    }
+    let names: Vec<&str> = projects.iter().filter_map(|p| p["name"].as_str()).collect();
+    Err(format!(
+        "name the project with --project; the projects are {}",
+        if names.is_empty() {
+            "none yet".to_string()
+        } else {
+            names.join(", ")
+        }
+    ))
+}
+
 /// The request a workflow command stands for and how to show its answer. `get` reads a route, for the command that
-/// types the inputs it is given.
+/// types the inputs it is given and for the project a name stands for.
 pub fn workflow(
     command: &WorkflowCommand,
     get: &mut dyn FnMut(&str) -> Result<Value, String>,
 ) -> Plan {
     Ok(match command {
-        WorkflowCommand::List => (
-            Request::get("/v1/workflows"),
-            Show::Table(&["name", "description", "trigger_kind", "node_count"]),
+        WorkflowCommand::List { project } => (
+            Request::get(route(get, project, None)?),
+            Show::Table(&[
+                "project_name",
+                "name",
+                "description",
+                "trigger_kind",
+                "node_count",
+            ]),
         ),
-        WorkflowCommand::Show { name } => {
-            (Request::get(format!("/v1/workflows/{name}")), Show::Raw)
+        WorkflowCommand::Show { name, project } => {
+            (Request::get(route(get, project, Some(name))?), Show::Raw)
         }
-        WorkflowCommand::Save { name, file } => {
+        WorkflowCommand::Save {
+            name,
+            file,
+            project,
+        } => {
             let text = read_input(file)?;
             (
-                Request::put(format!("/v1/workflows/{name}"), json!({ "file": text })),
+                Request::put(route(get, project, Some(name))?, json!({ "file": text })),
                 Show::Object,
             )
         }
@@ -80,6 +176,7 @@ pub fn workflow(
             repository,
             input,
             inputs,
+            project,
         } => {
             let mut given = match inputs {
                 Some(source) => match json_input(source)? {
@@ -88,8 +185,9 @@ pub fn workflow(
                 },
                 None => Map::new(),
             };
+            let base = route(get, project, Some(name))?;
             if !input.is_empty() {
-                let declared = get(&format!("/v1/workflows/{name}/run-inputs"))?;
+                let declared = get(&format!("{base}/run-inputs"))?;
                 for flag in input {
                     let (input_name, text) = flag
                         .split_once('=')
@@ -101,13 +199,10 @@ pub fn workflow(
             if let Some(repository) = repository {
                 body["repository"] = json!(repository);
             }
-            (
-                Request::post(format!("/v1/workflows/{name}/runs"), body),
-                Show::Object,
-            )
+            (Request::post(format!("{base}/runs"), body), Show::Object)
         }
-        WorkflowCommand::Delete { name } => (
-            Request::delete(format!("/v1/workflows/{name}")),
+        WorkflowCommand::Delete { name, project } => (
+            Request::delete(route(get, project, Some(name))?),
             Show::Object,
         ),
         WorkflowCommand::Cancel { id } => (
@@ -168,6 +263,63 @@ mod tests {
             inputs.insert(name.to_string(), typed(&declared, name, text)?);
         }
         Ok(Value::Object(inputs))
+    }
+
+    #[test]
+    fn a_workflow_is_addressed_through_the_routes_of_its_project() {
+        use crate::cli::tests::plan_with;
+        let mut get = |route: &str| -> Result<Value, String> {
+            match route {
+                "/v1/projects" => Ok(json!([{"id": 3, "name": "Web"}, {"id": 5, "name": "API"}])),
+                other => Err(format!("unexpected {other}")),
+            }
+        };
+        let path = |args: &[&str], get: &mut dyn FnMut(&str) -> Result<Value, String>| {
+            plan_with(args, get).map(|(request, _)| (request.method.to_string(), request.path))
+        };
+        assert_eq!(
+            path(&["workflow", "list", "--project", "web"], &mut get),
+            Ok(("GET".into(), "/v1/projects/3/workflows".into()))
+        );
+        assert_eq!(
+            path(&["workflow", "show", "ship", "--project", "5"], &mut get),
+            Ok(("GET".into(), "/v1/projects/5/workflows/ship".into()))
+        );
+        assert_eq!(
+            path(
+                &["workflow", "delete", "ship", "--project", "API"],
+                &mut get
+            ),
+            Ok(("DELETE".into(), "/v1/projects/5/workflows/ship".into()))
+        );
+        assert_eq!(
+            path(&["workflow", "run", "ship", "--project", "Web"], &mut get),
+            Ok(("POST".into(), "/v1/projects/3/workflows/ship/runs".into()))
+        );
+        // Without a project, several projects are refused, naming them.
+        let error = path(&["workflow", "show", "ship"], &mut get).unwrap_err();
+        assert!(
+            error.contains("--project") && error.contains("Web") && error.contains("API"),
+            "{error}"
+        );
+        // The one project there is stands in for it.
+        let mut one = |route: &str| -> Result<Value, String> {
+            match route {
+                "/v1/projects" => Ok(json!([{"id": 7, "name": "Solo"}])),
+                other => Err(format!("unexpected {other}")),
+            }
+        };
+        assert_eq!(
+            path(&["workflow", "show", "ship"], &mut one),
+            Ok(("GET".into(), "/v1/projects/7/workflows/ship".into()))
+        );
+        assert_eq!(
+            path(&["workflow", "list"], &mut one),
+            Ok(("GET".into(), "/v1/projects/7/workflows".into()))
+        );
+        // A project that is not there is refused, naming the projects.
+        let error = path(&["workflow", "list", "--project", "nope"], &mut get).unwrap_err();
+        assert!(error.contains("Web") && error.contains("API"), "{error}");
     }
 
     #[test]

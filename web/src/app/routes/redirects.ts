@@ -10,12 +10,15 @@
  */
 import type { Project } from "../../api/types/projects";
 import {
+  ALL_ISSUES_PATH,
   boardPath,
   cyclePath,
   projectTabPath,
   repositoryPath,
   scriptPath,
   settingsPath,
+  workflowCanvasPath,
+  workflowPath,
 } from "../pages";
 import { holdsRepository, homeProjectOf, projectForOldAddress } from "../projects/model";
 
@@ -80,7 +83,34 @@ function oldTab(
   return withQuery(path, {}, search, ["project", "cycle"]);
 }
 
+/**
+ * Where the old project-less Workflows and Automations addresses lead: the Workflows tab (or the definition or canvas
+ * of `name` under it) of the project named by `?project=`, else of the one opened last or the only one, else the list
+ * of projects. An old Automations address leads to the Scheduled runs; the automation that was open (`?automation=`)
+ * stays open.
+ */
+function oldWorkflows(
+  projects: Project[],
+  search: URLSearchParams,
+  to: (project: number) => string,
+  first: Record<string, string> = {},
+): string {
+  const project = projectForOldAddress(projects, search);
+  return project ? withQuery(to(project.id), first, search, ["project"]) : "/projects";
+}
+
 export const LEGACY_ROUTES: readonly LegacyRoute[] = [
+  // Runners and Ports are tabs of Fleet: live load, not settings.
+  {
+    path: "runners",
+    resolve: (_params, _projects, search) => withQuery("/fleet/runners", {}, search),
+  },
+  { path: "ports", resolve: (_params, _projects, search) => withQuery("/fleet/ports", {}, search) },
+  {
+    // More listed pages that now have a place of their own; the list itself is gone, and the Inbox is home.
+    path: "more",
+    resolve: () => "/inbox",
+  },
   {
     // The board of a repository is the board of its home project, at that repository.
     path: "board/:repoId",
@@ -142,4 +172,61 @@ export const LEGACY_ROUTES: readonly LegacyRoute[] = [
     resolve: (_params, projects, search) => oldTab("milestones", projects, search),
   },
   { path: "intake", resolve: (_params, projects, search) => oldTab("intake", projects, search) },
+  {
+    path: "workflows",
+    resolve: (_params, projects, search) =>
+      oldWorkflows(projects, search, (project) => projectTabPath(project, "workflows")),
+  },
+  {
+    path: "workflows/:name",
+    resolve: ({ name }, projects, search) =>
+      name === undefined
+        ? null
+        : oldWorkflows(projects, search, (project) => workflowPath(project, name)),
+  },
+  {
+    path: "workflows/:name/canvas",
+    resolve: ({ name }, projects, search) =>
+      name === undefined
+        ? null
+        : oldWorkflows(projects, search, (project) => workflowCanvasPath(project, name)),
+  },
+  {
+    path: "automations",
+    resolve: (_params, projects, search) =>
+      oldWorkflows(projects, search, (project) => projectTabPath(project, "workflows"), {
+        runs: "scheduled",
+      }),
+  },
+  {
+    // Skills and MCP servers are tabs of Agents; `?skill=` and `?server=` open the same window there.
+    path: "skills",
+    resolve: (_params, _projects, search) => withQuery("/agents/skills", {}, search),
+  },
+  {
+    path: "mcp-servers",
+    resolve: (_params, _projects, search) => withQuery("/agents/mcp-servers", {}, search),
+  },
+  {
+    // Agents and Rules were Settings pages first: `/settings/agents`, `/settings/skills` and the like.
+    path: "settings/agents",
+    resolve: (_params, _projects, search) => withQuery("/agents", {}, search),
+  },
+  {
+    path: "settings/skills",
+    resolve: (_params, _projects, search) => withQuery("/agents/skills", {}, search),
+  },
+  {
+    path: "settings/mcp-servers",
+    resolve: (_params, _projects, search) => withQuery("/agents/mcp-servers", {}, search),
+  },
+  {
+    path: "settings/rules",
+    resolve: (_params, _projects, search) => withQuery("/rules", {}, search),
+  },
+  {
+    // The list of every issue is the built-in view "All issues"; its filters and sort stay in the query.
+    path: "issues",
+    resolve: (_params, _projects, search) => withQuery(ALL_ISSUES_PATH, {}, search),
+  },
 ];

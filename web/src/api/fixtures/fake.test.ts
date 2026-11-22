@@ -49,13 +49,29 @@ async function ask(path: string): Promise<{ status: number; body: unknown }> {
 
 describe("the fake server's workflow answers", () => {
   it("have the keys of the real server's", async () => {
-    sameKeys((await ask("/v1/workflows")).body, fixtures.list, "list");
-    sameKeys((await ask("/v1/workflows/release")).body, fixtures.show, "show");
-    sameKeys((await ask("/v1/workflow-runs?workflow=release")).body, fixtures.runs, "runs");
+    sameKeys((await ask("/v1/projects/1/workflows")).body, fixtures.list, "list");
+    sameKeys((await ask("/v1/projects/1/workflows/release")).body, fixtures.show, "show");
+    sameKeys((await ask("/v1/workflow-runs?project=1")).body, fixtures.runs, "runs");
+    sameKeys(
+      (await ask("/v1/workflow-runs?project=1&workflow=release")).body,
+      fixtures.runs,
+      "runs",
+    );
     sameKeys((await ask("/v1/workflow-runs/41")).body, fixtures.run, "run");
   });
 
   it("answers a workflow that does not exist as not found", async () => {
-    expect((await ask("/v1/workflows/nothing")).status).toBe(404);
+    expect((await ask("/v1/projects/1/workflows/nothing")).status).toBe(404);
+    expect((await ask("/v1/projects/2/workflows")).status).toBe(404);
+  });
+
+  it("answers the routes that name no project as gone", async () => {
+    for (const path of [
+      "/v1/workflows",
+      "/v1/workflows/release",
+      "/v1/workflows/release/run-inputs",
+    ]) {
+      expect((await ask(path)).status, path).toBe(410);
+    }
   });
 });

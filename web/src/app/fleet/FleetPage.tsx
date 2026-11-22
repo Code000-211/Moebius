@@ -1,12 +1,18 @@
 /**
- * The Fleet page, with the tabs Active and Finished in its header (`?tab=finished` in the address, so a reload keeps
- * it). Active is the work that is going on, as one virtual list of 36px rows; Finished is the runs that ended, newest
- * first under the day they ended on, with the outcome, the card's id, the tokens and how long they went on. The runs that wait for the person come
+ * The Fleet page: three tabs in its header, Runs, Runners and Ports, each at an address of its own (`/fleet`,
+ * `/fleet/runners`, `/fleet/ports`), so a reload and a link keep the tab. Runners (the machines that run harnesses over
+ * SSH) and Ports (what the server listens on) are live load, so they sit beside the runs. Runners and Ports say their
+ * count in the tab, which is a fact the page does not otherwise show.
+ *
+ * Runs has the tabs Active and Finished under the header (`?tab=finished` in the address). Active is the work that is
+ * going on, as one virtual list of 36px rows: the runs of cards and chats and the runs of workflows of every project,
+ * the project's name on a workflow's row; Finished is the runs that ended, newest first under the day they ended on,
+ * with the outcome, the id, the tokens and how long they went on. The runs that wait for the person come
  * first, then the others, with no group rows. A row has the status icon, the issue's id, the title, one
  * pale line (the kind of run and the step it is at; "Waiting for approval" for an outside issue that waits) and how long it has gone on. A run
  * that waits for approval carries a quiet "Approve". Stop and the tokens are on the hovered or the selected row only,
  * and are not in the page otherwise. The rows that are drawn read their run's events and follow the stream's
- * `run_event`s, so the step moves on its own; a row opens the card in its window, or the chat. The arrows move the
+ * `run_event`s, so the step moves on its own; a row opens the card in its window, the chat, or the workflow run's page. The arrows move the
  * selection, Shift chooses a range, and a bar at the foot, or a right click, stops every chosen run at once; Escape lets
  * go. A read that fails says what could not be read and offers to try again, rather than saying that nothing is working.
  */
@@ -25,10 +31,12 @@ import { Link, useNavigate } from "react-router";
 import { approve, snapshot as readSnapshot } from "../../api/calls/board";
 import { chats as readChats, stopRun } from "../../api/calls/chat";
 import { finishedRuns as readFinished, run as readRun } from "../../api/calls/fleet";
+import { runners as readRunners } from "../../api/calls/harness";
+import { ports as readPorts } from "../../api/calls/runs";
+import { allWorkflowRuns, cancelWorkflowRun } from "../../api/calls/workflows";
 import { sayError } from "../../api/errorText";
 import { isApiError } from "../../api/http";
 import { keys } from "../../api/keys";
-import type { FinishedRun } from "../../api/types/runs";
 import { useThread } from "../../chat/useThread";
 import { thinkingLabel } from "../../ui/chat/ChatCollapsedThinking";
 import { Button } from "../../ui/components/Button";
@@ -50,12 +58,16 @@ import { TabPanel, Tabs } from "../../ui/page/Tabs";
 import { useToast } from "../../ui/page/Toast";
 import { firstRowKey, openedKey, VirtualList } from "../../ui/page/VirtualList";
 import { useOpenCard } from "../board/CardWindowHost";
+import { PortsPanel } from "../ports/PortsPanel";
 import {
   afterSteps,
   choiceKey,
   doingWords,
   FILTER_KEYS,
+  type FinishedEntry,
+  FLEET_SECTIONS,
   FLEET_TABS,
+  type FleetSection,
   type FleetTab,
   filtered,
   filterFields,
@@ -63,10 +75,13 @@ import {
   finishedId,
   finishedItems,
   finishedKey,
+  finishedWorkflows,
+  isFinishedWorkflow,
   items,
   lasted,
   latestSteps,
   needsYou,
+  outcomeOf,
   tabOf,
   thinkingNow,
   thoughtSeconds,
@@ -76,10 +91,60 @@ import {
   working,
   workStartedAt,
 } from "./model";
+import { RunnersPanel } from "./RunnersPanel";
 import { usePause } from "./usePause";
 
-export function FleetPage() {
-  const [params, setQuery] = useQueryParams();
+/** The Fleet page at the tab `section` names; the router mounts it once for each address. */
+export function FleetPage({ section = "runs" }: { section?: FleetSection }) {
+  const navigate = useNavigate();
+  const base = useId();
+  // Runners and Ports say how many there are in their tab; a read that failed or is not back yet says nothing.
+  const runners = useQuery({ queryKey: keys.runners, queryFn: readRunners });
+  const ports = useQuery({ queryKey: keys.ports, queryFn: readPorts });
+  const counts: Record<FleetSection, number | undefined> = {
+    runs: undefined,
+    runners: runners.data?.length,
+    ports: ports.data?.length,
+  };
+  return (
+    <>
+      <PageHeader
+        title="Fleet"
+        tabs={
+          <Tabs
+            tabs={FLEET_SECTIONS.map((each) => ({ ...each, count: counts[each.value] }))}
+            value={section}
+            onChange={(next) =>
+              navigate(FLEET_SECTIONS.find((each) => each.value === next)?.path ?? "/fleet")
+            }
+            label="Fleet"
+            idBase={base}
+          />
+        }
+        actions={section === "runs" ? <RunsActions /> : undefined}
+      />
+      {section === "runs" ? (
+        // The list runs the full width of the panel, from under the header to the foot, and scrolls there; the panel
+        // itself does not. The negative margins take back the padding the shell gives a page.
+        <TabPanel
+          idBase={base}
+          value={section}
+          className="-mx-4 -mt-4 -mb-4 flex h-full min-h-40 flex-col outline-none"
+        >
+          <RunsTab />
+        </TabPanel>
+      ) : (
+        <TabPanel idBase={base} value={section} className="outline-none">
+          {section === "runners" ? <RunnersPanel /> : <PortsPanel />}
+        </TabPanel>
+      )}
+    </>
+  );
+}
+
+/** The header's controls of the Runs tab: the filter of the list, and pausing every agent. */
+function RunsActions() {
+  const [params] = useQueryParams();
   const tab = tabOf(params.get("tab"));
   const pause = usePause();
   const toast = useToast();
@@ -103,50 +168,48 @@ export function FleetPage() {
         ),
     });
   };
+  return (
+    <>
+      <FleetFilter tab={tab} />
+      {/* Pausing the agents has no meaning for runs that are over. */}
+      {tab === "active" && (
+        <Button
+          variant="secondary"
+          size="sm"
+          onClick={press}
+          disabled={pause.busy}
+          data-testid="pause-all"
+        >
+          {pause.paused ? (
+            <PlayIcon className="size-4" aria-hidden="true" />
+          ) : (
+            <PauseIcon className="size-4" aria-hidden="true" />
+          )}
+          {pause.paused ? "Resume all" : "Pause all"}
+        </Button>
+      )}
+    </>
+  );
+}
+
+/** The Runs tab: Active and Finished under the header, and the list of the one chosen. */
+function RunsTab() {
+  const [params, setQuery] = useQueryParams();
+  const tab = tabOf(params.get("tab"));
+  const pause = usePause();
   const base = useId();
   return (
     <>
-      <PageHeader
-        title="Fleet"
-        tabs={
-          <Tabs
-            tabs={[...FLEET_TABS]}
-            value={tab}
-            onChange={(next) => setQuery({ tab: next === "active" ? "" : next })}
-            label="Fleet"
-            idBase={base}
-          />
-        }
-        actions={
-          <>
-            <FleetFilter tab={tab} />
-            {/* Pausing the agents has no meaning for runs that are over. */}
-            {tab === "active" && (
-              <Button
-                variant="secondary"
-                size="sm"
-                onClick={press}
-                disabled={pause.busy}
-                data-testid="pause-all"
-              >
-                {pause.paused ? (
-                  <PlayIcon className="size-4" aria-hidden="true" />
-                ) : (
-                  <PauseIcon className="size-4" aria-hidden="true" />
-                )}
-                {pause.paused ? "Resume all" : "Pause all"}
-              </Button>
-            )}
-          </>
-        }
-      />
-      {/* The list runs the full width of the panel, from under the header to the foot, and scrolls there; the panel
-        itself does not. The negative margins take back the padding the shell gives a page. */}
-      <TabPanel
-        idBase={base}
-        value={tab}
-        className="-mx-4 -mt-4 -mb-4 flex h-full min-h-40 flex-col outline-none"
-      >
+      <div className="shrink-0 border-b border-hairline px-4 pt-2">
+        <Tabs
+          tabs={[...FLEET_TABS]}
+          value={tab}
+          onChange={(next) => setQuery({ tab: next === "active" ? "" : next })}
+          label="Runs"
+          idBase={base}
+        />
+      </div>
+      <TabPanel idBase={base} value={tab} className="flex min-h-0 flex-1 flex-col outline-none">
         {pause.paused && (
           <p className="shrink-0 border-b border-hairline px-4 py-2 text-sm text-muted">
             {`Paused by ${pause.paused.by.replace(/^person:/, "@")}`}
@@ -176,13 +239,19 @@ function FleetFilter({ tab }: { tab: FleetTab }) {
     queryFn: () => readFinished(),
     enabled: tab === "finished",
   });
+  const workflows = useQuery({
+    queryKey: keys.fleetWorkflowRuns,
+    queryFn: () => allWorkflowRuns(),
+  });
   const names = useProjectNames();
   const [params, setQuery] = useQueryParams();
   const everything =
     tab === "finished"
-      ? (finished.data ?? []).map((one) => finishedFacets(one, names))
+      ? [...(finished.data ?? []), ...finishedWorkflows(workflows.data ?? [])].map((one) =>
+          finishedFacets(one, names),
+        )
       : data.data
-        ? working(data.data, chats.data ?? [])
+        ? working(data.data, chats.data ?? [], workflows.data ?? [])
         : [];
   const fields = filterFields(
     everything,
@@ -205,10 +274,14 @@ function FleetFilter({ tab }: { tab: FleetTab }) {
 function ActiveRuns() {
   const data = useQuery({ queryKey: keys.snapshot, queryFn: () => readSnapshot() });
   const chats = useQuery({ queryKey: keys.chats, queryFn: readChats });
+  const workflows = useQuery({
+    queryKey: keys.fleetWorkflowRuns,
+    queryFn: () => allWorkflowRuns(),
+  });
   // How long a run has been going is said in seconds, so this page's clock ticks faster than the rest.
   const now = useNow(5_000);
   const [params, setQuery] = useQueryParams();
-  if (data.isPending || chats.isPending) {
+  if (data.isPending || chats.isPending || workflows.isPending) {
     return (
       <VirtualList
         label="Runs"
@@ -221,20 +294,21 @@ function ActiveRuns() {
   }
   // A page that could not be read says so. Falling through to the empty state would claim that no agent is working,
   // which is the opposite of what happened, so the failure comes first and carries the way back.
-  if (data.isError || chats.isError) {
+  if (data.isError || chats.isError || workflows.isError) {
     return (
       <ReadFailed
-        error={data.isError ? data.error : chats.error}
+        error={data.isError ? data.error : chats.isError ? chats.error : workflows.error}
         fallback="Could not read what the agents are doing. Try again."
-        busy={data.isFetching || chats.isFetching}
+        busy={data.isFetching || chats.isFetching || workflows.isFetching}
         onRetry={() => {
           void data.refetch();
           void chats.refetch();
+          void workflows.refetch();
         }}
       />
     );
   }
-  const everything = data.data ? working(data.data, chats.data ?? []) : [];
+  const everything = data.data ? working(data.data, chats.data ?? [], workflows.data ?? []) : [];
   const fields = filterFields(
     everything,
     readFilters(
@@ -280,7 +354,12 @@ function ActiveRuns() {
  * title, the pale name of the run's kind, the tokens it used and how long it went on; it opens the card in its window.
  */
 function FinishedRuns() {
-  const finished = useQuery({ queryKey: keys.finishedRuns, queryFn: () => readFinished() });
+  const finishedCards = useQuery({ queryKey: keys.finishedRuns, queryFn: () => readFinished() });
+  const workflows = useQuery({
+    queryKey: keys.fleetWorkflowRuns,
+    queryFn: () => allWorkflowRuns(),
+  });
+  const navigate = useNavigate();
   const openCard = useOpenCard();
   const [picked, setSelected] = useState<string | null>(null);
   const names = useProjectNames();
@@ -289,16 +368,20 @@ function FinishedRuns() {
     params,
     FILTER_KEYS.map((key) => ({ key, label: key, options: [] })),
   );
+  const everything = useMemo<FinishedEntry[]>(
+    () => [...(finishedCards.data ?? []), ...finishedWorkflows(workflows.data ?? [])],
+    [finishedCards.data, workflows.data],
+  );
   const rows = finishedItems(
-    (finished.data ?? []).filter(
-      (one) => filtered([finishedFacets(one, names)], values).length === 1,
-    ),
+    everything.filter((one) => filtered([finishedFacets(one, names)], values).length === 1),
     today(),
   );
   const byKey = useMemo(
-    () => new Map((finished.data ?? []).map((one) => [finishedKey(one), one])),
-    [finished.data],
+    () => new Map(everything.map((one) => [finishedKey(one), one])),
+    [everything],
   );
+  const open = (one: FinishedEntry) =>
+    isFinishedWorkflow(one) ? navigate(`/workflow-runs/${one.workflow.id}`) : openCard(one.card.id);
   const idWidth = idChars(
     rows.flatMap((row) => (row.type === "row" ? [finishedId(row.data)] : [])),
   );
@@ -306,9 +389,14 @@ function FinishedRuns() {
   const selected = openedKey(
     rows,
     picked,
-    (one) => asked !== null && String(one.card.id) === asked,
+    (one) => asked !== null && !isFinishedWorkflow(one) && String(one.card.id) === asked,
   );
-  if (finished.isPending) {
+  const finished = finishedCards.isError
+    ? finishedCards
+    : workflows.isError
+      ? workflows
+      : finishedCards;
+  if (finishedCards.isPending || workflows.isPending) {
     return (
       <VirtualList
         label="Finished runs"
@@ -319,13 +407,16 @@ function FinishedRuns() {
       />
     );
   }
-  if (finished.isError) {
+  if (finishedCards.isError || workflows.isError) {
     return (
       <ReadFailed
         error={finished.error}
         fallback="Could not read the finished runs. Try again."
-        busy={finished.isFetching}
-        onRetry={() => void finished.refetch()}
+        busy={finishedCards.isFetching || workflows.isFetching}
+        onRetry={() => {
+          void finishedCards.refetch();
+          void workflows.refetch();
+        }}
       />
     );
   }
@@ -333,7 +424,7 @@ function FinishedRuns() {
     return <Empty title="No run has finished" icon={<AgentIcon size={24} />} />;
   }
   return (
-    <VirtualList<FinishedRun>
+    <VirtualList<FinishedEntry>
       label="Finished runs"
       items={rows}
       selectedKey={selected}
@@ -341,7 +432,7 @@ function FinishedRuns() {
       onSelect={setSelected}
       onOpen={(key) => {
         const one = byKey.get(key);
-        if (one) openCard(one.card.id);
+        if (one) open(one);
       }}
       renderRow={(one, state) => (
         <FinishedRow
@@ -351,7 +442,7 @@ function FinishedRuns() {
           selected={state.selected}
           onClick={(event) => {
             state.onClick(event);
-            openCard(one.card.id);
+            open(one);
           }}
         />
       )}
@@ -378,25 +469,31 @@ function FinishedRow({
   selected,
   onClick,
 }: {
-  one: FinishedRun;
+  one: FinishedEntry;
   idChars: number;
   at: RowPosition;
   selected: boolean;
   onClick: (event: ReactMouseEvent<HTMLElement>) => void;
 }) {
-  const outcome = OUTCOMES[one.run.status];
+  const status = outcomeOf(one);
+  const outcome = OUTCOMES[status];
   return (
     <ListRow
       mark={
-        <span data-testid={`outcome-${one.run.status}`} className="flex shrink-0">
+        <span data-testid={`outcome-${status}`} className="flex shrink-0">
           {outcome?.mark ?? <StatusIcon state="notStarted" />}
         </span>
       }
       id={finishedId(one)}
       idChars={idChars}
-      title={one.card.title}
-      reason={capital(one.run.purpose)}
+      title={isFinishedWorkflow(one) ? one.workflow.workflow : one.card.title}
+      reason={
+        isFinishedWorkflow(one)
+          ? [one.workflow.project_name, one.workflow.trigger].filter((part) => part).join(" · ")
+          : capital(one.run.purpose)
+      }
       action={
+        !isFinishedWorkflow(one) &&
         one.tokens > 0 && (
           <span className="text-xs tabular-nums text-muted">{tokensText(one.tokens)}</span>
         )
@@ -434,9 +531,14 @@ function RunList({ list, now }: { list: Work[]; now: number }) {
   const { open: openMenu } = menu;
   const stopRuns = useCallback(
     async (targets: Work[]) => {
-      const results = await Promise.allSettled(targets.map((work) => stopRun(work.run)));
+      const results = await Promise.allSettled(
+        targets.map((work) =>
+          work.open.kind === "workflow" ? cancelWorkflowRun(work.run) : stopRun(work.run),
+        ),
+      );
       void queryClient.invalidateQueries({ queryKey: keys.snapshot });
       void queryClient.invalidateQueries({ queryKey: keys.chats });
+      void queryClient.invalidateQueries({ queryKey: keys.allWorkflowRuns });
       const failed = results.flatMap((result, at) =>
         result.status === "rejected" && targets[at]
           ? [{ work: targets[at], error: result.reason }]
@@ -502,21 +604,24 @@ function RunList({ list, now }: { list: Work[]; now: number }) {
           const work = byKey.get(key);
           if (work) openWork(work);
         }}
-        renderRow={(work, state) => (
-          <Row
-            work={work}
-            idChars={idWidth}
-            now={now}
-            at={state.at}
-            selected={state.selected || choice.has(state.key)}
-            tools={state.selected || hovered === state.key}
-            onClick={(event) => {
-              state.onClick(event);
-              if (!event.shiftKey) openWork(work);
-            }}
-            onStop={stop}
-          />
-        )}
+        renderRow={(work, state) => {
+          const Kind = work.open.kind === "workflow" ? WorkflowRow : Row;
+          return (
+            <Kind
+              work={work}
+              idChars={idWidth}
+              now={now}
+              at={state.at}
+              selected={state.selected || choice.has(state.key)}
+              tools={state.selected || hovered === state.key}
+              onClick={(event) => {
+                state.onClick(event);
+                if (!event.shiftKey) openWork(work);
+              }}
+              onStop={stop}
+            />
+          );
+        }}
       />
       <SelectionBar noun="run" count={chosen.length} commands={commands} onClear={clear} />
       <ContextMenu
@@ -529,18 +634,83 @@ function RunList({ list, now }: { list: Work[]; now: number }) {
   );
 }
 
-/** Opens what a run belongs to: its card in the window, or its chat. */
+/** Opens what a run belongs to: its card in the window, its chat, or the page of its workflow run. */
 function useOpenWork() {
   const navigate = useNavigate();
   const openCard = useOpenCard();
   return useCallback(
-    (work: Work) =>
-      work.open.kind === "card" ? openCard(work.open.card) : navigate(`/chat/${work.open.chat}`),
+    (work: Work) => {
+      if (work.open.kind === "card") openCard(work.open.card);
+      else if (work.open.kind === "chat") navigate(`/chat/${work.open.chat}`);
+      else navigate(`/workflow-runs/${work.open.run}`);
+    },
     [navigate, openCard],
   );
 }
 
 const capital = (word: string) => word.charAt(0).toUpperCase() + word.slice(1);
+
+/** A row of a workflow run: the run is read once with the list, so it follows no thread of its own. */
+function WorkflowRow({
+  work,
+  idChars,
+  now,
+  at,
+  selected,
+  tools,
+  onClick,
+  onStop,
+}: {
+  work: Work;
+  idChars: number;
+  now: number;
+  at: RowPosition;
+  selected: boolean;
+  tools: boolean;
+  onClick: (event: ReactMouseEvent<HTMLElement>) => void;
+  onStop: (work: Work) => void;
+}) {
+  const waits = needsYou(work);
+  return (
+    <ListRow
+      status={waits ? "needsYou" : "running"}
+      id={work.id}
+      idChars={idChars}
+      title={work.title}
+      reason={
+        waits ? (
+          <>
+            <span className="text-attention-text">Your turn</span>
+            {work.detail ? ` · ${work.detail}` : ""}
+          </>
+        ) : (
+          work.detail
+        )
+      }
+      action={
+        tools && (
+          <Button
+            variant="ghost"
+            size="sm"
+            aria-label={`Stop ${work.title}`}
+            onClick={(event) => {
+              event.stopPropagation();
+              onStop(work);
+            }}
+            className="min-h-6 px-1.5 text-xs"
+          >
+            Stop
+          </Button>
+        )
+      }
+      age={work.startedAt > 0 ? age(now - work.startedAt) : ""}
+      selected={selected}
+      at={at}
+      onClick={onClick}
+      data-key={choiceKey(work)}
+    />
+  );
+}
 
 function Row({
   work,

@@ -76,7 +76,7 @@ Without it, agents and rules are configured here, and skills and MCP servers can
 ### Setting it up from the app
 
 A server without `[harness]` can make one: `POST /v1/harness/setup` (see the [desktop API](desktop-api.md)), the "Set
-up" of the web app's Get started, Skills, MCP servers and Agents pages, which only a person can ask for. It makes
+up" of the web app's Get started and Agents pages (the Agents, Skills and MCP servers tabs), which only a person can ask for. It makes
 `harness/` next to `moebius.toml` a new repository, as `moebius init` does, with every `[agents.<name>]` as
 `agents/<name>.toml` and `agents/<name>.md` and the file of `rules_file` (by default `rules.md` next to this file) as
 `rules.md`. A skill an agent names by path is copied to `skills/<directory name>/`, and an extension to

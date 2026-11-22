@@ -16,7 +16,10 @@ pub enum PkgCommand {
     Install {
         /// `<name>` for the newest version that works with this Moebius, or `<name>@<version>`.
         name: String,
-        /// The repository a workflow or rules package is proposed to, by name; needed with several repositories.
+        /// The project a workflow package is installed into, by name or id; a workflow package needs it.
+        #[arg(long)]
+        project: Option<String>,
+        /// The repository a rules package is proposed to, by name; needed with several repositories.
         #[arg(long)]
         repository: Option<String>,
         /// The registry to install from; the first that has the package without it.
@@ -52,6 +55,7 @@ pub fn pkg(command: &PkgCommand, get: &mut dyn FnMut(&str) -> Result<Value, Stri
         )),
         PkgCommand::Install {
             name,
+            project,
             repository,
             registry,
         } => {
@@ -62,6 +66,7 @@ pub fn pkg(command: &PkgCommand, get: &mut dyn FnMut(&str) -> Result<Value, Stri
             let mut body = json!({ "name": name });
             for (key, value) in [
                 ("version", version),
+                ("project", project.as_deref()),
                 ("repository", repository.as_deref()),
                 ("registry", registry.as_deref()),
             ] {

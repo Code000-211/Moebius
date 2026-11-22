@@ -12,6 +12,7 @@
  */
 import { type MouseEvent, useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import { keepKey } from "../lib/shortcuts";
 import type { SelectionCommand } from "../page/SelectionBar";
 
 interface Point {
@@ -76,7 +77,7 @@ export function ContextMenu({
         top: Math.max(8, Math.min(point.y, window.innerHeight - 40 * (commands.length + 1))),
       }}
       onKeyDown={(event) => {
-        event.stopPropagation();
+        keepKey(event);
         if (event.key === "Escape") {
           event.preventDefault();
           onClose();

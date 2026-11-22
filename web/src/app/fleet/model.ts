@@ -6,6 +6,7 @@
 import type { Snapshot } from "../../api/types/board";
 import type { Chat } from "../../api/types/chat";
 import type { FinishedRun } from "../../api/types/runs";
+import type { WorkflowRunSummary } from "../../api/types/workflows";
 import type { Entry, ToolCall } from "../../chat/conversation";
 import { HARNESS_PLACE } from "../../chat/places";
 import type { FilterField } from "../../ui/filters/model";
@@ -16,7 +17,8 @@ import { WAITING_FOR_APPROVAL } from "../board/model";
 /** Where a click on a tile goes. */
 export type OpenTarget =
   | { kind: "card"; repository: number; card: number }
-  | { kind: "chat"; chat: number };
+  | { kind: "chat"; chat: number }
+  | { kind: "workflow"; run: number };
 
 /** A run that is working, as the snapshot and the chats say. */
 export interface Work {
@@ -39,13 +41,48 @@ export interface Work {
   /** The tokens of the card since it was last retried; a chat's are not known. */
   tokens: number | null;
   open: OpenTarget;
+  /** What the row says besides its kind, when there is more: a workflow run's project and trigger. */
+  detail?: string;
 }
 
 const isWorking = (status: string) =>
   status === "starting" || status === "running" || status === "waiting";
 
+/** The statuses of a workflow run that has not ended, as the words of `Work.status`. */
+const WORKFLOW_WORKING: Record<string, string> = {
+  queued: "starting",
+  running: "running",
+  waiting: "waiting",
+};
+
+/** Whether a workflow run has ended. */
+export const workflowEnded = (run: WorkflowRunSummary) => !(run.status in WORKFLOW_WORKING);
+
+/** A workflow run that has not ended as a working run; the project it belongs to stands where a card's repository does. */
+function workflowWork(run: WorkflowRunSummary): Work {
+  return {
+    run: run.id,
+    agent: "",
+    kind: "workflow",
+    status: WORKFLOW_WORKING[run.status] ?? "running",
+    asks: false,
+    title: run.workflow,
+    id: "Workflow",
+    approve: null,
+    repository: run.project_name ?? "",
+    startedAt: run.started_at ?? run.created_at,
+    tokens: null,
+    open: { kind: "workflow", run: run.id },
+    detail: [run.project_name, run.trigger].filter((part) => part).join(" · "),
+  };
+}
+
 /** Every working run, the oldest first. */
-export function working(snapshot: Snapshot, chats: readonly Chat[]): Work[] {
+export function working(
+  snapshot: Snapshot,
+  chats: readonly Chat[],
+  workflowRuns: readonly WorkflowRunSummary[] = [],
+): Work[] {
   const list: Work[] = [];
   const approving = new Set(
     snapshot.inbox
@@ -93,6 +130,7 @@ export function working(snapshot: Snapshot, chats: readonly Chat[]): Work[] {
       open: { kind: "chat", chat: chat.id },
     });
   }
+  for (const run of workflowRuns) if (!workflowEnded(run)) list.push(workflowWork(run));
   return list.sort((a, b) => a.run - b.run);
 }
 
@@ -102,11 +140,14 @@ import { plural } from "../../ui/lib/format";
 export type Facets = Pick<Work, "repository" | "agent" | "kind">;
 
 /** A finished run as the filters see it; `names` says the project of a repository's number. */
-export const finishedFacets = (one: FinishedRun, names: ReadonlyMap<number, string>): Facets => ({
-  repository: names.get(one.card.repository_id) ?? "",
-  agent: one.run.agent,
-  kind: one.run.purpose,
-});
+export const finishedFacets = (one: FinishedEntry, names: ReadonlyMap<number, string>): Facets =>
+  isFinishedWorkflow(one)
+    ? { repository: one.workflow.project_name ?? "", agent: "", kind: "workflow" }
+    : {
+        repository: names.get(one.card.repository_id) ?? "",
+        agent: one.run.agent,
+        kind: one.run.purpose,
+      };
 
 /** The keys of the Fleet's filters in the address, in the order the bar offers them. */
 export const FILTER_KEYS = ["project", "agent", "kind"] as const;
@@ -244,7 +285,15 @@ export function workStartedAt(
   return first?.at ?? (startedAt > 0 ? startedAt : null);
 }
 
-/** The tabs of the page: the runs that are going on, and the runs that have ended. `finished` is kept in the address. */
+/** The tabs of the page's header, each at an address of its own. */
+export const FLEET_SECTIONS = [
+  { value: "runs", label: "Runs", path: "/fleet" },
+  { value: "runners", label: "Runners", path: "/fleet/runners" },
+  { value: "ports", label: "Ports", path: "/fleet/ports" },
+] as const;
+export type FleetSection = (typeof FLEET_SECTIONS)[number]["value"];
+
+/** The tabs of the Runs tab: the runs that are going on, and the runs that have ended. `finished` is kept in the address. */
 export const FLEET_TABS = [
   { value: "active", label: "Active" },
   { value: "finished", label: "Finished" },
@@ -258,10 +307,34 @@ export const tabOf = (param: string | null): FleetTab =>
 /** One line of the Finished list: a day's name, or a run that ended. */
 export type FinishedItem =
   | { type: "group"; key: string; name: string }
-  | { type: "row"; key: string; data: FinishedRun };
+  | { type: "row"; key: string; data: FinishedEntry };
+
+/** A workflow run that has ended, as the Finished list holds it. */
+export interface FinishedWorkflow {
+  workflow: WorkflowRunSummary;
+}
+
+/** What the Finished list holds: a run of a card, or a run of a workflow. */
+export type FinishedEntry = FinishedRun | FinishedWorkflow;
+
+export const isFinishedWorkflow = (one: FinishedEntry): one is FinishedWorkflow =>
+  "workflow" in one;
+
+/** The workflow runs that have ended, as entries of the Finished list. */
+export const finishedWorkflows = (runs: readonly WorkflowRunSummary[]): FinishedWorkflow[] =>
+  runs.filter(workflowEnded).map((workflow) => ({ workflow }));
 
 /** What a finished run is chosen and kept by. */
-export const finishedKey = (one: FinishedRun) => `finished:${one.run.id}`;
+export const finishedKey = (one: FinishedEntry) =>
+  isFinishedWorkflow(one) ? `finished-workflow:${one.workflow.id}` : `finished:${one.run.id}`;
+
+/** When a finished run ended, in seconds; null when that is not recorded. */
+const endedAt = (one: FinishedEntry): number | null =>
+  isFinishedWorkflow(one)
+    ? (one.workflow.finished_at ?? one.workflow.started_at ?? one.workflow.created_at)
+    : one.run.ended_at;
+
+const idOfEntry = (one: FinishedEntry) => (isFinishedWorkflow(one) ? one.workflow.id : one.run.id);
 
 /** The `YYYY-MM-DD` of the browser's calendar for a Unix time in seconds. */
 function dayOf(seconds: number): string {
@@ -274,14 +347,14 @@ function dayOf(seconds: number): string {
  * The flat list of the Finished tab: only the runs that ended, the one that ended last first, under the name of the day
  * they ended on (`Today`, `Yesterday`, `27 Oct`). A run whose end is not recorded is not finished and is left out.
  */
-export function finishedItems(list: readonly FinishedRun[], today: string): FinishedItem[] {
+export function finishedItems(list: readonly FinishedEntry[], today: string): FinishedItem[] {
   const ended = list
-    .filter((one) => one.run.ended_at !== null)
-    .sort((a, b) => (b.run.ended_at ?? 0) - (a.run.ended_at ?? 0) || b.run.id - a.run.id);
+    .filter((one) => endedAt(one) !== null)
+    .sort((a, b) => (endedAt(b) ?? 0) - (endedAt(a) ?? 0) || idOfEntry(b) - idOfEntry(a));
   const out: FinishedItem[] = [];
   let day = "";
   for (const one of ended) {
-    const of = dayOf(one.run.ended_at ?? 0);
+    const of = dayOf(endedAt(one) ?? 0);
     if (of !== day) {
       day = of;
       out.push({ type: "group", key: `day:${of}`, name: dayName(of, today) });
@@ -292,11 +365,22 @@ export function finishedItems(list: readonly FinishedRun[], today: string): Fini
 }
 
 /** How long a finished run went on, in seconds. */
-export const lasted = (one: FinishedRun) =>
-  Math.max(0, (one.run.ended_at ?? 0) - one.run.started_at);
+export const lasted = (one: FinishedEntry) =>
+  isFinishedWorkflow(one)
+    ? Math.max(0, (endedAt(one) ?? 0) - (one.workflow.started_at ?? one.workflow.created_at))
+    : Math.max(0, (one.run.ended_at ?? 0) - one.run.started_at);
 
 /** The card's id the way the rest of the app names it (`WEB-24`, or `#17` for a project without a key). */
-export const finishedId = (one: FinishedRun) => cardKey(one.card);
+export const finishedId = (one: FinishedEntry) =>
+  isFinishedWorkflow(one) ? "Workflow" : cardKey(one.card);
+
+/** How a finished run ended, in the words of the outcome marks: a cancelled workflow run is a stopped one. */
+export const outcomeOf = (one: FinishedEntry) =>
+  isFinishedWorkflow(one)
+    ? one.workflow.status === "cancelled"
+      ? "stopped"
+      : one.workflow.status
+    : one.run.status;
 
 const TESTS = /\b(test|tests|pytest|vitest|jest|nextest)\b/;
 const CHECKS = /\b(clippy|lint|fmt|format|biome|eslint|tsc|check|typecheck)\b/;

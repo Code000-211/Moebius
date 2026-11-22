@@ -1,13 +1,13 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { MemoryRouter } from "react-router";
 import { describe, expect, it } from "vitest";
+import { settingsEntries } from "../nav";
 import { SettingsNav } from "./SettingsNav";
-import { shownEntries } from "./settingsEntries";
 
 const show = () =>
   render(
     <MemoryRouter initialEntries={["/models"]}>
-      <SettingsNav entries={shownEntries("owner")} />
+      <SettingsNav entries={settingsEntries("owner")} />
     </MemoryRouter>,
   );
 
@@ -17,8 +17,9 @@ describe("SettingsNav", () => {
     expect(screen.getByText("Automation")).toBeTruthy();
     expect(screen.getByRole("link", { name: "Models" }).getAttribute("aria-current")).toBe("page");
     expect(screen.getByRole("link", { name: "Profile" })).toBeTruthy();
-    expect(screen.getByRole("link", { name: "Runners" })).toBeTruthy();
-    expect(screen.getAllByRole("link")).toHaveLength(21);
+    // Runners is a tab of Fleet now, not a setting.
+    expect(screen.queryByRole("link", { name: "Runners" })).toBeNull();
+    expect(screen.getAllByRole("link")).toHaveLength(15);
   });
 
   it("narrows as one types and says so in one line when nothing matches", () => {

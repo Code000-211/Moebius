@@ -522,6 +522,7 @@ UPDATE cards SET moved_at = COALESCE((SELECT MAX(at) FROM card_moves WHERE card_
     workflow_schedules::BY_PROJECT,
     automations::BY_PROJECT,
     projects::DELETED,
+    workflows::MOVES,
 ];
 
 #[cfg(test)]

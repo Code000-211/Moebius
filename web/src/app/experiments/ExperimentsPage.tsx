@@ -77,7 +77,7 @@ export function ExperimentsPage() {
   const header = (
     <PageHeader
       title="Experiments"
-      actions={
+      primary={
         <Button
           size="sm"
           disabled={composing}

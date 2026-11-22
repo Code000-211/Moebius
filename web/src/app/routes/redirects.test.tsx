@@ -86,6 +86,24 @@ const at = (router: Awaited<ReturnType<typeof open>>) =>
   router.state.location.pathname + router.state.location.search;
 
 describe("the legacy table", () => {
+  it("sends /more, a list that is gone, to the Inbox", async () => {
+    projects = [];
+    const router = await open("/more");
+    await screen.findByTestId("where");
+    expect(at(router)).toBe("/inbox");
+    expect(router.state.historyAction).toBe("REPLACE");
+  });
+
+  it("sends /runners and /ports, which are tabs of Fleet now, to them", async () => {
+    projects = [];
+    const router = await open("/runners");
+    await screen.findByTestId("where");
+    expect(at(router)).toBe("/fleet/runners");
+    expect(router.state.historyAction).toBe("REPLACE");
+    cleanup();
+    expect(await landed("/ports?x=1")).toBe("/fleet/ports?x=1");
+  });
+
   it("sends /board/:repoId to the board of the repository's home project, keeping ?card=", async () => {
     projects = [project(2, [5, 6]), project(3, [7])];
     const router = await open("/board/6?card=11");
@@ -223,6 +241,76 @@ describe("the legacy table", () => {
       cleanup();
       window.localStorage.setItem("moebius.lastProject", "99");
       expect(await landed("/intake")).toBe("/projects");
+    });
+
+    describe("the Issues list", () => {
+      it("leads to the view All issues with its filters and sort kept", async () => {
+        projects = [project(1, [5])];
+        expect(await landed("/issues")).toBe("/views/all-issues");
+        cleanup();
+        expect(
+          await landed("/issues?project=2&kind=Bug&field.Severity=high&sort=asc%3AEstimate"),
+        ).toBe("/views/all-issues?project=2&kind=Bug&field.Severity=high&sort=asc%3AEstimate");
+        cleanup();
+        expect(await landed("/issues?card=4")).toBe("/views/all-issues?card=4");
+      });
+    });
+  });
+
+  it("sends the Skills, MCP servers and Settings addresses of Build to their tabs, keeping the query", async () => {
+    projects = [];
+    for (const [old, now] of [
+      ["/skills", "/agents/skills"],
+      ["/skills?skill=house-style", "/agents/skills?skill=house-style"],
+      ["/mcp-servers?server=docs", "/agents/mcp-servers?server=docs"],
+      ["/settings/agents?agent=Coder", "/agents?agent=Coder"],
+      ["/settings/skills", "/agents/skills"],
+      ["/settings/mcp-servers", "/agents/mcp-servers"],
+      ["/settings/rules", "/rules"],
+    ] as const) {
+      expect(await landed(old), old).toBe(now);
+      cleanup();
+    }
+  });
+
+  describe("the old Workflows and Automations addresses", () => {
+    beforeEach(() => window.localStorage.clear());
+
+    it("lead to the Workflows tab of the project named, opened last, or the only one", async () => {
+      projects = [project(1, [5]), project(2, [6])];
+      expect(await landed("/workflows?project=2")).toBe("/projects/2/workflows");
+      cleanup();
+      window.localStorage.setItem("moebius.lastProject", "1");
+      expect(await landed("/workflows")).toBe("/projects/1/workflows");
+      cleanup();
+      window.localStorage.clear();
+      projects = [project(7, [5])];
+      expect(await landed("/workflows")).toBe("/projects/7/workflows");
+    });
+
+    it("lead to the definition and the canvas under the project, escaping the name", async () => {
+      projects = [project(3, [5])];
+      expect(await landed("/workflows/night%20build")).toBe("/projects/3/workflows/night%20build");
+      cleanup();
+      expect(await landed("/workflows/release/canvas")).toBe(
+        "/projects/3/workflows/release/canvas",
+      );
+    });
+
+    it("lead the Automations page to the Scheduled runs, keeping the automation that was open", async () => {
+      projects = [project(3, [5])];
+      expect(await landed("/automations?automation=4")).toBe(
+        "/projects/3/workflows?runs=scheduled&automation=4",
+      );
+    });
+
+    it("lead to the list of projects when no project can be told", async () => {
+      projects = [project(3, [5]), project(4, [6])];
+      expect(await landed("/workflows")).toBe("/projects");
+      cleanup();
+      expect(await landed("/automations")).toBe("/projects");
+      cleanup();
+      expect(await landed("/workflows/release")).toBe("/projects");
     });
   });
 });

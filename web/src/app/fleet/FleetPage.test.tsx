@@ -13,6 +13,7 @@ import { ToastProvider } from "../../ui/page/Toast";
 import { mockViewport } from "../../ui/page/virtualListTest";
 import { card, board as makeBoard, running } from "../board/model/fixtures";
 import { FleetPage } from "./FleetPage";
+import type { FleetSection } from "./model";
 
 // The conversation of a run follows the event stream, which these tests have none of.
 vi.mock("../../live/LiveProvider", () => ({
@@ -154,7 +155,7 @@ describe("pausing all agents from Fleet", () => {
               inbox: [],
               ...(paused ? { paused: { by: "person:ada", at: 1 } } : {}),
             }
-          : path.startsWith("/v1/chats")
+          : path.startsWith("/v1/chats") || path.startsWith("/v1/workflow-runs")
             ? []
             : { paused: !paused };
         return {
@@ -240,13 +241,38 @@ describe("the tabs of the fleet", () => {
     tokens: id === 1 ? 48_000 : 0,
   });
 
-  function show(address: string) {
+  const workflowRun = (id: number, status: string, extra: Record<string, unknown> = {}) => ({
+    id,
+    workflow: `release-${id}`,
+    repository_id: 1,
+    trigger: "manual",
+    status,
+    value: null,
+    created_at: Math.floor(Date.now() / 1000) - 300,
+    started_at: Math.floor(Date.now() / 1000) - 200,
+    finished_at: null,
+    error: null,
+    project: 4,
+    project_name: "Radiance",
+    ...extra,
+  });
+
+  function show(
+    address: string,
+    section?: FleetSection,
+    workflows: unknown[] = [],
+    seed: Array<[readonly unknown[], unknown]> = [],
+  ) {
     const now = Math.floor(Date.now() / 1000);
     const client = new QueryClient({
       defaultOptions: { queries: { retry: false, staleTime: Number.POSITIVE_INFINITY } },
     });
     client.setQueryData(keys.snapshot, { boards: [makeBoard([])], inbox: [], harness_changes: [] });
     client.setQueryData(keys.chats, []);
+    client.setQueryData(keys.fleetWorkflowRuns, workflows);
+    client.setQueryData(keys.runners, []);
+    client.setQueryData(keys.ports, []);
+    for (const [key, value] of seed) client.setQueryData(key, value);
     client.setQueryData(keys.finishedRuns, [
       finished(1, "succeeded", now - 60),
       finished(2, "failed", now - 30),
@@ -255,7 +281,7 @@ describe("the tabs of the fleet", () => {
     render(
       <QueryClientProvider client={client}>
         <MemoryRouter initialEntries={[address]}>
-          <FleetPage />
+          <FleetPage section={section} />
           <Where />
         </MemoryRouter>
       </QueryClientProvider>,
@@ -315,5 +341,137 @@ describe("the tabs of the fleet", () => {
     cleanup();
     show("/fleet?tab=finished&agent=Nobody");
     expect(await screen.findByText("No run has finished")).toBeTruthy();
+  });
+
+  it("names the project of a workflow run, among the active runs and the finished ones", async () => {
+    show("/fleet", undefined, [
+      workflowRun(7, "running"),
+      workflowRun(8, "succeeded", { finished_at: Math.floor(Date.now() / 1000) - 20 }),
+      workflowRun(9, "cancelled", {
+        project_name: "Orbit",
+        finished_at: Math.floor(Date.now() / 1000) - 10,
+      }),
+    ]);
+    const active = await screen.findAllByTestId("list-row");
+    expect(active).toHaveLength(1);
+    expect(active[0]?.textContent).toContain("release-7");
+    expect(active[0]?.textContent).toContain("Radiance");
+    fireEvent.click(screen.getByRole("tab", { name: "Finished" }));
+    const rows = await screen.findAllByTestId("list-row");
+    const text = rows.map((row) => row.textContent ?? "");
+    expect(text.some((row) => row.includes("release-8") && row.includes("Radiance"))).toBe(true);
+    const cancelled = rows.find((row) => row.textContent?.includes("release-9")) as HTMLElement;
+    expect(cancelled.textContent).toContain("Orbit");
+    expect(within(cancelled).getByTestId("outcome-stopped")).toBeTruthy();
+  });
+
+  it("filters the runs by the project of a workflow run", async () => {
+    show("/fleet?project=Orbit", undefined, [
+      workflowRun(7, "running"),
+      workflowRun(8, "running", { project_name: "Orbit" }),
+    ]);
+    const rows = await screen.findAllByTestId("list-row");
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.textContent).toContain("release-8");
+  });
+});
+
+describe("the tabs of the Fleet", () => {
+  function show(
+    address: string,
+    section: FleetSection,
+    seed: Array<[readonly unknown[], unknown]>,
+  ) {
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false, staleTime: Number.POSITIVE_INFINITY } },
+    });
+    client.setQueryData(keys.snapshot, { boards: [makeBoard([])], inbox: [], harness_changes: [] });
+    client.setQueryData(keys.chats, []);
+    client.setQueryData(keys.fleetWorkflowRuns, []);
+    for (const [key, value] of seed) client.setQueryData(key, value);
+    render(
+      <QueryClientProvider client={client}>
+        <MemoryRouter initialEntries={[address]}>
+          <FleetPage section={section} />
+          <Where />
+        </MemoryRouter>
+      </QueryClientProvider>,
+    );
+  }
+  const runner = { name: "box", host: "build.example.com", user: "ci", max_runs: 2, busy: 1 };
+  const port = {
+    port: 4001,
+    process: "node",
+    pid: 77,
+    kind: "run",
+    run: 5,
+  };
+
+  it("has Runs, Runners and Ports, with the chosen one marked, and counts only for Runners and Ports", () => {
+    show("/fleet/runners", "runners", [
+      [keys.runners, [runner]],
+      [keys.ports, [port, { ...port, port: 4002 }]],
+    ]);
+    const tabs = screen.getAllByRole("tab").map((tab) => tab.textContent);
+    expect(tabs).toContain("Runs");
+    expect(tabs).toContain("Runners1");
+    expect(tabs).toContain("Ports2");
+    expect(screen.getByRole("tab", { name: /^Runners/ }).getAttribute("aria-selected")).toBe(
+      "true",
+    );
+    expect(screen.getByRole("tab", { name: "Runs" }).getAttribute("aria-selected")).toBe("false");
+  });
+
+  it("puts the tab in the address: choosing Ports goes to /fleet/ports, and Runs back to /fleet", () => {
+    show("/fleet", "runs", [
+      [keys.runners, []],
+      [keys.ports, []],
+    ]);
+    fireEvent.click(screen.getByRole("tab", { name: "Ports" }));
+    expect(screen.getByTestId("where").textContent).toBe("/fleet/ports");
+    fireEvent.click(screen.getByRole("tab", { name: "Runners" }));
+    expect(screen.getByTestId("where").textContent).toBe("/fleet/runners");
+    fireEvent.click(screen.getByRole("tab", { name: "Runs" }));
+    expect(screen.getByTestId("where").textContent).toBe("/fleet");
+  });
+
+  it("draws the runners with their load, and says when there is none", () => {
+    show("/fleet/runners", "runners", [
+      [keys.runners, [runner]],
+      [keys.ports, []],
+    ]);
+    expect(screen.getByText("box")).toBeTruthy();
+    expect(screen.getByText("ci@build.example.com")).toBeTruthy();
+    expect(screen.getByText("1 of 2 running")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Pause all" })).toBeNull();
+    cleanup();
+    show("/fleet/runners", "runners", [
+      [keys.runners, []],
+      [keys.ports, []],
+    ]);
+    expect(screen.getByText("No runner")).toBeTruthy();
+  });
+
+  it("draws the ports, and says when none is open", () => {
+    show("/fleet/ports", "ports", [
+      [keys.runners, []],
+      [keys.ports, [port]],
+    ]);
+    expect(screen.getByTestId("port-row").textContent).toContain("4001");
+    cleanup();
+    show("/fleet/ports", "ports", [
+      [keys.runners, []],
+      [keys.ports, []],
+    ]);
+    expect(screen.getByText("No port is open")).toBeTruthy();
+  });
+
+  it("shows a skeleton while the runners are read, and says so when they cannot be", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => ({ ok: false, status: 503, text: async () => "no runners today" })),
+    );
+    show("/fleet/runners", "runners", []);
+    expect(await screen.findByText("no runners today")).toBeTruthy();
   });
 });

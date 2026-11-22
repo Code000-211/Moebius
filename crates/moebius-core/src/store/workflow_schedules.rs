@@ -65,6 +65,16 @@ impl Store {
         Ok(())
     }
 
+    /// The names of the workflows whose schedule row is still server-wide (project 0), in name order.
+    pub fn server_wide_schedule_names(&self) -> Result<Vec<String>> {
+        let conn = self.read();
+        let mut statement = conn.prepare(
+            "SELECT workflow FROM workflow_schedules WHERE project_id = 0 ORDER BY workflow",
+        )?;
+        let rows = statement.query_map([], |row| row.get::<_, String>(0))?;
+        Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
+    }
+
     /// Gives the schedule of the server-wide workflow `workflow` to the project `project_id`, with the minute it last
     /// fired at kept, so that the move fires nothing twice. A project that has a row for it already keeps that one,
     /// and the server-wide row goes either way. True when there was a server-wide row.

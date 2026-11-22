@@ -503,15 +503,16 @@ pub fn list_in_project(
         .collect()
 }
 
-/// The text of one workflow's file in the harness configuration repository under `root`.
+/// The text of one server-wide workflow file, `workflows/<name>.toml` under `root`. Only the migration of the files into
+/// their projects reads the server-wide folder.
 pub fn read_text(root: &Path, name: &str) -> Result<String, Error> {
     let file = file_for(name)?;
     std::fs::read_to_string(root.join(&file))
         .map_err(|error| Error::new(&file, format!("cannot be read: {error}")))
 }
 
-/// Read one workflow from the harness configuration repository, whose files are `workflows/<name>.toml` under `root`.
-pub fn read(root: &Path, name: &str) -> Result<WorkflowDefinition, Error> {
+/// Read and validate one server-wide workflow file, `workflows/<name>.toml` under `root`; for the migration only.
+pub(crate) fn read(root: &Path, name: &str) -> Result<WorkflowDefinition, Error> {
     parse(name, &read_text(root, name)?)
 }
 
@@ -523,8 +524,9 @@ pub fn parse(name: &str, text: &str) -> Result<WorkflowDefinition, Error> {
     Ok(definition)
 }
 
-/// Every workflow in the harness configuration repository under `root`, by file name, in name order.
-pub fn list(root: &Path) -> Result<Vec<(String, WorkflowDefinition)>, Error> {
+/// For the migration only: the names of the workflow files kept server-wide in the harness configuration repository under `root`, in name
+/// order; none when it has no `workflows/` folder.
+pub fn names(root: &Path) -> Result<Vec<String>, Error> {
     let dir = root.join(DIRECTORY);
     let entries = match std::fs::read_dir(&dir) {
         Ok(entries) => entries,
@@ -545,10 +547,7 @@ pub fn list(root: &Path) -> Result<Vec<(String, WorkflowDefinition)>, Error> {
         }
     }
     names.sort();
-    names
-        .into_iter()
-        .map(|name| read(root, &name).map(|definition| (name, definition)))
-        .collect()
+    Ok(names)
 }
 
 /// The text of a workflow's file: the definition validated and written as TOML.
@@ -584,16 +583,6 @@ impl crate::harness::repo::HarnessRepo {
         names_in_project(self.path(), project)
             .map(|names| !names.is_empty())
             .map_err(|error| crate::app::AppError::Invalid(error.to_string()))
-    }
-
-    /// Read and validate one workflow from this harness configuration repository.
-    pub fn workflow(&self, name: &str) -> crate::app::Result<WorkflowDefinition> {
-        read(self.path(), name).map_err(|error| crate::app::AppError::Invalid(error.to_string()))
-    }
-
-    /// Every workflow in this harness configuration repository, by name.
-    pub fn workflows(&self) -> crate::app::Result<Vec<(String, WorkflowDefinition)>> {
-        list(self.path()).map_err(|error| crate::app::AppError::Invalid(error.to_string()))
     }
 }
 

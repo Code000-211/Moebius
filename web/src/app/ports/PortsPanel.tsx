@@ -1,5 +1,5 @@
 /**
- * The Ports page: the TCP ports that runs, chats and terminals of the server listen on (`GET /v1/ports`, kept current
+ * The Ports tab of Fleet: the TCP ports that runs, chats and terminals of the server listen on (`GET /v1/ports`, kept current
  * by `port_opened` and `port_closed`), with whom each belongs to. A client that listens on its own machine can carry every
  * connection over `GET /v1/ports/{port}/tunnel`, a WebSocket of raw bytes; a browser tab
  * cannot open that, so a port comes with the command that forwards it over SSH, and the page says so.
@@ -12,17 +12,15 @@ import { CopyButton } from "../../ui/chat/CopyButton";
 import { cn } from "../../ui/lib/cn";
 import { Empty } from "../../ui/page/Empty";
 import { CELL, Table } from "../../ui/page/List";
-import { PageHeader } from "../../ui/page/PageHeader";
 import { ReadFailed } from "../../ui/page/ReadFailed";
 import { SkeletonLines } from "../../ui/page/Skeleton";
 import { forwardCommand, owner, ownerPath } from "./ports";
 
-export function PortsPage() {
+export function PortsPanel() {
   const ports = useQuery({ queryKey: keys.ports, queryFn: readPorts });
   const host = window.location.hostname;
   return (
     <div data-testid="ports-page">
-      <PageHeader title="Ports" />
       {ports.isPending && <SkeletonLines lines={4} message="Reading the ports" />}
       {ports.isError && (
         <ReadFailed

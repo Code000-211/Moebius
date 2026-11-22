@@ -28,6 +28,7 @@ export type Selection =
 
 export function Inspector({
   graph,
+  project,
   selection,
   run,
   onSaveNode,
@@ -37,6 +38,8 @@ export function Inspector({
   onClose,
 }: {
   graph: WorkflowDefinition;
+  /** The project of the workflow, when known. */
+  project?: number;
   selection: Selection;
   /** The chosen node's part of the run a person is looking at, when one is picked. */
   run?: WorkflowNodeRun | null;
@@ -54,6 +57,7 @@ export function Inspector({
     return (
       <TriggerWindow
         trigger={graph.trigger[0]}
+        project={project}
         onSave={(trigger) => {
           onSaveTrigger(trigger);
           onClose();
@@ -226,10 +230,12 @@ function EdgeWindow({
 
 function TriggerWindow({
   trigger,
+  project,
   onSave,
   onClose,
 }: {
   trigger: Trigger | undefined;
+  project?: number;
   onSave: (trigger: Trigger) => void;
   onClose: () => void;
 }) {
@@ -247,7 +253,7 @@ function TriggerWindow({
     >
       {draft ? (
         Custom ? (
-          <Custom trigger={draft} onTrigger={setDraft} />
+          <Custom trigger={draft} onTrigger={setDraft} project={project} />
         ) : null
       ) : (
         <p className="m-0 text-sm text-secondary">

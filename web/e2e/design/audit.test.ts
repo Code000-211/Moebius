@@ -46,6 +46,8 @@ interface Route {
     | "search"
     | "chat"
     | "new issue"
+    | "run workflow"
+    | "edit scheduled"
     | "menu"
     | "terminal"
     | "diff"
@@ -127,11 +129,14 @@ const routes: Route[] = [
   { path: "/projects/1", name: "project" },
   { path: "/wiki", name: "wiki" },
   { path: "/wiki?page=Team%2FOn+call&view=edit", name: "wiki-edit" },
-  { path: "/automations", name: "automations" },
-  { path: "/workflows", name: "workflows" },
-  { path: "/workflows/release", name: "workflow" },
+  { path: "/projects/1/workflows", name: "workflows" },
+  // The Scheduled view lists the schedule workflows and opens an automation's editor window over them.
+  { path: "/projects/1/workflows?runs=scheduled", name: "workflows-scheduled" },
+  { path: "/projects/1/workflows", name: "workflows-run", open: "run workflow" },
+  { path: "/projects/1/workflows?runs=scheduled", name: "workflows-edit", open: "edit scheduled" },
+  { path: "/projects/1/workflows/release", name: "workflow" },
   // The graph edited on a canvas of its own.
-  { path: "/workflows/release/canvas", name: "workflow-canvas" },
+  { path: "/projects/1/workflows/release/canvas", name: "workflow-canvas" },
   { path: "/workflow-runs/41", name: "workflow-run" },
   // A run that stopped at a node and asks what to do next.
   { path: "/workflow-runs/42", name: "workflow-run-waiting" },
@@ -151,7 +156,8 @@ const routes: Route[] = [
   { path: "/start", name: "start" },
   { path: "/settings", name: "settings" },
   { path: "/terminal", name: "terminal" },
-  { path: "/ports", name: "ports" },
+  { path: "/fleet/runners", name: "fleet-runners" },
+  { path: "/fleet/ports", name: "ports" },
   { path: "/people", name: "people" },
   { path: "/tokens", name: "tokens" },
   { path: "/nothing-here", name: "not-found" },
@@ -318,6 +324,21 @@ async function open(page: Page, what: NonNullable<Route["open"]>) {
   if (what === "chat") {
     await page.keyboard.press("Control+j");
     await page.waitForTimeout(400);
+    return;
+  }
+  if (what === "run workflow") {
+    await page.getByRole("button", { name: "Run a workflow here" }).click();
+    await page.getByRole("dialog", { name: /^Run a workflow in / }).waitFor({ timeout: 5_000 });
+    // The inputs are read before the dialog is judged.
+    await page.getByRole("button", { name: "Run", exact: true }).waitFor({ timeout: 5_000 });
+    return;
+  }
+  if (what === "edit scheduled") {
+    await page
+      .getByRole("button", { name: /^Edit scheduled workflow / })
+      .first()
+      .click();
+    await page.getByTestId("editor-window").waitFor({ timeout: 5_000 });
     return;
   }
   if (what === "menu") {
