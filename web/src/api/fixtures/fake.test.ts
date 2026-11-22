@@ -55,6 +55,12 @@ describe("the fake server's workflow answers", () => {
     sameKeys((await ask("/v1/workflow-runs/41")).body, fixtures.run, "run");
   });
 
+  it("answers the project-addressed routes as the aggregate ones", async () => {
+    sameKeys((await ask("/v1/projects/1/workflows")).body, fixtures.list, "list");
+    sameKeys((await ask("/v1/projects/1/workflows/release")).body, fixtures.show, "show");
+    sameKeys((await ask("/v1/workflow-runs?project=1")).body, fixtures.runs, "runs");
+  });
+
   it("answers a workflow that does not exist as not found", async () => {
     expect((await ask("/v1/workflows/nothing")).status).toBe(404);
   });

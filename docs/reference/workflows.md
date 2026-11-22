@@ -6,8 +6,13 @@ kind has a section here and a page of its own in [`workflows/`](workflows/README
 `crates/moebius-core/src/workflows/nodes/mod.rs` has one match arm per kind. A parameter may be filled from an earlier
 node with an expression: see [Expressions](workflows/expressions.md).
 
-The file lives at `workflows/<name>.toml` under the harness configuration repository's root, beside `agents/`, `skills/`
-and `mcp.toml`. The `<name>` is the file's stem and may contain only letters, digits, `-` and `_`.
+The file lives at `projects/<project>/workflows/<name>.toml` under the harness configuration repository's root, in the
+folder of the project that owns the workflow, beside that project's column scripts (`projects/<project>/<column>.luau`).
+A workflow belongs to exactly one project, and two projects may each have a workflow of the same name
+([ADR 0025](../adr/0025-workflows-belong-to-a-project.md)). The `<name>` is the file's stem and may contain only letters,
+digits, `-` and `_`; a run records it as the workflow's name, whatever the `name` written inside the file says. The old
+server-wide folder `workflows/` is read only once, when the server starts, to move each file into a project (see
+[harness configuration](harness-configuration.md)); after that it is not read.
 
 The example below shows the file's shape, with placeholder kind names: a real file must name one of the kinds under
 [Node kinds](#node-kinds).
@@ -121,14 +126,27 @@ refusal names the file and the node or edge it is about:
 - a node cannot be reached from the trigger: `node "<id>": is unreachable from the trigger`.
 
 A name that is not a safe file name is refused before a path is built, so a workflow name cannot reach outside
-`workflows/`.
+the project's `workflows/` folder.
 
 ## Reading
 
 `WorkflowDefinition::parse(text, file)` parses a file's text but does not validate its graph. Reading through the
-harness configuration repository validates both: `HarnessRepo::workflow(name)` reads `workflows/<name>.toml` and returns
+harness configuration repository validates both: `HarnessRepo::workflow(project, name)` reads
+`projects/<project>/workflows/<name>.toml` and returns
 a `WorkflowDefinition`, or an error that names that file. `workflows::definition::read(root, name)` is the same read for
 a repository root already at hand.
+
+## The repository of a run
+
+A run belongs to one of the repositories of the workflow's project. A manual trigger's repository input and the
+`repository` parameter of a schedule or a webhook trigger are checked against that set. Left out, the run belongs to the
+project's only repository when it has exactly one, and a project with no repository runs in its own files repository.
+A run that names a repository outside the set, or names none where the project has more than one, is refused before
+anything is stored, with one of these messages (the choices are the project's repositories in the order it names them, or
+its files repository):
+
+- `the repository "<name>" is not one of the repositories of the project <project>; a run of its workflows belongs to one of: <a>, <b>`
+- `the project <project> has more than one repository, so the run must name one of: <a>, <b>`
 
 ## Executing a run
 
@@ -234,8 +252,10 @@ file edited into an ordinary workflow is that workflow: its own schedule starts 
 old row out and no longer fires it. An automation that works in the harness configuration repository starts its chat
 directly, because a workflow run belongs to a repository.
 
-The file is all that fires the automation where the repository exists: deleting its file stops the automation until
-the next start writes it again, and then it fires as its schedule says. On a server with no `[harness]`, where there
+The file is all that fires the automation where the repository exists. Deleting the file through the workflow routes
+(`DELETE /v1/projects/{id}/workflows/{name}`, `moebius workflow delete --project`) deletes the automation with it; a
+file removed by hand stops the automation, which the Automations page then no longer lists, and the next start does
+not write it again. On a server with no `[harness]`, where there
 is nowhere to write a file, the automation's row is what fires it, on the same minute and within the same five
 minutes. The workflow schedule starts
 from the minute the automation was last checked or saved, so the minute of an upgrade or a save cannot fire again.

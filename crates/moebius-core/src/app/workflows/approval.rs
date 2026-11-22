@@ -13,7 +13,7 @@ use std::time::Duration;
 use serde::Deserialize;
 use serde_json::{Value, json};
 
-use super::run::{Resume, WorkflowSource};
+use super::run::Resume;
 use crate::app::{App, AppError, Result};
 use crate::bus::Event;
 use crate::store::{InboxItem, Store, WorkflowNodeRun, WorkflowRun};
@@ -168,8 +168,9 @@ impl App {
         Ok(())
     }
 
-    /// The definition a stored run is driven again from: the workflow `name` of the project `project` when the run
-    /// records one (ADR 0025), else the server-wide file of that name.
+    /// The definition a stored run is driven again from: the workflow `name` of the project `project` the run records
+    /// (ADR 0025). A run that records none is still waiting for the migration of the server-wide files to give it one,
+    /// so it has no definition to be driven from and fails closed.
     fn stored_run_definition(
         &self,
         project: Option<i64>,
@@ -180,7 +181,9 @@ impl App {
                 let project = self.project(id)?;
                 self.harness_repo()?.project_workflow(&project.name, name)
             }
-            None => name.definition(self),
+            None => Err(AppError::Invalid(format!(
+                "the run of {name} records no project, so its workflow cannot be found; the migration of the workflows to their projects has not placed it"
+            ))),
         }
     }
 
@@ -496,6 +499,14 @@ mod tests {
     use moebius_plugin_api::Host;
 
     use super::*;
+
+    /// The workflow written to the test's configuration repository as `name`, read from its file.
+    fn named(app: &App, name: &str) -> crate::workflows::definition::WorkflowDefinition {
+        app.harness_repo()
+            .unwrap()
+            .project_workflow("demo", name)
+            .unwrap()
+    }
     use crate::harness::repo::testing;
     use crate::repos::git;
     use crate::store::{Repository, Store};
@@ -642,12 +653,13 @@ to = "after"
             &dir.path().join("data"),
         ));
         let harness = testing::use_harness(&app, dir.path());
-        let folder = harness.path().join("workflows");
-        std::fs::create_dir_all(&folder).unwrap();
-        std::fs::write(folder.join("asking.toml"), text).unwrap();
         let repository = app
             .add_repository("demo", origin.to_str().unwrap())
             .unwrap();
+        // The workflow is the project `demo`'s, which the repository came with.
+        let folder = harness.path().join("projects/demo/workflows");
+        std::fs::create_dir_all(&folder).unwrap();
+        std::fs::write(folder.join("asking.toml"), text).unwrap();
         (dir, app, repository)
     }
 
@@ -721,7 +733,8 @@ to = "after"
 
     /// The run and its wait as a server that stopped mid-wait leaves them, waiting on `value`.
     fn left_waiting_with(app: &App, repository_id: i64, value: &Value) -> WorkflowRun {
-        left_waiting_of(app, repository_id, None, value)
+        let project = app.repository(repository_id).unwrap().home_project_id;
+        left_waiting_of(app, repository_id, Some(project), value)
     }
 
     /// The same for a run of the workflow `asking` of the project `project`, when it is one.
@@ -771,9 +784,10 @@ to = "after"
     /// The run and its wait as a server that stopped mid-wait leaves them, after `build` has run: the run and its
     /// wait node `waiting`, the node before it finished, and the inbox item still open.
     fn left_waiting_after_a_build(app: &App, repository_id: i64) -> WorkflowRun {
+        let project = app.repository(repository_id).unwrap().home_project_id;
         let run = app
             .store
-            .add_workflow_run("building", repository_id, "test", &value())
+            .add_project_workflow_run(project, "building", repository_id, "test", &value())
             .unwrap();
         let build = app
             .store
@@ -814,7 +828,7 @@ to = "after"
         let (_dir, app, repository) = setup(&asking(None));
         let mut events = app.bus.subscribe();
         let run = app
-            .start_workflow_run("asking", repository.id, value())
+            .start_workflow_run(named(&app, "asking"), repository.id, value())
             .unwrap();
 
         let waiting = wait_for_status(&app, &mut events, run.id, "waiting");
@@ -908,7 +922,7 @@ to = "after"
         let (_dir, app, repository) = setup(&workflow);
         let mut events = app.bus.subscribe();
         let run = app
-            .start_workflow_run("asking", repository.id, value())
+            .start_workflow_run(named(&app, "asking"), repository.id, value())
             .unwrap();
         wait_for_status(&app, &mut events, run.id, "waiting");
 
@@ -930,7 +944,7 @@ to = "after"
         let (_dir, app, repository) = setup(&asking(None));
         let mut events = app.bus.subscribe();
         let run = app
-            .start_workflow_run("asking", repository.id, value())
+            .start_workflow_run(named(&app, "asking"), repository.id, value())
             .unwrap();
         wait_for_status(&app, &mut events, run.id, "waiting");
 
@@ -947,7 +961,7 @@ to = "after"
         let (_dir, app, repository) = setup(&asking(None));
         let mut events = app.bus.subscribe();
         let run = app
-            .start_workflow_run("asking", repository.id, value())
+            .start_workflow_run(named(&app, "asking"), repository.id, value())
             .unwrap();
         wait_for_status(&app, &mut events, run.id, "waiting");
 
@@ -965,7 +979,7 @@ to = "after"
         let (_dir, app, repository) = setup(&asking(None));
         let mut events = app.bus.subscribe();
         let run = app
-            .start_workflow_run("asking", repository.id, value())
+            .start_workflow_run(named(&app, "asking"), repository.id, value())
             .unwrap();
         wait_for_status(&app, &mut events, run.id, "waiting");
 
@@ -983,7 +997,7 @@ to = "after"
         let (_dir, app, repository) = setup(&asking(None));
         let mut events = app.bus.subscribe();
         let run = app
-            .start_workflow_run("asking", repository.id, value())
+            .start_workflow_run(named(&app, "asking"), repository.id, value())
             .unwrap();
         wait_for_status(&app, &mut events, run.id, "waiting");
         app.resume_workflow_run(run.id, &request("approve", None, None))
@@ -1009,7 +1023,7 @@ to = "after"
         let (_dir, app, repository) = setup(&asking(Some(1)));
         let mut events = app.bus.subscribe();
         let run = app
-            .start_workflow_run("asking", repository.id, value())
+            .start_workflow_run(named(&app, "asking"), repository.id, value())
             .unwrap();
 
         let ended = wait_for_end(&app, &mut events, run.id);
@@ -1060,9 +1074,13 @@ to = "after"
     fn a_waiting_run_of_a_project_is_driven_again_from_the_workflow_of_its_project() {
         let (_dir, app, repository) = setup(&asking(None));
         let harness = app.harness_repo().unwrap();
-        // The server-wide workflow of the same name is another graph, and goes away altogether: the run must not
-        // read it, and must not fail for lack of it.
-        std::fs::remove_file(harness.path().join("workflows/asking.toml")).unwrap();
+        // A server-wide workflow of the same name is another graph: the run must not read it.
+        std::fs::create_dir_all(harness.path().join("workflows")).unwrap();
+        std::fs::write(
+            harness.path().join("workflows/asking.toml"),
+            "not a workflow",
+        )
+        .unwrap();
         let project = app.store.project_by_name("demo").unwrap().unwrap();
         let definition = crate::workflows::definition::WorkflowDefinition::parse(
             &asking(None),
@@ -1100,7 +1118,7 @@ to = "after"
             app.harness_repo()
                 .unwrap()
                 .path()
-                .join("workflows")
+                .join("projects/demo/workflows")
                 .join("asking.toml"),
         )
         .unwrap();
@@ -1133,7 +1151,7 @@ to = "after"
             app.harness_repo()
                 .unwrap()
                 .path()
-                .join("workflows")
+                .join("projects/demo/workflows")
                 .join("building.toml"),
             building(None),
         )
@@ -1166,7 +1184,7 @@ to = "after"
             app.harness_repo()
                 .unwrap()
                 .path()
-                .join("workflows")
+                .join("projects/demo/workflows")
                 .join("checking.toml"),
             checking(),
         )
@@ -1175,7 +1193,13 @@ to = "after"
         let built = json!({"change": 7, "source": "build"});
         let run = app
             .store
-            .add_workflow_run("checking", repository.id, "test", &trigger)
+            .add_project_workflow_run(
+                app.repository(repository.id).unwrap().home_project_id,
+                "checking",
+                repository.id,
+                "test",
+                &trigger,
+            )
             .unwrap();
         let build = app
             .store

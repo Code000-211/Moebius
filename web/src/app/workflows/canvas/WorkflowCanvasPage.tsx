@@ -146,6 +146,7 @@ export function WorkflowCanvasPage() {
         key={definition.data.name}
         name={definition.data.name}
         loaded={definition.data.definition}
+        project={definition.data.project}
       />
     </ReactFlowProvider>
   );
@@ -195,10 +196,13 @@ function inView(board: ReturnType<typeof useReactFlow>, at: { x: number; y: numb
 function Canvas({
   name,
   loaded,
+  project,
   isNew = false,
 }: {
   name: string;
   loaded: WorkflowDefinition;
+  /** The project the workflow belongs to, once it is known: a webhook's address names it. */
+  project?: number;
   /** Set when the workflow has no file yet: it is unsaved until the first save, which creates it. */
   isNew?: boolean;
 }) {
@@ -471,6 +475,7 @@ function Canvas({
       </div>
       <Inspector
         graph={draft}
+        project={project}
         selection={selection}
         run={
           selection?.kind === "node"

@@ -31,12 +31,12 @@ run, and [an expression](expressions.md) reads the value it started the run with
 | Key | Type | Meaning |
 | --- | --- | --- |
 | `cron` | string | Required. Five fields — minute, hour, day of the month, month, day of the week — in the server's local time, spelled as an automation's schedule is (see [`automation.schedule`](../desktop-api.md)). A field is `*`, a number, a range `a-b`, either with a step (`*/15`, `8-18/2`), or a list of these separated by commas. When both the day of the month and the day of the week are restricted (neither starts with `*`), a day that matches either comes due, as in cron. |
-| `repository` | string | Required to start a run. The name of the repository the runs belong to, as the board knows it. A run belongs to a repository, so a schedule that names none starts nothing. |
+| `repository` | string | The name of the repository the runs belong to, as the board knows it; it is checked against the repositories of the workflow's project, and a name outside them is refused when a run would start. Left out, the runs belong to the project's only repository, or to its files repository when it has none; a project with several repositories and a schedule that names none starts nothing. |
 | `inputs` | table | What a run starts its inputs with: names and their defaults, such as `{ goal = "Read the board." }`. Optional; defaults to an empty table. |
 | `enabled` | boolean | Whether the schedule is on. Optional; defaults to true. A schedule that is off comes due no minute. Automations write their on/off switch here. |
 
 A cron that cannot be read is refused when the file loads, with a message that names which field is wrong:
-`workflows/nightly-triage.toml: trigger: "cron": the minute 70 is not between 0 and 59`. So is a `cron` that is not a
+`projects/ops/workflows/nightly-triage.toml: trigger: "cron": the minute 70 is not between 0 and 59`. So is a `cron` that is not a
 string of five fields, an `inputs` that is not a table, a `repository` that is not a name, and an `enabled` that is not
 true or false. A parameter that is not one of the four above is refused too: `trigger: unknown trigger parameters
 ["count"]`.
@@ -86,6 +86,7 @@ The firing names the workflow run when there is one.
 
 ## Removing a workflow's schedule
 
-Deleting the workflow's file (`DELETE /v1/workflows/{name}`) leaves its row of last firings in the store; it does
-nothing, since no workflow of that name is read again. Adding a workflow under a name that has fired before starts
-where that name left off, so a workflow written again under an old name waits for its next minute.
+Deleting the workflow's file (`DELETE /v1/projects/{id}/workflows/{name}`) leaves its row of last firings in the store;
+it does nothing, since no workflow of that name is read again. The row is kept per project and workflow, by the
+project's id, so renaming a project leaves it alone. Adding a workflow under a name that has fired before in the same
+project starts where that name left off, so a workflow written again under an old name waits for its next minute.

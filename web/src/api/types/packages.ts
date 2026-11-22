@@ -81,6 +81,8 @@ export interface InstallRequest {
   version?: string;
   registry?: string;
   repository?: string;
+  /** The project (by name) a workflow package is installed into; a workflow package needs one. */
+  project?: string;
 }
 
 export interface PluginProcessStatus {

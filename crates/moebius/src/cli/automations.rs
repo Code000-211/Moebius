@@ -4,12 +4,17 @@
 use clap::Subcommand;
 use serde_json::{Map, Value, json};
 
+use super::workflow::project_id;
 use super::{Plan, Request, Show, read_input};
 
 #[derive(Debug, Subcommand)]
 pub enum AutomationCommand {
     /// The automations, with when each fires next (Unix seconds).
-    List,
+    List {
+        /// Only the automations of this project, by name or id.
+        #[arg(long)]
+        project: Option<String>,
+    },
     /// Add an automation, or replace the one `--id` names.
     Save {
         /// The automation to replace; a new one without it.
@@ -32,6 +37,9 @@ pub enum AutomationCommand {
         /// Its chats work in the harness configuration repository.
         #[arg(long)]
         harness: bool,
+        /// The project it belongs to, by name or id; the oldest project without it.
+        #[arg(long)]
+        project: Option<String>,
         /// Save it switched off, so that only `automation run` fires it.
         #[arg(long)]
         off: bool,
@@ -43,10 +51,16 @@ pub enum AutomationCommand {
 }
 
 /// `automation list`, `save`, `run` and `delete`.
-pub fn automation(command: &AutomationCommand) -> Plan {
+pub fn automation(
+    command: &AutomationCommand,
+    get: &mut dyn FnMut(&str) -> Result<Value, String>,
+) -> Plan {
     Ok(match command {
-        AutomationCommand::List => (
-            Request::get("/v1/automations"),
+        AutomationCommand::List { project } => (
+            Request::get(match project {
+                Some(project) => format!("/v1/automations?project={}", project_id(get, project)?),
+                None => "/v1/automations".to_string(),
+            }),
             Show::Table(&["id", "name", "schedule", "agent", "enabled", "next_firing"]),
         ),
         AutomationCommand::Save {
@@ -57,6 +71,7 @@ pub fn automation(command: &AutomationCommand) -> Plan {
             prompt,
             repository,
             harness,
+            project,
             off,
         } => {
             let prompt = if prompt == "-" {
@@ -73,6 +88,9 @@ pub fn automation(command: &AutomationCommand) -> Plan {
             body.insert("enabled".into(), json!(!off));
             if let Some(repository) = repository {
                 body.insert("repository".into(), json!(repository));
+            }
+            if let Some(project) = project {
+                body.insert("project".into(), json!(project_id(get, project)?));
             }
             let body = Value::Object(body);
             let request = match id {
@@ -155,6 +173,48 @@ mod tests {
         assert_eq!(
             plan(&["automation", "list"]).unwrap().0.path,
             "/v1/automations"
+        );
+    }
+
+    #[test]
+    fn a_project_is_resolved_by_name_for_an_automation_and_passed_to_a_package() {
+        use crate::cli::tests::plan_with;
+        let mut get = |route: &str| -> Result<serde_json::Value, String> {
+            match route {
+                "/v1/projects" => Ok(json!([{"id": 3, "name": "Web"}])),
+                other => Err(format!("unexpected {other}")),
+            }
+        };
+        let (request, _) =
+            plan_with(&["automation", "list", "--project", "web"], &mut get).unwrap();
+        assert_eq!(request.path, "/v1/automations?project=3");
+        let (request, _) = plan_with(
+            &[
+                "automation",
+                "save",
+                "--name",
+                "N",
+                "--schedule",
+                "0 8 * * 1",
+                "--prompt",
+                "hi",
+                "--project",
+                "Web",
+            ],
+            &mut get,
+        )
+        .unwrap();
+        assert_eq!(request.body.unwrap()["project"], 3);
+        // A package takes the project as given; the server resolves it.
+        let (request, _) = plan_with(
+            &["pkg", "install", "flow@1.0.0", "--project", "Web"],
+            &mut get,
+        )
+        .unwrap();
+        let body = request.body.unwrap();
+        assert_eq!(
+            (&body["name"], &body["project"]),
+            (&json!("flow"), &json!("Web"))
         );
     }
 }

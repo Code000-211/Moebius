@@ -14,6 +14,8 @@ An automation is:
 - a **prompt**, the first message of each chat;
 - **where it works**: a repository (each chat gets its own branch, so what it builds is offered as a change), the
   harness configuration repository, or an empty directory, as a chat does;
+- the **project** that owns it: its workflow file is kept in that project's folder, and it is shown in that project's
+  tab (`--project` on the command line, `project` in the API; left out, the oldest project you see);
 - whether it is **on**.
 
 The exact contract is in the [desktop API reference](../reference/desktop-api.md#post-v1automations).
@@ -36,7 +38,7 @@ The same, as a person in a terminal or the Moebius agent in a chat (see [Command
 "$MOEBIUS" automation run 1
 ```
 
-`--agent` names another agent than the Moebius agent, `--harness` makes the chats work in the harness configuration
+`--project <name-or-id>` puts it in a project, `--agent` names another agent than the Moebius agent, `--harness` makes the chats work in the harness configuration
 repository, `--off` saves it switched off, and `--id <id>` replaces an automation instead of adding one.
 `"$MOEBIUS" automation delete <id>` deletes it; the chats it started stay.
 

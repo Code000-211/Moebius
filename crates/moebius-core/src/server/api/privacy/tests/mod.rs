@@ -117,6 +117,7 @@ fn private(state: &ApiState) -> Private {
                 enabled: false,
             },
             "",
+            None,
         )
         .unwrap();
     let research = store
@@ -542,6 +543,113 @@ async fn the_runs_of_a_workflow_of_a_private_project_are_left_out_for_a_non_memb
         assert_eq!(status, 404, "{body}");
         assert!(!body.to_string().contains("secret"), "{body}");
     }
+}
+
+/// The workflows of a private project are 404 to someone who is no member, and the lists that span projects leave
+/// them out.
+#[tokio::test]
+async fn the_workflows_of_a_private_project_are_invisible_to_a_non_member() {
+    let (dir, state, addr) = start().await;
+    let private = private(&state);
+    let harness = crate::harness::repo::testing::use_harness(&state.app, dir.path());
+    let project = state.app.store.project(private.project).unwrap().unwrap();
+    let folder = harness
+        .path()
+        .join(format!("projects/{}/workflows", project.name));
+    std::fs::create_dir_all(&folder).unwrap();
+    std::fs::write(
+        folder.join("secret.toml"),
+        "name = \"secret\"\ndescription = \"Hidden.\"\n\n[[trigger]]\nkind = \"manual\"\n",
+    )
+    .unwrap();
+    let base = format!("/v1/projects/{}/workflows", private.project);
+
+    for path in [
+        base.clone(),
+        format!("{base}/secret"),
+        format!("{base}/secret/run-inputs"),
+    ] {
+        assert_eq!(
+            call(&addr, &private.lea, "GET", &path).await.0,
+            200,
+            "{path}"
+        );
+        for token in [&private.ben, &private.olga] {
+            assert_eq!(call(&addr, token, "GET", &path).await.0, 404, "{path}");
+        }
+    }
+    for token in [&private.ben, &private.olga] {
+        let (status, _) = call(&addr, token, "POST", &format!("{base}/secret/runs")).await;
+        assert_eq!(status, 404);
+    }
+    assert_eq!(
+        call(&addr, &private.olga, "PUT", &format!("{base}/secret"))
+            .await
+            .0,
+        404
+    );
+    assert_eq!(
+        call(&addr, &private.olga, "DELETE", &format!("{base}/secret"))
+            .await
+            .0,
+        404
+    );
+
+    // The deprecated list and the lookup by name leave it out for a non-member.
+    let (_, seen) = call(&addr, &private.lea, "GET", "/v1/workflows").await;
+    assert!(seen.to_string().contains("secret"), "{seen}");
+    for token in [&private.ben, &private.olga] {
+        let (status, hidden) = call(&addr, token, "GET", "/v1/workflows").await;
+        assert_eq!(status, 200);
+        assert!(hidden.as_array().unwrap().is_empty(), "{hidden}");
+        assert_eq!(
+            call(&addr, token, "GET", "/v1/workflows/secret").await.0,
+            404
+        );
+    }
+}
+
+/// The deprecated save names a project in its body, which the privacy check of the address cannot see: a person who
+/// does not see the project is answered `404`, whether or not it exists, and nothing is written.
+#[tokio::test]
+async fn the_body_of_the_old_save_cannot_name_a_project_the_person_does_not_see() {
+    let (dir, state, addr) = start().await;
+    let private = private(&state);
+    let harness = crate::harness::repo::testing::use_harness(&state.app, dir.path());
+    let project = state.app.store.project(private.project).unwrap().unwrap();
+    let file = "name = \"x\"\ndescription = \"Hidden.\"\n\n[[trigger]]\nkind = \"manual\"\n\n[[nodes]]\nid = \"a\"\nkind = \"test\"\n\n[[edges]]\nfrom = \"trigger\"\nto = \"a\"\nport = \"out\"\n";
+    let put = |token: String, project: i64| {
+        let addr = addr.clone();
+        let file = file.to_string();
+        async move {
+            let response = reqwest::Client::new()
+                .put(format!("http://{addr}/v1/workflows/x"))
+                .bearer_auth(token)
+                .json(&json!({ "file": file, "project": project }))
+                .send()
+                .await
+                .unwrap();
+            (response.status().as_u16(), response.text().await.unwrap())
+        }
+    };
+    let written = harness
+        .path()
+        .join(format!("projects/{}/workflows/x.toml", project.name));
+
+    // An owner who is no member sees the same answer for the private project as for one that does not exist.
+    let (status, existing) = put(private.olga.clone(), private.project).await;
+    let (missing_status, missing) = put(private.olga.clone(), private.project + 1000).await;
+    assert_eq!(
+        (status, missing_status),
+        (404, 404),
+        "{existing} / {missing}"
+    );
+    assert!(
+        !written.exists(),
+        "nothing is written into a project the person does not see"
+    );
+    // A member who is not in the project is refused by their role before the project is looked at.
+    assert_eq!(put(private.ben.clone(), private.project).await.0, 403);
 }
 
 #[tokio::test]

@@ -37,6 +37,9 @@ export interface LastRun {
 
 /** One workflow in the list. */
 export interface WorkflowSummary {
+  /** The id of the project the workflow belongs to. */
+  project: number;
+  project_name: string;
   name: string;
   description: string;
   /** The kind of the first trigger: `manual`, `schedule`, `event`, `webhook` or another; empty with none. */
@@ -47,6 +50,8 @@ export interface WorkflowSummary {
 
 /** One workflow's file and its parsed form. */
 export interface WorkflowView {
+  project: number;
+  project_name: string;
   name: string;
   file: string;
   definition: WorkflowDefinition;
@@ -59,6 +64,7 @@ export interface SavedWorkflow extends WorkflowView {
 
 /** A deleted workflow and the commit it made. */
 export interface DeletedWorkflow {
+  project: number;
   name: string;
   commit?: string;
 }
@@ -78,6 +84,10 @@ export interface WorkflowRunSummary {
   started_at: number | null;
   finished_at: number | null;
   error: string | null;
+  /** The project of the workflow; null for a run from before workflows belonged to projects. */
+  project: number | null;
+  /** Null when the run has no project or the project is gone. */
+  project_name: string | null;
 }
 
 /** One node of one run: what it was given, what it answered and why it failed. */
@@ -118,6 +128,8 @@ export interface StartedRun {
   trigger: string;
   status: string;
   value: unknown;
+  project: number | null;
+  project_name: string | null;
 }
 
 /** One input of a manual trigger, as `GET /v1/workflows/{name}/run-inputs` lists it. */

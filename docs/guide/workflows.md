@@ -1,6 +1,7 @@
 # Write a workflow
 
-A workflow is a graph of steps kept in the harness configuration repository as `workflows/<name>.toml`. A trigger
+A workflow is a graph of steps owned by one project, kept in the harness configuration repository as
+`projects/<project>/workflows/<name>.toml`: the same name may be in two projects. A trigger
 starts it, nodes do its work, and edges carry each node's value to the next. The [workflow reference](../reference/workflows.md)
 has the exact parameters of every trigger and node; this page builds one from a trigger to its last request.
 
@@ -12,9 +13,13 @@ leaves, the node it reaches, and the source's port it leaves by: every kind repo
 single-output node's edge names the one it has. Every port of a router such as a condition must have an edge leaving
 it, or reading the file fails.
 
-Save the file with the app, `moebius workflow save <name> <file>`, or by committing it to the harness configuration
-repository. Start a manual run with `moebius workflow run release-preview --repository <name> --input release=1.4.0
---input channel=stable`.
+Save the file in a project's Workflows tab of the app, with `moebius workflow save --project <project> <name> <file>`, or
+by committing it to the project's folder of the harness configuration repository. Start a manual run with
+`moebius workflow run --project <project> release-preview --repository <name> --input release=1.4.0
+--input channel=stable`. A run belongs to one of the project's repositories: leave `--repository` out when the project
+has only one, and name one when it has several. A run that names a repository outside the project is refused with a
+message that lists the project's repositories. A webhook trigger answers at
+`/api/hooks/projects/<project id>/<path>`, and a schedule trigger's `repository` is checked against the project the same way.
 
 ## A workflow in full
 

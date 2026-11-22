@@ -11,7 +11,7 @@ use crate::app::{App, AppError, Result};
 use crate::blobs::redact;
 use crate::board::Runs;
 use crate::bus::Event;
-use crate::store::{Automation, Firing, Run};
+use crate::store::{Automation, Firing, Project, Run};
 use crate::workflows::definition::WorkflowDefinition;
 use crate::workflows::trigger::schedule as schedule_trigger;
 
@@ -37,41 +37,18 @@ impl App {
             .ok_or_else(|| AppError::NotFound(format!("automation {id}")))?;
         let automation = self.stored_automation(automation)?;
         let definition = self.definition_of(&automation)?;
-        fire(self, runs, &automation, &definition, None, true, None)
+        fire(self, runs, &automation, &definition, None, true)
     }
 
-    /// Fires the automation-shaped workflow `definition` because its schedule came due at `at`.
+    /// Fires the automation-shaped workflow `definition`, the file `key` of the project `project`, because its schedule
+    /// came due at `at`.
     pub fn fire_automation_definition(
         self: &Arc<Self>,
         runs: &dyn Runs,
+        project: &Project,
         key: &str,
         definition: &WorkflowDefinition,
         at: PrimitiveDateTime,
-    ) -> Result<Firing> {
-        self.fire_definition(runs, key, definition, at, None)
-    }
-
-    /// The same for an automation a project owns (ADR 0025), whose file is `key` in the project `project_id`'s
-    /// workflows. The firing is recorded and published as any other, an automation that names no repository starts its
-    /// chat itself, and a run it starts records the project.
-    pub fn fire_project_automation_definition(
-        self: &Arc<Self>,
-        runs: &dyn Runs,
-        project_id: i64,
-        key: &str,
-        definition: &WorkflowDefinition,
-        at: PrimitiveDateTime,
-    ) -> Result<Firing> {
-        self.fire_definition(runs, key, definition, at, Some((project_id, key)))
-    }
-
-    fn fire_definition(
-        self: &Arc<Self>,
-        runs: &dyn Runs,
-        key: &str,
-        definition: &WorkflowDefinition,
-        at: PrimitiveDateTime,
-        project: Option<(i64, &str)>,
     ) -> Result<Firing> {
         if !is_automation(definition) {
             return Err(AppError::Invalid(format!(
@@ -79,10 +56,7 @@ impl App {
                 definition.name
             )));
         }
-        let row = self.ensure_automation(key, definition)?;
-        if let Some((project_id, _)) = project {
-            self.store.move_automation_to_project(key, project_id)?;
-        }
+        let row = self.ensure_automation(project, key, definition)?;
         let automation = self.automation_from_workflow(row.clone(), definition)?;
         // The row is the shortcut's copy: what the file now says is what the next firing, the page and the CLI see.
         self.store.update_automation(
@@ -97,15 +71,7 @@ impl App {
                 enabled: automation.enabled,
             },
         )?;
-        fire(
-            self,
-            runs,
-            &automation,
-            definition,
-            Some(at),
-            false,
-            project,
-        )
+        fire(self, runs, &automation, definition, Some(at), false)
     }
 }
 
@@ -118,7 +84,6 @@ fn fire(
     definition: &WorkflowDefinition,
     at: Option<PrimitiveDateTime>,
     manual: bool,
-    project: Option<(i64, &str)>,
 ) -> Result<Firing> {
     let named_repository = schedule_trigger::of(definition).and_then(|trigger| trigger.repository);
     let before = app.store.last_started_firing(automation.id)?;
@@ -156,14 +121,19 @@ fn fire(
         let started = app
             .store
             .add_firing(automation.id, "started", None, None, manual, "")?;
-        let run = match project {
-            Some(project) => app.start_project_workflow_run_for_firing(
-                definition.clone(),
-                repository_id,
-                value,
-                started.id,
-                project,
-            ),
+        let started_run = match app.automation_home(automation.id)? {
+            Some(project) => {
+                let key = app.workflow_key(&project, automation.id, &automation.name)?;
+                let repository = app.repository(repository_id)?;
+                app.start_project_workflow_run_with(
+                    &project,
+                    &key,
+                    definition.clone(),
+                    Some(&repository.name),
+                    value,
+                    Some(started.id),
+                )
+            }
             None => app.start_workflow_run_for_firing(
                 definition.clone(),
                 repository_id,
@@ -171,7 +141,7 @@ fn fire(
                 started.id,
             ),
         };
-        match run {
+        match started_run {
             Ok(_) => app
                 .store
                 .firing(started.id)?
@@ -227,7 +197,8 @@ fn fire(
 /// The schedule's check, once a minute: ends the chats of automations that have answered, and fires an automation
 /// that has nowhere its workflow file would be. Where a harness configuration repository is, the workflow file is
 /// what fires an automation (see `server::schedule::on_workflow_schedules`), so one automation has one clock there;
-/// deleting its file stops it until the next start writes it again.
+/// the file of a project's automation is its only clock, so an automation whose file is gone fires nowhere (deleting
+/// the file through the workflow routes drops the row with it; one removed by hand leaves a row that is not listed).
 pub fn on_schedule(app: &Arc<App>, runs: &dyn Runs) -> Result<()> {
     for run_id in app.store.waiting_automation_chats()? {
         // A chat that ended meanwhile cannot be ended again; it is left as it is.
@@ -263,7 +234,7 @@ pub fn on_schedule(app: &Arc<App>, runs: &dyn Runs) -> Result<()> {
             continue;
         };
         let definition = app.definition_of(&automation)?;
-        fire(app, runs, &automation, &definition, Some(at), false, None)?;
+        fire(app, runs, &automation, &definition, Some(at), false)?;
     }
     app.store.set_automations_checked(&now_text)?;
     Ok(())

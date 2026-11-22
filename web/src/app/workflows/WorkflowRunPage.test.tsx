@@ -14,6 +14,8 @@ const LONG = "the workspace compiled and the tests began to run\n".repeat(40);
 
 const FAILED: WorkflowRun = {
   id: 41,
+  project: 1,
+  project_name: "demo",
   workflow: "release",
   repository_id: 1,
   trigger: "schedule",

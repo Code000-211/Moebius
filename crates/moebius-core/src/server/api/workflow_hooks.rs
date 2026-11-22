@@ -1,10 +1,17 @@
-//! The door a `webhook` trigger answers on (see [`crate::workflows::trigger::webhook`]):
+//! The door a `webhook` trigger answers on (see [`crate::workflows::trigger::webhook`]). A workflow belongs to a
+//! project (ADR 0025), so its URL names the project:
 //!
-//! - `POST /api/hooks/{path}`: a delivery to the workflow whose webhook trigger names this path, whose run belongs to
-//!   the repository the trigger names.
-//! - `POST /api/hooks/{repository}/{path}`: the same, for a delivery that names which repository the run belongs to.
+//! - `POST /api/hooks/projects/{project}/{path}`: a delivery to the workflow of the project whose webhook trigger names
+//!   this path, whose run belongs to the repository the trigger names, or to the project's only repository.
+//! - `POST /api/hooks/projects/{project}/{repository}/{path}`: the same, for a delivery that names which repository the
+//!   run belongs to; it must be one of the project's repositories.
 //!
-//! Neither needs the server's token: a hook is a door an outside service knocks on, and what opens it is the trigger's
+//! Deprecated, kept so that a hook set up before workflows belonged to projects keeps answering: `POST
+//! /api/hooks/{path}` and `POST /api/hooks/{repository}/{path}` find the workflow by its path in every project. One
+//! project that has it answers as the project's own URL does; several are answered `409` with the project-scoped URLs
+//! to use, once the credential has opened every hook that claims the path.
+//!
+//! None needs the server's token: a hook is a door an outside service knocks on, and what opens it is the trigger's
 //! own secret, which a workflow file only names. A delivery that reaches no hook answers one way whether its path is
 //! unknown, its credential missing, its credential wrong, or the secret the trigger names not in the server's store,
 //! so nothing here says which paths have hooks or what they ask for. A JSON body becomes the run's value and the id of
@@ -25,7 +32,8 @@ use serde_json::Value;
 use super::{ApiState, same};
 use crate::app::{App, AppError};
 use crate::server::settings::Secrets;
-use crate::store::Repository;
+use crate::store::Project;
+use crate::workflows::definition::WorkflowDefinition;
 use crate::workflows::trigger::webhook::{self, Hook, MAX_ACTIVE_RUNS};
 
 /// What a delivery gets when it reaches no hook, whether for its path or for its credential.
@@ -34,6 +42,14 @@ const NO_HOOK: &str = "no hook on this path";
 /// The routes that need no token: an outside service knows a hook's path and, at most, its secret.
 pub(super) fn public_routes() -> Router<ApiState> {
     Router::new()
+        .route(
+            "/api/hooks/projects/{project}/{path}",
+            post(deliver_to_project),
+        )
+        .route(
+            "/api/hooks/projects/{project}/{repository}/{path}",
+            post(deliver_to_project_in_repository),
+        )
         .route("/api/hooks/{path}", post(deliver))
         .route(
             "/api/hooks/{repository}/{path}",
@@ -48,6 +64,17 @@ struct Started {
     run: i64,
     /// The workflow whose trigger answered on the path.
     workflow: String,
+    /// The project that owns it.
+    project: i64,
+}
+
+/// Where a delivery looks for the hook its path names.
+#[derive(Clone, Copy)]
+enum Scope {
+    /// Every project: the deprecated URLs, which name no project.
+    Anywhere,
+    /// The project with this id.
+    Project(i64),
 }
 
 /// Why a delivery did not start a run, and how it is answered.
@@ -57,10 +84,12 @@ enum Refusal {
     Unknown,
     /// The body is not a JSON value, which is what a run starts with.
     Body(String),
-    /// The run would belong to a repository the server does not have, or to none.
+    /// The run would belong to a repository the project does not have, or to none.
     Repository(String),
     /// The workflow already has as many runs going as its hook lets have.
     Ceiling(String),
+    /// Several projects have a hook on the path, which only a delivery that opens them all learns.
+    Ambiguous(String),
     /// The server could not say: its own configuration or store failed.
     Failed(AppError),
 }
@@ -72,6 +101,7 @@ impl IntoResponse for Refusal {
             Refusal::Body(message) => (StatusCode::BAD_REQUEST, message),
             Refusal::Repository(message) => (StatusCode::UNPROCESSABLE_ENTITY, message),
             Refusal::Ceiling(message) => (StatusCode::TOO_MANY_REQUESTS, message),
+            Refusal::Ambiguous(message) => (StatusCode::CONFLICT, message),
             Refusal::Failed(error) => return super::ApiError::from(error).into_response(),
         };
         (status, message).into_response()
@@ -96,7 +126,7 @@ async fn deliver(
     headers: HeaderMap,
     body: Bytes,
 ) -> Response {
-    answer(state, &path, None, &headers, &body).await
+    answer(state, Scope::Anywhere, &path, None, &headers, &body).await
 }
 
 async fn deliver_in_repository(
@@ -105,13 +135,54 @@ async fn deliver_in_repository(
     headers: HeaderMap,
     body: Bytes,
 ) -> Response {
-    answer(state, &path, Some(&repository), &headers, &body).await
+    answer(
+        state,
+        Scope::Anywhere,
+        &path,
+        Some(&repository),
+        &headers,
+        &body,
+    )
+    .await
 }
 
-/// The one door both forms go through. Which workflow a path names, what it asks for, and which repository its run
+async fn deliver_to_project(
+    State(state): State<ApiState>,
+    UrlPath((project, path)): UrlPath<(String, String)>,
+    headers: HeaderMap,
+    body: Bytes,
+) -> Response {
+    let Ok(project) = project.parse::<i64>() else {
+        return Refusal::Unknown.into_response();
+    };
+    answer(state, Scope::Project(project), &path, None, &headers, &body).await
+}
+
+async fn deliver_to_project_in_repository(
+    State(state): State<ApiState>,
+    UrlPath((project, repository, path)): UrlPath<(String, String, String)>,
+    headers: HeaderMap,
+    body: Bytes,
+) -> Response {
+    let Ok(project) = project.parse::<i64>() else {
+        return Refusal::Unknown.into_response();
+    };
+    answer(
+        state,
+        Scope::Project(project),
+        &path,
+        Some(&repository),
+        &headers,
+        &body,
+    )
+    .await
+}
+
+/// The one door every form goes through. Which workflow a path names, what it asks for, and which repository its run
 /// belongs to are all read from the harness configuration repository and the store, so they are asked off the runtime.
 async fn answer(
     state: ApiState,
+    scope: Scope,
     path: &str,
     repository: Option<&str>,
     headers: &HeaderMap,
@@ -125,6 +196,7 @@ async fn answer(
         start(
             &state.app,
             state.config.secrets(),
+            scope,
             &path,
             repository.as_deref(),
             credential.as_deref(),
@@ -139,57 +211,127 @@ async fn answer(
     }
 }
 
+/// A hook found on a path: the project and workflow it leads to.
+struct Found {
+    project: Project,
+    definition: WorkflowDefinition,
+    hook: Hook,
+}
+
+/// Every hook in `scope` that claims `path`. The workflows are read from the same harness configuration repository the
+/// run itself is started from, so a hook never answers on a workflow the server would then fail to find.
+fn hooks_on(app: &App, scope: Scope, path: &str) -> Result<Vec<Found>, Refusal> {
+    let projects = match scope {
+        Scope::Anywhere => app.store.projects()?,
+        // A project the server does not have has no hook, and says no more than a path with none.
+        Scope::Project(id) => app.store.project(id)?.into_iter().collect(),
+    };
+    let harness = app.harness_repo()?;
+    let mut found = Vec::new();
+    for project in projects {
+        let workflows = harness.project_workflows(&project.name)?;
+        for hook in webhook::matching(&workflows, path) {
+            let definition = workflows
+                .iter()
+                .find(|(file, _)| file == &hook.workflow)
+                .map(|(_, definition)| definition.clone())
+                .ok_or_else(|| {
+                    Refusal::Failed(AppError::Invalid(format!(
+                        "workflow file {:?} disappeared while its hook was answered",
+                        hook.workflow
+                    )))
+                })?;
+            found.push(Found {
+                project: project.clone(),
+                definition,
+                hook,
+            });
+        }
+    }
+    Ok(found)
+}
+
 /// Start the run one delivery asks for: the hook its path names, the credential it carries, the value its body holds.
-/// The workflows are read from the same harness configuration repository the run itself is started from, so a hook
-/// never answers on a workflow the server would then fail to find.
 fn start(
     app: &Arc<App>,
     secrets: &Secrets,
+    scope: Scope,
     path: &str,
     url_repository: Option<&str>,
     credential: Option<&str>,
     body: &[u8],
 ) -> Result<Started, Refusal> {
-    let workflows = app.harness_repo()?.workflows()?;
-    let hooks = webhook::matching(&workflows, path);
-    if hooks.is_empty() {
+    let found = hooks_on(app, scope, path)?;
+    if found.is_empty() {
         return Err(Refusal::Unknown);
     }
     // Open every hook that claims the path before saying anything about it, so a delivery that cannot open them all
     // learns nothing a path with no hook on it would not tell it.
-    for hook in &hooks {
-        if !opens(hook, secrets, credential)? {
+    for found in &found {
+        if !opens(&found.hook, secrets, credential)? {
             return Err(Refusal::Unknown);
         }
     }
+    if let Some(other) = found.iter().find(|f| f.project.id != found[0].project.id) {
+        let choices = found
+            .iter()
+            .map(|f| f.project.id)
+            .collect::<std::collections::BTreeSet<_>>()
+            .into_iter()
+            .map(|id| format!("/api/hooks/projects/{id}/{path}"))
+            .collect::<Vec<_>>()
+            .join(", ");
+        return Err(Refusal::Ambiguous(format!(
+            "the hook path {path:?} is on workflows of more than one project ({} and {}); post to one of: {choices}",
+            found[0].project.name, other.project.name
+        )));
+    }
+    let project = found[0].project.clone();
+    let (definitions, hooks): (Vec<_>, Vec<_>) = found
+        .into_iter()
+        .map(|found| (found.definition, found.hook))
+        .unzip();
     let hook = webhook::only(hooks)
         .map_err(|message| Refusal::Failed(AppError::Invalid(message)))?
         .ok_or(Refusal::Unknown)?;
-    let definition = workflows
-        .iter()
-        .find(|(file, _)| file == &hook.workflow)
-        .map(|(_, definition)| definition)
-        .ok_or_else(|| {
-            Refusal::Failed(AppError::Invalid(format!(
-                "workflow file {:?} disappeared while its hook was answered",
-                hook.workflow
-            )))
-        })?;
+    let definition = definitions
+        .into_iter()
+        .next()
+        .expect("a hook has its definition");
     let value: Value = serde_json::from_slice(body)
         .map_err(|error| Refusal::Body(format!("the body is not a JSON value: {error}")))?;
-    let repository = repository_of(app, &hook, url_repository)?;
-    // Runs are stored under the definition's own name, not its file's stem, so the ceiling counts those.
-    let going = app.store.active_workflow_runs(&definition.name)?;
+    // The run belongs to the repository the address names, else the one the trigger names, else the project's only one.
+    let repository = app
+        .workflow_run_repository(
+            &project,
+            url_repository.or(hook.trigger.repository.as_deref()),
+        )
+        .map_err(|error| match error {
+            AppError::Invalid(message) => Refusal::Repository(message),
+            other => Refusal::Failed(other),
+        })?;
+    // Runs are stored under the file's name, so the ceiling counts those.
+    let going = app
+        .store
+        .active_project_workflow_runs(project.id, &hook.workflow)?;
     if going >= MAX_ACTIVE_RUNS {
         return Err(Refusal::Ceiling(format!(
             "workflow {:?} already has {} runs queued or running, which is all its hook lets it have; try again later",
             definition.name, MAX_ACTIVE_RUNS
         )));
     }
-    let run = app.start_workflow_run(definition.clone(), repository.id, value)?;
+    let run = app.start_project_workflow_run_with(
+        &project,
+        &hook.workflow,
+        definition,
+        Some(&repository.name),
+        value,
+        None,
+    )?;
     Ok(Started {
         run: run.id,
         workflow: run.workflow,
+        project: project.id,
     })
 }
 
@@ -204,29 +346,6 @@ fn opens(hook: &Hook, secrets: &Secrets, credential: Option<&str>) -> Result<boo
         (Some(wanted), Some(given)) => same(given.as_bytes(), wanted.as_bytes()),
         _ => false,
     })
-}
-
-/// The repository the run belongs to: the one the address names, else the one the trigger names. A webhook trigger
-/// that names none leaves the answer to say what to name.
-fn repository_of(
-    app: &Arc<App>,
-    hook: &Hook,
-    url_repository: Option<&str>,
-) -> Result<Repository, Refusal> {
-    let Some(wanted) = url_repository.or(hook.trigger.repository.as_deref()) else {
-        return Err(Refusal::Repository(format!(
-            "workflow {:?} names no repository: set its trigger's `repository`, or post to /api/hooks/<repository>/{path}",
-            hook.workflow,
-            path = hook.trigger.path
-        )));
-    };
-    let found = app
-        .store
-        .repositories()?
-        .into_iter()
-        .find(|repository| repository.name == wanted)
-        .ok_or_else(|| Refusal::Repository(format!("no repository named {wanted:?}")))?;
-    Ok(found)
 }
 
 /// The credential a delivery carries, which is its `Authorization: Bearer` key.
@@ -278,7 +397,7 @@ mod tests {
             .unwrap(),
         );
         state.app.set_harness_repo(harness.clone());
-        let folder = harness.path().join("workflows");
+        let folder = harness.path().join("projects/radiance/workflows");
         std::fs::create_dir_all(&folder).unwrap();
         for (name, text) in workflows {
             std::fs::write(folder.join(format!("{name}.toml")), text).unwrap();
@@ -347,11 +466,25 @@ mod tests {
 
     #[tokio::test]
     async fn the_repository_in_the_address_wins_over_the_one_the_trigger_names() {
-        let (_dir, state, addr) = hooked(&[("build", "repository = \"radiance\"")]).await;
+        let (dir, state, addr) = hooked(&[("build", "repository = \"radiance\"")]).await;
         let other = state
             .app
+            .add_repository("other", &dir.path().join("other").to_string_lossy())
+            .unwrap();
+        let radiance = state
+            .app
             .store
-            .add_repository("other", "/srv/other", "none", "main")
+            .project_by_name("radiance")
+            .unwrap()
+            .unwrap();
+        state
+            .app
+            .add_repository_to_project(
+                &crate::decide::Actor::first_owner(),
+                radiance.id,
+                other.id,
+                "also served by this project",
+            )
             .unwrap();
         assert_ne!(other.id, 1);
         let response = deliver(&addr, "/api/hooks/other/build", "{}", None).await;
@@ -365,32 +498,58 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn a_run_with_no_repository_to_belong_to_is_refused() {
-        let (_dir, _state, addr) = hooked(&[("build", "")]).await;
+    async fn a_hook_that_names_no_repository_runs_in_the_only_repository_of_its_project() {
+        let (_dir, state, addr) = hooked(&[("build", "")]).await;
         let response = deliver(&addr, "/api/hooks/build", "{}", None).await;
-        assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
-        assert!(
-            response
-                .text()
-                .await
-                .unwrap()
-                .contains("names no repository"),
-            "the refusal says what to name"
+        assert_eq!(response.status(), StatusCode::ACCEPTED);
+        let answer: Value = response.json().await.unwrap();
+        assert_eq!(
+            stored(&state, answer["run"].as_i64().unwrap()).repository_id,
+            1
         );
     }
 
     #[tokio::test]
-    async fn a_repository_the_server_does_not_have_is_refused() {
+    async fn a_hook_of_a_project_with_two_repositories_must_be_told_which() {
+        let (dir, state, addr) = hooked(&[("build", "")]).await;
+        let second = state
+            .app
+            .add_repository("second", &dir.path().join("second").to_string_lossy())
+            .unwrap();
+        let radiance = state
+            .app
+            .store
+            .project_by_name("radiance")
+            .unwrap()
+            .unwrap();
+        state
+            .app
+            .add_repository_to_project(
+                &crate::decide::Actor::first_owner(),
+                radiance.id,
+                second.id,
+                "two",
+            )
+            .unwrap();
+        let response = deliver(&addr, "/api/hooks/build", "{}", None).await;
+        assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
+        let message = response.text().await.unwrap();
+        assert!(
+            message.contains("must name one of: radiance, second"),
+            "{message}"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_repository_that_is_not_one_of_the_projects_is_refused_with_the_choices() {
         let (_dir, _state, addr) = hooked(&[("build", "")]).await;
         let response = deliver(&addr, "/api/hooks/nobody/build", "{}", None).await;
         assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
+        let message = response.text().await.unwrap();
         assert!(
-            response
-                .text()
-                .await
-                .unwrap()
-                .contains("no repository named"),
-            "the refusal names the repository it looked for"
+            message.contains("is not one of the repositories of the project radiance")
+                && message.contains("one of: radiance"),
+            "the refusal names the choices: {message}"
         );
     }
 
@@ -477,7 +636,7 @@ mod tests {
             state
                 .app
                 .store
-                .add_workflow_run("build", 1, "webhook", &json!({}))
+                .add_project_workflow_run(1, "build", 1, "webhook", &json!({}))
                 .unwrap();
         }
         let response = deliver(&addr, "/api/hooks/build", "{}", None).await;
@@ -494,14 +653,20 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn the_ceiling_counts_runs_under_the_name_they_are_stored_with() {
+    async fn the_ceiling_counts_runs_under_the_file_name_they_are_stored_with() {
         let text = workflow("Release build", "build", "repository = \"radiance\"");
         let (_dir, state, addr) = holding(&[("release", &text)]).await;
+        let project = state
+            .app
+            .store
+            .project_by_name("radiance")
+            .unwrap()
+            .unwrap();
         for _ in 0..MAX_ACTIVE_RUNS {
             state
                 .app
                 .store
-                .add_workflow_run("Release build", 1, "webhook", &json!({}))
+                .add_project_workflow_run(project.id, "release", 1, "webhook", &json!({}))
                 .unwrap();
         }
         let response = deliver(&addr, "/api/hooks/build", "{}", None).await;
@@ -510,11 +675,140 @@ mod tests {
             state
                 .app
                 .store
-                .active_workflow_runs("Release build")
+                .active_project_workflow_runs(project.id, "release")
                 .unwrap(),
             MAX_ACTIVE_RUNS,
-            "the ceiling counts the name a run is stored under, not its file's stem"
+            "the ceiling counts the file's name within the project, not the name written inside it"
         );
+    }
+
+    /// A second project, `Other`, with the repository `elsewhere`, holding a workflow file of its own.
+    fn other_project(state: &ApiState, dir: &std::path::Path, file: &str, text: &str) -> i64 {
+        let other = state.app.add_project("Other", "OTH").unwrap();
+        let repository = state
+            .app
+            .add_repository("elsewhere", &dir.join("elsewhere").to_string_lossy())
+            .unwrap();
+        state
+            .app
+            .add_repository_to_project(
+                &crate::decide::Actor::first_owner(),
+                other.id,
+                repository.id,
+                "for the hook",
+            )
+            .unwrap();
+        let folder = state
+            .app
+            .harness_repo()
+            .unwrap()
+            .path()
+            .join("projects/Other/workflows");
+        std::fs::create_dir_all(&folder).unwrap();
+        std::fs::write(folder.join(format!("{file}.toml")), text).unwrap();
+        other.id
+    }
+
+    #[tokio::test]
+    async fn the_hook_of_a_project_starts_a_run_of_that_projects_workflow() {
+        let (dir, state, addr) = hooked(&[("build", "repository = \"radiance\"")]).await;
+        let other = other_project(
+            &state,
+            dir.path(),
+            "build",
+            &workflow("build", "build", "repository = \"elsewhere\""),
+        );
+        let radiance = state
+            .app
+            .store
+            .project_by_name("radiance")
+            .unwrap()
+            .unwrap();
+        for (project, repository) in [(radiance.id, "radiance"), (other, "elsewhere")] {
+            let response = deliver(
+                &addr,
+                &format!("/api/hooks/projects/{project}/build"),
+                "{}",
+                None,
+            )
+            .await;
+            assert_eq!(response.status(), StatusCode::ACCEPTED);
+            let answer: Value = response.json().await.unwrap();
+            assert_eq!(answer["project"], project);
+            let run = stored(&state, answer["run"].as_i64().unwrap());
+            assert_eq!(run.project_id, Some(project));
+            assert_eq!(
+                state.app.repository(run.repository_id).unwrap().name,
+                repository
+            );
+        }
+        // A repository of another project is refused with the choices, and a project that has no hook says nothing.
+        let refused = deliver(
+            &addr,
+            &format!("/api/hooks/projects/{other}/radiance/build"),
+            "{}",
+            None,
+        )
+        .await;
+        assert_eq!(refused.status(), StatusCode::UNPROCESSABLE_ENTITY);
+        assert!(refused.text().await.unwrap().contains("elsewhere"));
+        let none = deliver(&addr, "/api/hooks/projects/999/build", "{}", None).await;
+        assert_eq!(none.status(), StatusCode::NOT_FOUND);
+    }
+
+    #[tokio::test]
+    async fn an_old_hook_url_answers_when_one_project_has_the_path_and_names_the_choices_when_several_do()
+     {
+        let (dir, state, addr) = hooked(&[("build", "repository = \"radiance\"")]).await;
+        // One project has it: the old URL still starts the run, which records its project.
+        let response = deliver(&addr, "/api/hooks/build", "{}", None).await;
+        assert_eq!(response.status(), StatusCode::ACCEPTED);
+        let answer: Value = response.json().await.unwrap();
+        let radiance = state
+            .app
+            .store
+            .project_by_name("radiance")
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            stored(&state, answer["run"].as_i64().unwrap()).project_id,
+            Some(radiance.id)
+        );
+
+        let other = other_project(
+            &state,
+            dir.path(),
+            "ship",
+            &workflow("ship", "build", "repository = \"elsewhere\""),
+        );
+        let response = deliver(&addr, "/api/hooks/build", "{}", None).await;
+        assert_eq!(response.status(), StatusCode::CONFLICT);
+        let message = response.text().await.unwrap();
+        for url in [
+            format!("/api/hooks/projects/{}/build", radiance.id),
+            format!("/api/hooks/projects/{other}/build"),
+        ] {
+            assert!(message.contains(&url), "{message}");
+        }
+    }
+
+    #[tokio::test]
+    async fn an_old_hook_url_does_not_say_that_several_projects_have_a_path_to_a_delivery_that_cannot_open_them()
+     {
+        let (dir, state, addr) = hooked(&[("build", "repository = \"radiance\"")]).await;
+        other_project(
+            &state,
+            dir.path(),
+            "ship",
+            &workflow(
+                "ship",
+                "build",
+                "repository = \"elsewhere\"\nsecret = \"nobody_set_this\"",
+            ),
+        );
+        let response = deliver(&addr, "/api/hooks/build", "{}", None).await;
+        assert_eq!(response.status(), StatusCode::NOT_FOUND);
+        assert_eq!(response.text().await.unwrap(), NO_HOOK);
     }
 
     #[tokio::test]

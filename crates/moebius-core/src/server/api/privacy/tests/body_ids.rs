@@ -154,7 +154,7 @@ async fn an_automation_or_research_is_not_put_in_a_private_project_s_repository(
 async fn a_workflow_run_is_not_started_in_a_private_project_s_repository_by_any_input() {
     let (dir, state, addr) = start().await;
     let private = private(&state);
-    let _harness = with_harness(dir.path(), &state);
+    let harness = with_harness(dir.path(), &state);
     let name = store_name(&state, private.repository);
     let workflow = |input: &str| {
         format!(
@@ -177,20 +177,22 @@ port = "out"
 "#
         )
     };
+    // The workflow is a file of the private project's folder: the server's own person is no member of it, and a
+    // person who does not see a project cannot save into it.
+    let folder = harness.path().join(format!(
+        "projects/{}/workflows",
+        state
+            .app
+            .store
+            .project(private.project)
+            .unwrap()
+            .unwrap()
+            .name
+    ));
+    std::fs::create_dir_all(&folder).unwrap();
     let save = |file: String| {
-        let addr = addr.clone();
-        let token = state.token.to_string();
-        async move {
-            let (status, body) = send(
-                &addr,
-                &token,
-                "PUT",
-                "/v1/workflows/peek",
-                json!({ "file": file }),
-            )
-            .await;
-            assert_eq!(status, 200, "{body}");
-        }
+        let path = folder.join("peek.toml");
+        async move { std::fs::write(path, file).unwrap() }
     };
     let runs = "/v1/workflows/peek/runs";
 

@@ -12,6 +12,7 @@ function automation(extra: Partial<Automation> = {}): Automation {
     agent: "Moebius",
     prompt: "Triage.",
     repository_id: 1,
+    project_id: 1,
     harness_repository: false,
     enabled: true,
     next_firing: NOW + 3 * 3600,

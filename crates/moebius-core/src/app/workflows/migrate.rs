@@ -572,7 +572,10 @@ mod tests {
             harness: false,
             enabled: true,
         };
-        let row = app.store.add_automation(&new, "2026-11-09 03:30").unwrap();
+        let row = app
+            .store
+            .add_automation(&new, "2026-11-09 03:30", None)
+            .unwrap();
         app.migrate_automations().unwrap();
         let key = app.store.automation_workflow_key(row.id).unwrap().unwrap();
         (row.id, key)

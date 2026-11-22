@@ -1,8 +1,11 @@
 //! The upgrade that writes every older automation's row to a workflow file, so that an automation is a workflow from
-//! then on and no row needs its own clock.
+//! then on and no row needs its own clock. It writes to the server-wide `workflows/` folder, which the migration of the
+//! files into their projects (`app::workflows::migrate`) moves on to the project that owns each; this module and that one
+//! are all that read or write the folder.
 
-use crate::app::{App, Result};
+use crate::app::{App, AppError, Result};
 use crate::store::{Automation, NewAutomation};
+use crate::workflows::definition::{self, WorkflowDefinition, file_for};
 
 impl App {
     /// Writes an older automation's row to a workflow file, so that an upgrade keeps every automation and its place
@@ -34,7 +37,7 @@ impl App {
                 enabled: automation.enabled,
             };
             match self.store.automation_workflow_key(automation.id)? {
-                Some(key) => match self.automation_workflow(automation.id, &automation.name)? {
+                Some(key) => match self.server_wide_automation(&key)? {
                     Some(definition) if super::is_automation(&definition) => {
                         if self.store.schedule_firing(&key)?.is_none() {
                             self.store.record_schedule_firing(&key, &checked)?;
@@ -48,7 +51,7 @@ impl App {
                 // An older row has no file of its own yet. Its name may already be another row's file, which its
                 // key accounts for; writing it makes the file it gets its own, whichever row wrote it before.
                 None => {
-                    let key = self.derived_workflow_key(automation.id, &automation.name)?;
+                    let key = self.server_wide_key(automation.id, &automation.name)?;
                     self.write_automation(&automation, &new, &key, &checked)?;
                 }
             }
@@ -67,9 +70,57 @@ impl App {
     ) -> Result<()> {
         let harness = self.harness_repo()?;
         let definition = self.automation_definition(new)?;
-        harness.save_workflow(self, &crate::decide::Actor::first_owner(), key, &definition)?;
+        harness.save_server_wide_workflow(
+            self,
+            &crate::decide::Actor::first_owner(),
+            key,
+            &definition,
+        )?;
         self.store.set_automation_workflow_key(automation.id, key)?;
         self.store.record_schedule_firing(key, checked)?;
         Ok(())
+    }
+
+    /// The server-wide workflow file `key`, when there is one.
+    fn server_wide_automation(&self, key: &str) -> Result<Option<WorkflowDefinition>> {
+        let harness = self.harness_repo()?;
+        let Ok(file) = file_for(key) else {
+            return Ok(None);
+        };
+        if !harness.path().join(file).is_file() {
+            return Ok(None);
+        }
+        definition::read(harness.path(), key)
+            .map(Some)
+            .map_err(|error| AppError::Invalid(error.to_string()))
+    }
+
+    /// The server-wide file an older row called `name` is written to: its name when the file of that name is free or
+    /// holds an automation no other row keeps, and otherwise one made from its row.
+    fn server_wide_key(&self, id: i64, name: &str) -> Result<String> {
+        let available = |key: &str| -> Result<bool> {
+            let taken = match self.server_wide_automation(key) {
+                Ok(Some(definition)) => !super::is_automation(&definition),
+                Ok(None) => false,
+                Err(_) => true,
+            };
+            if taken {
+                return Ok(false);
+            }
+            Ok(match self.store.automation_with_workflow_key(key)? {
+                Some(owner) => owner.id == id,
+                None => true,
+            })
+        };
+        if file_for(name).is_ok() && available(name)? {
+            return Ok(name.to_string());
+        }
+        let mut key = format!("automation-{id}");
+        let mut count = 2;
+        while !available(&key)? {
+            key = format!("automation-{id}-{count}");
+            count += 1;
+        }
+        Ok(key)
     }
 }

@@ -1,6 +1,7 @@
 //! What an automation is as a workflow: the shape that makes a definition an automation, how an automation's row is
-//! read from its file and written to one, and which file holds it. The API, the CLI and the schedule all read and write
-//! the same definition through here.
+//! read from its file and written to one, and which file holds it. An automation belongs to one project (ADR 0025) and
+//! its file is `projects/<project>/workflows/<key>.toml`; nothing here reads the server-wide `workflows/` folder, which
+//! only the migration looks at. The API, the CLI and the schedule all read and write the same definition through here.
 
 use serde_json::{Map, Value};
 
@@ -8,10 +9,10 @@ use super::cron;
 use crate::app::{App, AppError, Result};
 use crate::blobs::redact;
 use crate::board::Runs;
-use crate::store::{Automation, NewAutomation};
+use crate::store::{Automation, NewAutomation, Project};
 use crate::workflows::definition::{
     self, DEFAULT_MAX_NODES, DEFAULT_NODE_TIMEOUT_SECONDS, Edge, NodeDefinition, TRIGGER_ID,
-    Trigger, WorkflowDefinition, file_for, read,
+    Trigger, WorkflowDefinition, file_for,
 };
 use crate::workflows::nodes::chat;
 use crate::workflows::trigger::schedule as schedule_trigger;
@@ -68,57 +69,75 @@ impl App {
         Ok(new)
     }
 
-    /// The workflow file that holds the automation `id`: the file its row was written to, and otherwise one taken
-    /// from its name.
-    pub(super) fn workflow_key(&self, id: i64, name: &str) -> Result<String> {
-        match self.store.automation_workflow_key(id)? {
-            Some(key) => Ok(key),
-            None => self.derived_workflow_key(id, name),
+    /// The project that owns the automation `id` (ADR 0025); none while it is still kept server-wide.
+    pub(super) fn automation_home(&self, id: i64) -> Result<Option<Project>> {
+        match self.store.automation_project(id)? {
+            Some(project) => Ok(self.store.project(project)?),
+            None => Ok(None),
         }
     }
 
-    /// The file an automation called `name` may be written to: its name when the file of that name is free or holds
-    /// an automation no other row keeps, and otherwise one made from its row, so that an automation beside a workflow
-    /// of the same name, or beside an automation of the same name, keeps a file of its own.
-    pub(super) fn derived_workflow_key(&self, id: i64, name: &str) -> Result<String> {
-        if file_for(name).is_ok() && self.workflow_key_available(id, name)? {
+    /// The workflow file that holds the automation `id` in its project: the file its row was written to, and otherwise
+    /// one taken from its name.
+    pub(super) fn workflow_key(&self, project: &Project, id: i64, name: &str) -> Result<String> {
+        match self.store.automation_workflow_key(id)? {
+            Some(key) => Ok(key),
+            None => self.derived_workflow_key(project, id, name),
+        }
+    }
+
+    /// The file an automation called `name` may be written to in `project`: its name when the file of that name is
+    /// free or holds an automation no other row keeps, and otherwise one made from its row, so that an automation
+    /// beside a workflow of the same name, or beside an automation of the same name, keeps a file of its own.
+    pub(super) fn derived_workflow_key(
+        &self,
+        project: &Project,
+        id: i64,
+        name: &str,
+    ) -> Result<String> {
+        if file_for(name).is_ok() && self.workflow_key_available(project, id, name)? {
             return Ok(name.to_string());
         }
         let mut key = format!("automation-{id}");
         let mut count = 2;
-        while !self.workflow_key_available(id, &key)? {
+        while !self.workflow_key_available(project, id, &key)? {
             key = format!("automation-{id}-{count}");
             count += 1;
         }
         Ok(key)
     }
 
-    /// Whether the workflow file `key` may hold the automation `id`: it is not an ordinary or unreadable workflow,
-    /// and no other automation's row already keeps it.
-    fn workflow_key_available(&self, id: i64, key: &str) -> Result<bool> {
-        if self.workflow_file_taken(key)? {
+    /// Whether the workflow file `key` of `project` may hold the automation `id`: it is not an ordinary or unreadable
+    /// workflow, and no other automation's row already keeps it.
+    fn workflow_key_available(&self, project: &Project, id: i64, key: &str) -> Result<bool> {
+        if self.workflow_file_taken(project, key)? {
             return Ok(false);
         }
-        Ok(match self.store.automation_with_workflow_key(key)? {
-            Some(owner) => owner.id == id,
-            None => true,
-        })
+        Ok(
+            match self
+                .store
+                .automation_with_project_workflow_key(project.id, key)?
+            {
+                Some(owner) => owner.id == id,
+                None => true,
+            },
+        )
     }
 
-    /// Whether the file of the workflow `name` is one an automation may not have: an ordinary workflow, or one that
-    /// cannot be read. A file that already holds an automation may still belong to another row; its key does.
-    fn workflow_file_taken(&self, name: &str) -> Result<bool> {
+    /// Whether the file of the workflow `name` of `project` is one an automation may not have: an ordinary workflow,
+    /// or one that cannot be read. A file that already holds an automation may still belong to another row; its key
+    /// does.
+    fn workflow_file_taken(&self, project: &Project, name: &str) -> Result<bool> {
         let Some(harness) = self.harness_repo.get() else {
             return Ok(false);
         };
-        let path = harness
-            .path()
-            .join(definition::DIRECTORY)
-            .join(format!("{name}.toml"));
-        if !path.is_file() {
+        let Ok(file) = definition::project_file_for(&project.name, name) else {
+            return Ok(true);
+        };
+        if !harness.path().join(file).is_file() {
             return Ok(false);
         }
-        match read(harness.path(), name) {
+        match definition::read_in_project(harness.path(), &project.name, name) {
             Ok(definition) => Ok(!is_automation(&definition)),
             Err(_) => Ok(true),
         }
@@ -172,12 +191,15 @@ impl App {
         })
     }
 
-    /// Every automation-shaped workflow in the harness configuration repository, by name.
-    pub(super) fn automation_definitions(&self) -> Result<Vec<(String, WorkflowDefinition)>> {
+    /// Every automation-shaped workflow of `project`, by file name.
+    pub(super) fn automation_definitions(
+        &self,
+        project: &Project,
+    ) -> Result<Vec<(String, WorkflowDefinition)>> {
         let Some(harness) = self.harness_repo.get() else {
             return Ok(Vec::new());
         };
-        let definitions = definition::list(harness.path())
+        let definitions = definition::list_in_project(harness.path(), &project.name)
             .map_err(|error| AppError::Invalid(error.to_string()))?;
         Ok(definitions
             .into_iter()
@@ -185,7 +207,8 @@ impl App {
             .collect())
     }
 
-    /// Read the workflow that holds `automation`, when the harness configuration repository has one.
+    /// Read the workflow that holds the automation `id` from its project's folder, when the harness configuration
+    /// repository has one. An automation that belongs to no project has none.
     pub(super) fn automation_workflow(
         &self,
         id: i64,
@@ -194,16 +217,17 @@ impl App {
         let Some(harness) = self.harness_repo.get() else {
             return Ok(None);
         };
-        let key = self.workflow_key(id, name)?;
-        if !harness
-            .path()
-            .join(definition::DIRECTORY)
-            .join(format!("{key}.toml"))
-            .is_file()
-        {
+        let Some(project) = self.automation_home(id)? else {
+            return Ok(None);
+        };
+        let key = self.workflow_key(&project, id, name)?;
+        let Ok(file) = definition::project_file_for(&project.name, &key) else {
+            return Ok(None);
+        };
+        if !harness.path().join(file).is_file() {
             return Ok(None);
         }
-        read(harness.path(), &key)
+        definition::read_in_project(harness.path(), &project.name, &key)
             .map(Some)
             .map_err(|error| AppError::Invalid(error.to_string()))
     }
@@ -247,21 +271,18 @@ impl App {
         Ok(automation)
     }
 
-    /// The row the automation-shaped workflow in the file `key` is kept against, adding one when the workflow was
-    /// written by hand and taking a row of its name that has no file of its own yet.
+    /// The row the automation-shaped workflow in the file `key` of `project` is kept against, adding one when the
+    /// workflow was written by hand.
     pub(super) fn ensure_automation(
         &self,
+        project: &Project,
         key: &str,
         definition: &WorkflowDefinition,
     ) -> Result<Automation> {
-        if let Some(automation) = self.store.automation_with_workflow_key(key)? {
-            return Ok(automation);
-        }
         if let Some(automation) = self
             .store
-            .automation_without_workflow_named(&definition.name)?
+            .automation_with_project_workflow_key(project.id, key)?
         {
-            self.store.set_automation_workflow_key(automation.id, key)?;
             return Ok(automation);
         }
         let blank = Automation {
@@ -274,6 +295,7 @@ impl App {
             harness_repository: false,
             enabled: true,
             created_at: 0,
+            project_id: Some(project.id),
         };
         let parsed = self.automation_from_workflow(blank, definition)?;
         let new = NewAutomation {
@@ -285,9 +307,9 @@ impl App {
             harness: parsed.harness_repository,
             enabled: parsed.enabled,
         };
-        let added = self
-            .store
-            .add_automation(&new, &self.store.local_minute()?)?;
+        let added =
+            self.store
+                .add_automation(&new, &self.store.local_minute()?, Some(project.id))?;
         self.store.set_automation_workflow_key(added.id, key)?;
         Ok(added)
     }

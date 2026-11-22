@@ -388,6 +388,8 @@ function agentPorts(params: unknown): string[] {
 export interface TriggerFormProps {
   trigger: Trigger;
   onTrigger: (trigger: Trigger) => void;
+  /** The project of the workflow, when known. */
+  project?: number;
 }
 
 /** The forms the triggers draw themselves. A trigger left out is drawn as its JSON, as before. */

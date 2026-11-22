@@ -1,7 +1,7 @@
 # `manual`
 
 The trigger a person starts. Its run does not wait for a card or a schedule: it starts when a person asks for it,
-through the app, `POST /v1/workflows/{name}/runs` or `moebius workflow run`, and it starts with the inputs the trigger
+through the app, `POST /v1/projects/{id}/workflows/{name}/runs` or `moebius workflow run --project <project>`, and it starts with the inputs the trigger
 names. A run started this way is recorded with `manual` as the kind of the trigger that started it.
 
 ## Parameters
@@ -60,16 +60,17 @@ port = "out"
 
 ## Reading the inputs
 
-`GET /v1/workflows/{name}/run-inputs` answers the inputs in the order the file names them, so a form builds itself
-from them; see the [desktop API](../desktop-api.md#get-v1workflowsnamerun-inputs). Each input answers with `name`,
+`GET /v1/projects/{id}/workflows/{name}/run-inputs` answers the inputs in the order the file names them, so a form builds itself
+from them; see the [desktop API](../desktop-api.md#get-v1projectsidworkflowsnamerun-inputs). Each input answers with `name`,
 `type`, `required`, and `default` and `choices` only when it has them.
 
 ## Starting a run
 
-`POST /v1/workflows/{name}/runs` takes the inputs by their names and the repository the run belongs to, and answers the
-run as it was recorded. `moebius workflow run <name>` is the same door: `--input name=value` for each input, the text
+`POST /v1/projects/{id}/workflows/{name}/runs` takes the inputs by their names and the repository the run belongs to,
+which must be one of the project's repositories and may be left out when the project has only one, and answers the run
+as it was recorded, with its `project` and `project_name`. `moebius workflow run <name>` is the same door: `--input name=value` for each input, the text
 taken as the type the trigger declares, or `--inputs <json|file|->` for a JSON object of them all. See the
-[command line](../cli.md) and the [desktop API](../desktop-api.md#post-v1workflowsnameruns).
+[command line](../cli.md) and the [desktop API](../desktop-api.md#post-v1projectsidworkflowsnameruns).
 
 ## Validation
 

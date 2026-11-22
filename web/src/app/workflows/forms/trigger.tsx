@@ -245,7 +245,13 @@ export function ManualTriggerForm({ trigger, onTrigger }: TriggerFormProps) {
 }
 
 /** The webhook trigger: the path it is called at, the secret that call must carry, and its repository. */
-export function WebhookTriggerForm({ trigger, onTrigger }: TriggerFormProps) {
+/** The address a webhook trigger is called at: the project's own when the project is known. */
+export function hookAddress(project: number | undefined, path: string): string {
+  const tail = path.trim() === "" ? "{path}" : path.trim().replace(/^\/+/, "");
+  return project === undefined ? `/api/hooks/${tail}` : `/api/hooks/projects/${project}/${tail}`;
+}
+
+export function WebhookTriggerForm({ trigger, onTrigger, project }: TriggerFormProps) {
   const params = paramsOf(trigger);
   const path = typeof params.path === "string" ? params.path : "";
   const secret = typeof params.secret === "string" ? params.secret : "";
@@ -257,7 +263,7 @@ export function WebhookTriggerForm({ trigger, onTrigger }: TriggerFormProps) {
     <div className="flex min-w-0 flex-col gap-4" data-testid="trigger-form">
       <Field
         label="Path"
-        hint="The path a call to /api/hooks/ starts this workflow at."
+        hint={`The path this workflow is started at: a call to ${hookAddress(project, path)}.`}
         error={path.trim() === "" ? "A webhook trigger needs its path." : undefined}
       >
         <Input
