@@ -1345,11 +1345,10 @@ describe("get started", () => {
 
 describe("settings", () => {
   it.skipIf(usesRealServer)("saves the settings a plugin asks of the whole server", async () => {
-    await open("/plugin-settings");
+    await open("/plugins");
     const box = page
       .getByTestId("plugin-settings")
       .filter({ has: page.getByRole("heading", { name: "podman-sandbox" }) });
-    await page.getByRole("heading", { name: "Plugin settings", level: 1 }).waitFor();
     await box.getByRole("heading", { name: "podman-sandbox" }).waitFor();
     await box.getByLabel("Registry").fill("quay.io");
     await box.getByRole("button", { name: "Save settings" }).click();
@@ -1357,7 +1356,7 @@ describe("settings", () => {
     expect(lastBody(fake().requests, "PUT", "/v1/plugins/podman-sandbox/settings")).toEqual({
       values: { registry: "quay.io" },
     });
-    await open("/plugin-settings");
+    await open("/plugins");
     await box.getByRole("heading", { name: "podman-sandbox" }).waitFor();
     expect(await box.getByLabel("Registry").inputValue()).toBe("quay.io");
   });
