@@ -15,8 +15,7 @@
 //!   and, left out, is the project's only one (see `App::workflow_run_repository`).
 //!
 //! The same two routes without the project, `GET /v1/workflows/{name}/run-inputs` and `POST
-//! /v1/workflows/{name}/runs`, are deprecated: they find the one project that has a workflow of that name (`409` with
-//! the choices when several do, see `workflows::owner_of`).
+//! /v1/workflows/{name}/runs`, are gone and answer `410` (see `workflows::gone`).
 
 use std::collections::HashMap;
 
@@ -26,7 +25,7 @@ use axum::{Extension, Router};
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 
-use super::workflows::{harness, owner_of};
+use super::workflows::{gone, harness};
 use super::{ApiError, ApiState, blocking};
 use crate::app::{App, AppError, Sight};
 use crate::decide::Actor;
@@ -45,8 +44,14 @@ pub(super) fn routes() -> Router<ApiState> {
             "/v1/projects/{id}/workflows/{name}/runs",
             post(project_start),
         )
-        .route("/v1/workflows/{name}/run-inputs", get(run_inputs))
-        .route("/v1/workflows/{name}/runs", post(start))
+        .route(
+            "/v1/workflows/{name}/run-inputs",
+            get(|| gone("GET /v1/projects/{id}/workflows/{name}/run-inputs")),
+        )
+        .route(
+            "/v1/workflows/{name}/runs",
+            post(|| gone("POST /v1/projects/{id}/workflows/{name}/runs")),
+        )
         .route("/v1/workflow-runs", get(list_runs))
         .route("/v1/workflow-runs/{id}", get(show_run))
 }
@@ -413,20 +418,6 @@ async fn project_run_inputs(
     .await
 }
 
-/// Deprecated: the inputs of the workflow `name` of the one project that has it.
-async fn run_inputs(
-    State(state): State<ApiState>,
-    Extension(by): Extension<Actor>,
-    UrlPath(name): UrlPath<String>,
-) -> Result<axum::Json<RunInputs>, ApiError> {
-    let repo = harness(&state)?;
-    blocking(&state.app, move |app| {
-        let project = owner_of(app, &app.sight(&by)?, &repo, &name)?;
-        inputs_of(&repo, &project, &name)
-    })
-    .await
-}
-
 /// Refuses, as if it did not exist, a repository the request names that `sight` does not see. It is asked before
 /// anything about the workflow is, so that nothing says whether a workflow of a private project exists.
 fn check_named(app: &App, sight: &Sight, request: &StartRequest) -> Result<(), AppError> {
@@ -472,24 +463,6 @@ async fn project_start(
         check_named(app, &sight, &request)?;
         let project = app.project(project)?;
         let repo = repo.map_err(|error| AppError::Conflict(error.1))?;
-        start_in(app, &repo, &sight, &project, &name, &request)
-    })
-    .await
-}
-
-/// Deprecated: starts a run of the workflow `name` of the one project that has it.
-async fn start(
-    State(state): State<ApiState>,
-    Extension(by): Extension<Actor>,
-    UrlPath(name): UrlPath<String>,
-    axum::Json(request): axum::Json<StartRequest>,
-) -> Result<axum::Json<Started>, ApiError> {
-    let repo = harness(&state);
-    blocking(&state.app, move |app| {
-        let sight = app.sight(&by)?;
-        check_named(app, &sight, &request)?;
-        let repo = repo.map_err(|error| AppError::Conflict(error.1))?;
-        let project = owner_of(app, &sight, &repo, &name)?;
         start_in(app, &repo, &sight, &project, &name, &request)
     })
     .await
@@ -569,7 +542,7 @@ port = "out"
 
     async fn save(state: &ApiState, addr: &str, file: &str) {
         let response = reqwest::Client::new()
-            .put(format!("http://{addr}/v1/workflows/release"))
+            .put(format!("http://{addr}/v1/projects/1/workflows/release"))
             .bearer_auth(&*state.token)
             .json(&json!({ "file": file }))
             .send()
@@ -580,7 +553,9 @@ port = "out"
 
     async fn start_run(state: &ApiState, addr: &str, body: Value) -> (reqwest::StatusCode, String) {
         let response = reqwest::Client::new()
-            .post(format!("http://{addr}/v1/workflows/release/runs"))
+            .post(format!(
+                "http://{addr}/v1/projects/1/workflows/release/runs"
+            ))
             .bearer_auth(&*state.token)
             .json(&body)
             .send()
@@ -594,7 +569,8 @@ port = "out"
         let (_dir, state, addr, _harness) = started().await;
         save(&state, &addr, WORKFLOW).await;
 
-        let inputs: Value = testing::get(&state, &addr, "/v1/workflows/release/run-inputs").await;
+        let inputs: Value =
+            testing::get(&state, &addr, "/v1/projects/1/workflows/release/run-inputs").await;
         assert_eq!(inputs["trigger_kind"], "manual");
         assert_eq!(
             inputs["inputs"],
@@ -806,7 +782,9 @@ port = "out"
         assert!(body.contains("not manual"), "{body}");
 
         let response = reqwest::Client::new()
-            .get(format!("http://{addr}/v1/workflows/release/run-inputs"))
+            .get(format!(
+                "http://{addr}/v1/projects/1/workflows/release/run-inputs"
+            ))
             .bearer_auth(&*state.token)
             .send()
             .await
@@ -903,33 +881,6 @@ port = "out"
             testing::get(&state, &addr, &format!("/v1/workflow-runs?project={other}")).await;
         assert!(none.as_array().unwrap().is_empty());
     }
-
-    #[tokio::test]
-    async fn the_old_run_route_resolves_the_project_and_refuses_a_name_two_projects_have() {
-        let (_dir, state, addr, _harness) = started().await;
-        save(&state, &addr, WORKFLOW).await;
-        let (status, body) =
-            start_run(&state, &addr, json!({ "inputs": { "version": "1.0.0" } })).await;
-        assert_eq!(status, 200, "{body}");
-        let started: Value = serde_json::from_str(&body).unwrap();
-        assert_eq!(started["project_name"], "radiance");
-
-        let other = state.app.add_project("Other", "OTH").unwrap().id;
-        let saved = reqwest::Client::new()
-            .put(format!(
-                "http://{addr}/v1/projects/{other}/workflows/release"
-            ))
-            .bearer_auth(&*state.token)
-            .json(&json!({ "file": WORKFLOW }))
-            .send()
-            .await
-            .unwrap();
-        assert_eq!(saved.status(), 200);
-        let (status, body) = start_run(&state, &addr, json!({})).await;
-        assert_eq!(status, 409, "{body}");
-        assert!(body.contains("Other (id"), "{body}");
-    }
-
     #[tokio::test]
     async fn the_list_without_a_project_holds_the_runs_of_the_projects_the_caller_sees() {
         let (_dir, state, addr) = testing::start().await;

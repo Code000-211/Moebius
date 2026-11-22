@@ -1,8 +1,8 @@
 /**
  * The canvas: a workflow's graph built by hand and saved as a commit.
  *
- * The graph a person is editing is one piece of state — the workflow's parsed form, as `GET /v1/workflows/{name}`
- * answers it and as `PUT /v1/workflows/{name}` takes it back — and the cards and edges on the screen are drawn from
+ * The graph a person is editing is one piece of state — the workflow's parsed form, as `GET /v1/projects/{id}/workflows/{name}`
+ * answers it and as `PUT` takes it back — and the cards and edges on the screen are drawn from
  * it, so what is saved is what is on the screen, positions included. The kinds on the palette come from the web
  * app's registry (`../nodeKinds`); a node's parameters are edited by the generic form, or by the form its kind draws
  * itself when it has one.
@@ -28,7 +28,12 @@ import {
 } from "@xyflow/react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useBlocker, useLocation, useParams } from "react-router";
-import { saveWorkflow, workflow, workflowRun, workflowRuns } from "../../../api/calls/workflows";
+import {
+  projectWorkflow,
+  projectWorkflowRuns,
+  saveProjectWorkflow,
+  workflowRun,
+} from "../../../api/calls/workflows";
 import { ApiError } from "../../../api/http";
 import { keys } from "../../../api/keys";
 import type {
@@ -50,6 +55,7 @@ import { Notice } from "../../../ui/page/Notice";
 import { PageHeader } from "../../../ui/page/PageHeader";
 import { ReadFailed } from "../../../ui/page/ReadFailed";
 import { SkeletonLines } from "../../../ui/page/Skeleton";
+import { projectTabPath, workflowPath } from "../../pages";
 import { triggerProblem } from "../forms/trigger";
 import { genericKind, type NodeKind, nodeKinds, startingParams } from "../nodeKinds";
 import { NodeCard, TriggerCard } from "./cards";
@@ -77,22 +83,23 @@ import { droppedKind, Palette } from "./Palette";
 const nodeTypes = { kind: NodeCard, trigger: TriggerCard };
 
 export function WorkflowCanvasPage() {
-  const { name = "" } = useParams();
+  const { projectId = "", name = "" } = useParams();
+  const project = Number(projectId);
   const location = useLocation();
   // A draft passed as router state opens the canvas without a read: it is the blank graph the "New workflow" dialog
   // starts, for a name no file holds yet, and its first save creates the workflow. Anything else the address carries
   // is not a draft, and the definition is read as for an edit.
   const incoming = draftOf(location.state);
   const definition = useQuery({
-    queryKey: keys.workflow(name),
-    queryFn: () => workflow(name),
+    queryKey: keys.projectWorkflow(project, name),
+    queryFn: () => projectWorkflow(project, name),
     enabled: incoming === null,
     // A name no file holds yet is a new workflow, so a read that finds none is not tried again.
     retry: (count, error) => !(error instanceof ApiError && error.status === 404) && count < 3,
   });
   const back = (
     <Button asChild variant="ghost" size="sm">
-      <Link to={`/workflows/${encodeURIComponent(name)}`}>
+      <Link to={workflowPath(project, name)}>
         <ArrowLeftIcon className="size-4" aria-hidden="true" />
         {name}
       </Link>
@@ -102,7 +109,13 @@ export function WorkflowCanvasPage() {
   if (incoming !== null) {
     return (
       <ReactFlowProvider>
-        <Canvas key={incoming.name} name={incoming.name} loaded={incoming} isNew />
+        <Canvas
+          key={incoming.name}
+          name={incoming.name}
+          loaded={incoming}
+          project={project}
+          isNew
+        />
       </ReactFlowProvider>
     );
   }
@@ -123,7 +136,13 @@ export function WorkflowCanvasPage() {
   ) {
     return (
       <ReactFlowProvider>
-        <Canvas key={name} name={name} loaded={newWorkflowDraft(name, "")} isNew />
+        <Canvas
+          key={name}
+          name={name}
+          loaded={newWorkflowDraft(name, "")}
+          project={project}
+          isNew
+        />
       </ReactFlowProvider>
     );
   }
@@ -146,7 +165,7 @@ export function WorkflowCanvasPage() {
         key={definition.data.name}
         name={definition.data.name}
         loaded={definition.data.definition}
-        project={definition.data.project}
+        project={project}
       />
     </ReactFlowProvider>
   );
@@ -201,8 +220,8 @@ function Canvas({
 }: {
   name: string;
   loaded: WorkflowDefinition;
-  /** The project the workflow belongs to, once it is known: a webhook's address names it. */
-  project?: number;
+  /** The project the workflow belongs to: the address names it, and so does a webhook's. */
+  project: number;
   /** Set when the workflow has no file yet: it is unsaved until the first save, which creates it. */
   isNew?: boolean;
 }) {
@@ -223,8 +242,8 @@ function Canvas({
   const triggerIssue = triggerProblem(draft.trigger[0]);
   // A workflow that is not saved has no runs to ask for.
   const runs = useQuery({
-    queryKey: keys.workflowRuns(name),
-    queryFn: () => workflowRuns(name),
+    queryKey: keys.projectWorkflowRuns(project, name),
+    queryFn: () => projectWorkflowRuns(project, name),
     enabled: savedOnce,
   });
   const run = useQuery({
@@ -234,7 +253,7 @@ function Canvas({
   });
 
   const save = useMutation({
-    mutationFn: () => saveWorkflow(name, draft),
+    mutationFn: () => saveProjectWorkflow(project, name, draft),
     onSuccess: (written) => {
       setSaved(written.definition);
       setDraft(written.definition);
@@ -242,7 +261,7 @@ function Canvas({
       setCommit(written.commit ?? null);
       // The saved workflow is read again rather than written into the cache: the page beside this one reads that
       // cache too, in the shape its own route answers, and a part of it would leave that page short of a field.
-      void queryClient.invalidateQueries({ queryKey: keys.workflow(name) });
+      void queryClient.invalidateQueries({ queryKey: keys.projectWorkflow(project, name) });
       void queryClient.invalidateQueries({ queryKey: keys.workflows });
       setSavedOnce(true);
     },
@@ -353,7 +372,9 @@ function Canvas({
         title={name}
         back={
           <Button asChild variant="ghost" size="sm">
-            <Link to={savedOnce ? `/workflows/${encodeURIComponent(name)}` : "/workflows"}>
+            <Link
+              to={savedOnce ? workflowPath(project, name) : projectTabPath(project, "workflows")}
+            >
               <ArrowLeftIcon className="size-4" aria-hidden="true" />
               {name}
             </Link>

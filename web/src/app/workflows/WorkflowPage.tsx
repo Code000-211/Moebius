@@ -4,10 +4,11 @@
  * its last run went are its properties, in the column beside the graph. The file is shown exactly as it is stored, so
  * what a person copies is what the harness configuration will read back.
  *
- * It reads `GET /v1/workflows/{name}`. A definition that could not be read says so and offers to read it again; a
+ * It reads `GET /v1/projects/{id}/workflows/{name}`. A definition that could not be read says so and offers to read it again; a
  * workflow that does not exist is said as a missing workflow rather than as an empty graph. Delete is
- * `DELETE /v1/workflows/{name}`, asked twice: the actions open a dialog, which warns that a workflow shaped like an
- * automation disappears from the Automations page too, and a run queued or running refuses the deletion in the dialog.
+ * `DELETE /v1/projects/{id}/workflows/{name}`, asked twice: the actions open a dialog, which warns that a workflow
+ * shaped like an automation disappears from the Scheduled list too, and a refusal of the server (a run queued, running
+ * or waiting) is shown in the dialog in the server's own words.
  */
 import {
   ArrowLeftIcon,
@@ -19,11 +20,12 @@ import {
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { Link, useNavigate, useParams } from "react-router";
+import { listProjects } from "../../api/calls/projects";
 import {
   cancelWorkflowRun,
-  deleteWorkflow,
-  workflow,
-  workflowRuns,
+  deleteProjectWorkflow,
+  projectWorkflow,
+  projectWorkflowRuns,
 } from "../../api/calls/workflows";
 import { sayError } from "../../api/errorText";
 import { keys } from "../../api/keys";
@@ -46,48 +48,53 @@ import { PageHeader } from "../../ui/page/PageHeader";
 import { Property } from "../../ui/page/Property";
 import { ReadFailed } from "../../ui/page/ReadFailed";
 import { SkeletonLines } from "../../ui/page/Skeleton";
+import { projectTabPath, workflowCanvasPath, workflowRunPath } from "../pages";
 import { lastRunLine, looksLikeAutomation, runStatus, triggerName } from "./model";
 import { RunWorkflowDialog } from "./RunWorkflowDialog";
 import { WorkflowGraph } from "./WorkflowGraph";
 
 export function WorkflowPage() {
-  const { name = "" } = useParams();
+  const { projectId = "", name = "" } = useParams();
+  const project = Number(projectId);
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const now = useNow();
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [removeRefusal, setRemoveRefusal] = useState<string | null>(null);
   const [running, setRunning] = useState(false);
+  const projects = useQuery({ queryKey: keys.projects, queryFn: listProjects });
+  const owner = projects.data?.find((each) => each.id === project);
   const definition = useQuery({
-    queryKey: keys.workflow(name),
-    queryFn: () => workflow(name),
+    queryKey: keys.projectWorkflow(project, name),
+    queryFn: () => projectWorkflow(project, name),
   });
   const runs = useQuery({
-    queryKey: keys.workflowRuns(name),
-    queryFn: () => workflowRuns(name),
+    queryKey: keys.projectWorkflowRuns(project, name),
+    queryFn: () => projectWorkflowRuns(project, name),
   });
   const cancel = useMutation({
     mutationFn: (id: number) => cancelWorkflowRun(id),
     onSettled: async () => {
-      await queryClient.invalidateQueries({ queryKey: keys.workflowRuns(name) });
+      await queryClient.invalidateQueries({ queryKey: keys.allWorkflowRuns });
       await queryClient.invalidateQueries({ queryKey: keys.workflows });
     },
   });
   const remove = useMutation({
-    mutationFn: () => deleteWorkflow(definition.data?.name ?? name),
+    mutationFn: () => deleteProjectWorkflow(project, definition.data?.name ?? name),
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: keys.workflows });
-      queryClient.removeQueries({ queryKey: keys.workflow(definition.data?.name ?? name) });
-      queryClient.removeQueries({ queryKey: keys.workflowRuns(definition.data?.name ?? name) });
-      navigate("/workflows");
+      await queryClient.invalidateQueries({ queryKey: keys.automations });
+      queryClient.removeQueries({ queryKey: keys.projectWorkflow(project, name) });
+      queryClient.removeQueries({ queryKey: keys.projectWorkflowRuns(project, name) });
+      navigate(projectTabPath(project, "workflows"));
     },
     onError: (error) => setRemoveRefusal(sayError(error, "Could not delete it. Try again.")),
   });
   const back = (
     <Button asChild variant="ghost" size="sm">
-      <Link to="/workflows">
+      <Link to={projectTabPath(project, "workflows")}>
         <ArrowLeftIcon className="size-4" aria-hidden="true" />
-        Workflows
+        {definition.data?.project_name ?? owner?.name ?? "Project"} workflows
       </Link>
     </Button>
   );
@@ -131,18 +138,23 @@ export function WorkflowPage() {
         actions={
           <div className="flex items-center gap-2">
             <Button asChild variant="secondary" size="sm">
-              <Link to={`/workflows/${encodeURIComponent(saved.name)}/canvas`}>
+              <Link to={workflowCanvasPath(project, saved.name)}>
                 <PencilSimpleIcon className="size-4" aria-hidden="true" />
                 Edit on the canvas
               </Link>
             </Button>
-            <Button variant="secondary" size="sm" onClick={() => setRunning(true)}>
+            <Button
+              variant="secondary"
+              size="sm"
+              disabled={!owner}
+              onClick={() => setRunning(true)}
+            >
               <PlayIcon className="size-4" aria-hidden="true" />
               Run
             </Button>
             {last ? (
               <Button asChild variant="secondary" size="sm">
-                <Link to={`/workflow-runs/${last.id}`}>Open last run</Link>
+                <Link to={workflowRunPath(last.id)}>Open last run</Link>
               </Button>
             ) : null}
             <Button
@@ -157,7 +169,14 @@ export function WorkflowPage() {
           </div>
         }
       />
-      <RunWorkflowDialog name={saved.name} open={running} onOpenChange={setRunning} />
+      {owner ? (
+        <RunWorkflowDialog
+          project={owner}
+          name={saved.name}
+          open={running}
+          onOpenChange={setRunning}
+        />
+      ) : null}
       {confirmingDelete && (
         <Dialog open onOpenChange={(open) => !open && leave()}>
           <DialogContent>
@@ -173,7 +192,7 @@ export function WorkflowPage() {
                 <DialogDescription>
                   The workflow's file is deleted and committed. Its past runs stay listed.
                   {looksLikeAutomation(saved) &&
-                    " This workflow is an automation: a schedule that starts one chat. Deleting it stops the automation, and it leaves the Automations page."}
+                    " This workflow is an automation: a schedule that starts one chat. Deleting it stops the automation, and it leaves the Scheduled list."}
                 </DialogDescription>
               </DialogHeader>
               {removeRefusal && <Notice tone="error">{removeRefusal}</Notice>}
@@ -238,7 +257,7 @@ export function WorkflowPage() {
                       <Tag tone={status.tone}>{status.label}</Tag>
                       <Link
                         className="rounded-round underline-offset-4 hover:underline"
-                        to={`/workflow-runs/${each.id}`}
+                        to={workflowRunPath(each.id)}
                       >
                         Run {each.id}
                       </Link>

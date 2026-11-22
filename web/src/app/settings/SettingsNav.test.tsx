@@ -19,7 +19,7 @@ describe("SettingsNav", () => {
     expect(screen.getByRole("link", { name: "Profile" })).toBeTruthy();
     // Runners is a tab of Fleet now, not a setting.
     expect(screen.queryByRole("link", { name: "Runners" })).toBeNull();
-    expect(screen.getAllByRole("link")).toHaveLength(16);
+    expect(screen.getAllByRole("link")).toHaveLength(15);
   });
 
   it("narrows as one types and says so in one line when nothing matches", () => {

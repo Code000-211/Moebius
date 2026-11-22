@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 
 describe("the workflow pages", () => {
   it.each([
-    "WorkflowsPage.tsx",
+    "WorkflowsTab.tsx",
     "WorkflowPage.tsx",
     "WorkflowGraph.tsx",
     "WorkflowRunPage.tsx",

@@ -14,11 +14,11 @@ import {
   runAutomation,
   saveAutomation,
 } from "../../api/calls/automations";
-import { snapshot } from "../../api/calls/board";
 import { agents } from "../../api/calls/chat";
 import { sayError } from "../../api/errorText";
 import { keys } from "../../api/keys";
 import type { Automation, AutomationSettings } from "../../api/types/automations";
+import type { Project } from "../../api/types/projects";
 import { Button } from "../../ui/components/Button";
 import { DeleteButton, EditorWindow } from "../../ui/components/EditorWindow";
 import { Input } from "../../ui/components/Input";
@@ -40,11 +40,14 @@ function repeatOptions(schedule: string): Array<[string, string]> {
 }
 
 export function Editor({
+  project,
   saved,
   starting,
   now,
   onClose,
 }: {
+  /** The project the automation belongs to: it works in one of the project's repositories. */
+  project: Project;
   /** The automation to edit; none for a new one. */
   saved?: Automation;
   /** The fields to open a new automation with, when the empty page offered one. */
@@ -66,9 +69,13 @@ export function Editor({
     setRefused(null);
     setForm({ ...form, ...change });
   };
-  const refresh = () => queryClient.invalidateQueries({ queryKey: keys.automations });
+  // An automation is also a workflow of its project: a save or a delete makes, renames or removes that workflow.
+  const refresh = () =>
+    Promise.all([
+      queryClient.invalidateQueries({ queryKey: keys.automations }),
+      queryClient.invalidateQueries({ queryKey: keys.workflows }),
+    ]);
   const agentList = useQuery({ queryKey: keys.agents, queryFn: agents });
-  const repositories = useQuery({ queryKey: keys.snapshot, queryFn: () => snapshot() });
   const save = useMutation({
     mutationFn: (settings: AutomationSettings) => saveAutomation(id, settings),
     onSuccess: async () => {
@@ -109,7 +116,7 @@ export function Editor({
   });
 
   const submit = () => {
-    const made = request(form);
+    const made = request(form, project.id);
     if ("problem" in made) setRefused(made.problem);
     else save.mutate(made.ok);
   };
@@ -119,9 +126,7 @@ export function Editor({
   const preset = PRESETS.find(([, cron]) => cron === form.schedule.trim());
   const places: Array<[string, string]> = [
     ["nowhere", "An empty directory"],
-    ...(repositories.data?.boards.map(
-      (board) => [`repository:${board.repository.id}`, board.repository.name] as [string, string],
-    ) ?? []),
+    ...project.repositories.map((each) => [`repository:${each.id}`, each.name] as [string, string]),
     ["harness", "Harness configuration"],
   ];
   // What would be lost on closing: a change to the stored automation, or anything typed into a new one.
@@ -131,7 +136,7 @@ export function Editor({
     <>
       <EditorWindow
         open
-        title={saved ? `Edit automation ${saved.name}` : "New automation"}
+        title={saved ? `Edit scheduled workflow ${saved.name}` : "New scheduled workflow"}
         dirty={dirty}
         saving={save.isPending}
         error={refused}

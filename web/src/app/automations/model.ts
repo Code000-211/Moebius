@@ -95,7 +95,10 @@ export function formOf(automation: Automation): Form {
 }
 
 /** What a save sends, or what is wrong with the fields. */
-export function request(form: Form): { ok: AutomationSettings } | { problem: string } {
+export function request(
+  form: Form,
+  project: number,
+): { ok: AutomationSettings } | { problem: string } {
   const prompt = form.prompt.trim();
   if (form.name.trim() === "") return { problem: "Give the automation a name." };
   if (form.schedule.trim().split(/\s+/).length !== 5) {
@@ -111,6 +114,7 @@ export function request(form: Form): { ok: AutomationSettings } | { problem: str
       schedule: form.schedule.trim(),
       agent: form.agent,
       prompt,
+      project,
       repository: form.place.startsWith("repository:") ? Number(form.place.slice(11)) : null,
       harness: form.place === "harness",
       enabled: form.enabled,
