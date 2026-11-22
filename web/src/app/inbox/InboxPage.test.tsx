@@ -146,6 +146,11 @@ describe("the inbox page", () => {
     expect(screen.getByRole("link", { name: "Open Fleet" }).getAttribute("href")).toBe("/fleet");
   });
 
+  it("says in its empty state what arrives here, since Notifications is no page of Settings", async () => {
+    open("/inbox", [], []);
+    await screen.findByText(/What arrives here: cards assigned to you, mentions of you/);
+  });
+
   describe("an issue waiting for approval", () => {
     const waiting = {
       ...item(5),

@@ -12,14 +12,42 @@ const show = () =>
   );
 
 describe("SettingsNav", () => {
-  it("groups the entries and marks the one that is open", () => {
+  it("lists exactly the nine entries in the groups You and Server, and marks the one that is open", () => {
     show();
-    expect(screen.getByText("Automation")).toBeTruthy();
+    expect(screen.getByText("You")).toBeTruthy();
+    expect(screen.getByText("Server")).toBeTruthy();
+    expect(screen.queryByText("Automation")).toBeNull();
+    expect(screen.queryByText("Agents")).toBeNull();
+    expect(screen.getAllByRole("link").map((l) => l.textContent)).toEqual([
+      "Profile",
+      "Appearance",
+      "Keyboard shortcuts",
+      "My tokens",
+      "General",
+      "Models",
+      "Plugins",
+      "Kinds of issues",
+      "Members",
+    ]);
     expect(screen.getByRole("link", { name: "Models" }).getAttribute("aria-current")).toBe("page");
-    expect(screen.getByRole("link", { name: "Profile" })).toBeTruthy();
-    // Runners is a tab of Fleet now, not a setting.
-    expect(screen.queryByRole("link", { name: "Runners" })).toBeNull();
-    expect(screen.getAllByRole("link")).toHaveLength(11);
+    // Each of these is somewhere else now, or gone.
+    for (const gone of ["Notifications", "Schedules", "Column scripts", "Repositories", "Runners"])
+      expect(screen.queryByRole("link", { name: gone }), gone).toBeNull();
+  });
+
+  it("hides the Server group from anyone who is not an owner", () => {
+    render(
+      <MemoryRouter initialEntries={["/profile"]}>
+        <SettingsNav entries={settingsEntries("member")} />
+      </MemoryRouter>,
+    );
+    expect(screen.getAllByRole("link").map((l) => l.textContent)).toEqual([
+      "Profile",
+      "Appearance",
+      "Keyboard shortcuts",
+      "My tokens",
+    ]);
+    expect(screen.queryByText("Server")).toBeNull();
   });
 
   it("narrows as one types and says so in one line when nothing matches", () => {

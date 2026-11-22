@@ -68,7 +68,7 @@ describe("reading the settings", () => {
     expect(forms.map((form) => form.title)).toEqual([
       "Server",
       "Board and budgets",
-      "Nightly schedule",
+      "Nightly",
       "Harness",
       "Pi-Bolt",
       "GitHub",

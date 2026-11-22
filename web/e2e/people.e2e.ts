@@ -73,10 +73,10 @@ describe("the People page", () => {
     await member.goto(`${server.url}/tokens`);
     await member.getByTestId("tokens-page").waitFor();
     // The member is shown their own tokens but not the People page, in Settings or at its address.
-    await member.goto(`${server.url}/settings`);
+    await member.goto(`${server.url}/profile`);
     await member
       .getByRole("navigation", { name: "Settings" })
-      .getByRole("link", { name: "General" })
+      .getByRole("link", { name: "Profile" })
       .waitFor();
     await expect
       .poll(() =>

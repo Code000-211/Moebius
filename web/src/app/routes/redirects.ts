@@ -99,7 +99,40 @@ function oldWorkflows(
   return project ? withQuery(to(project.id), first, search, ["project"]) : "/projects";
 }
 
+/** Where an old project-less Settings page leads: `tab` of the settings of the project named by `?project=`, else of the one opened last or the only one, else the list of projects. */
+function oldSettingsTab(tab: string, projects: Project[], search: URLSearchParams): string {
+  const project = projectForOldAddress(projects, search);
+  return project ? withQuery(settingsPath(project.id, tab), {}, search, ["project"]) : "/projects";
+}
+
 export const LEGACY_ROUTES: readonly LegacyRoute[] = [
+  {
+    // Notifications was a Settings page; the Inbox is where they arrive.
+    path: "notifications",
+    resolve: () => "/inbox",
+  },
+  {
+    // Schedules: the nightly times moved into General; a schedule is a trigger of a workflow, in its project.
+    path: "schedules",
+    resolve: (_params, projects, search) =>
+      oldWorkflows(projects, search, (project) => projectTabPath(project, "workflows"), {
+        runs: "scheduled",
+      }),
+  },
+  {
+    // Column scripts and the repositories of the server are the project's: the Columns and Repositories tabs of its settings.
+    path: "column-scripts",
+    resolve: (_params, projects, search) => oldSettingsTab("columns", projects, search),
+  },
+  {
+    path: "repositories",
+    resolve: (_params, projects, search) => oldSettingsTab("repositories", projects, search),
+  },
+  {
+    // What plugins ask of the server is a section of each plugin on the Plugins page.
+    path: "plugin-settings",
+    resolve: (_params, _projects, search) => withQuery("/plugins", {}, search),
+  },
   // Runners and Ports are tabs of Fleet: live load, not settings.
   {
     path: "runners",

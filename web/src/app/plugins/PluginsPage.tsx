@@ -5,11 +5,12 @@
  * stopped and where its log is. Each plugin named in moebius.toml has a switch that turns it off and on at once; one
  * that is off shows as "Off", greyed, and can be turned on again. The plugins are named in moebius.toml, or installed
  * from the registries: the page lists the installed packages and opens the package sheet on them ("Browse
- * packages").
+ * packages"). What each plugin asks of the whole server is a section of the page, one box per plugin; what it asks
+ * of one repository is on that repository's page.
  */
 import { useQuery } from "@tanstack/react-query";
 import type { ReactNode } from "react";
-import { plugins as readPlugins } from "../../api/calls/models";
+import { appSettings, plugins as readPlugins, saveAppSettings } from "../../api/calls/models";
 import { keys } from "../../api/keys";
 import type { PluginProcess } from "../../api/types/models";
 import { usePackageSheet } from "../../packages/PackageSheetContext";
@@ -22,7 +23,19 @@ import type { Tone } from "../../ui/page/StateLabel";
 import { StateLabel } from "../../ui/page/StateLabel";
 import { AreaTitle, Section } from "../settings/parts";
 import { InstalledPackages } from "./InstalledPackages";
+import { PluginSettingsBoxes, type SettingsScope } from "./PluginSettingsBoxes";
 import { PluginSwitch, SWITCHED_BUILT_INS } from "./PluginSwitch";
+
+/** What running plugins ask of the whole server (`app_settings` of their manifests): one box per plugin. */
+const APP_SCOPE: SettingsScope = {
+  kind: "app",
+  repository: null,
+  queryKey: keys.appSettings,
+  read: appSettings,
+  save: saveAppSettings,
+  empty:
+    "No plugin on this server asks anything of it. One that does, such as a sandbox with a base image for every repository, shows its settings here.",
+};
 
 /**
  * How a plugin runs: built into the server, or as its own process in a state, coloured by whether it takes calls.
@@ -147,6 +160,9 @@ export function PluginsPage() {
       <AreaTitle title="Plugins" actions={browse} />
       <div className="flex flex-col">
         <InstalledPackages onBrowse={() => sheet.open("moebius")} />
+        <Section title="Settings of plugins" aside="What a plugin asks of the whole server.">
+          <PluginSettingsBoxes scope={APP_SCOPE} />
+        </Section>
         <Section
           title="Loaded plugins"
           aside={`${plural(loaded.length, "plugin", "plugins")}; a call into one is refused after ${limit} s.`}
