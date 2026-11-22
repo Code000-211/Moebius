@@ -40,6 +40,31 @@ export function nextPosition(graph: WorkflowDefinition): { x: number; y: number 
   return { x: left, y: below + 180 };
 }
 
+/** The space a step takes on the graph, and the gap kept between steps, for placing one after another. */
+const STEP_PITCH = { x: 324, y: 120 };
+
+/**
+ * Where a step added after the one at `from` goes: to its right, and lower down while another step is in the way, so
+ * a new step never lands on an old one.
+ */
+export function positionAfter(
+  graph: WorkflowDefinition,
+  from: { x: number; y: number },
+): { x: number; y: number } {
+  const at = { x: from.x + STEP_PITCH.x, y: from.y };
+  const taken = (y: number) =>
+    graph.nodes.some(
+      (node) =>
+        Math.abs(node.position.x - at.x) < STEP_PITCH.x &&
+        Math.abs(node.position.y - y) < STEP_PITCH.y,
+    );
+  let y = at.y;
+  while (taken(y)) {
+    y += STEP_PITCH.y;
+  }
+  return { x: at.x, y };
+}
+
 /** An id for a new node of a kind that no node of the graph has taken yet. */
 export function nextNodeId(graph: WorkflowDefinition, kind: string): string {
   const base = kind.replace(/[^a-zA-Z0-9_-]/g, "-");

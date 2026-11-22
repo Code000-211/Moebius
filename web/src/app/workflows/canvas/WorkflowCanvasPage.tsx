@@ -28,6 +28,7 @@ import {
   useEdgesState,
   useNodesState,
   useReactFlow,
+  useStoreApi,
 } from "@xyflow/react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useBlocker } from "react-router";
@@ -55,7 +56,7 @@ import { cn } from "../../../ui/lib/cn";
 import { Select } from "../../../ui/page/Field";
 import { Notice } from "../../../ui/page/Notice";
 import { triggerProblem } from "../forms/trigger";
-import { genericKind, type NodeKind, nodeKinds, startingParams } from "../nodeKinds";
+import { genericKind, type NodeKind, nodeKinds, portsOf, startingParams } from "../nodeKinds";
 import { NodeCard, TriggerCard } from "./cards";
 import { type CardNode, flowEdges, flowNodes, type Marks, problemsOf } from "./flow";
 import { Inspector, type Selection } from "./Inspector";
@@ -66,7 +67,9 @@ import {
   isDirty,
   moveNode,
   nextPosition,
+  nodeOf,
   type Problem,
+  positionAfter,
   problemFor,
   removeEdge,
   removeNode,
@@ -76,6 +79,7 @@ import {
   TRIGGER,
 } from "./model";
 import { droppedKind, Palette } from "./Palette";
+import { CARD_WIDTH, readableViewport } from "./view";
 
 const nodeTypes = { kind: NodeCard, trigger: TriggerCard };
 
@@ -131,9 +135,8 @@ export function draftOf(state: unknown): WorkflowDefinition | null {
   return draft as WorkflowDefinition;
 }
 
-/** The width of a node card on the board, for telling whether a new one is in view. */
-const CARD_WIDTH = 240;
-const CARD_HEIGHT = 120;
+/** The height of a node card on the board, for telling whether a new one is in view. */
+const CARD_HEIGHT = 96;
 
 /** Whether a node at `at` is wholly in the board. */
 function inView(board: ReturnType<typeof useReactFlow>, at: { x: number; y: number }): boolean {
@@ -169,6 +172,7 @@ function Canvas({
 }) {
   const queryClient = useQueryClient();
   const board = useReactFlow();
+  const store = useStoreApi();
   const [draft, setDraft] = useState<WorkflowDefinition>(loaded);
   const [saved, setSaved] = useState<WorkflowDefinition>(loaded);
   // Before the first save the graph is not in a file, so it counts as unsaved however it looks.
@@ -250,29 +254,77 @@ function Canvas({
     setWires(flow.edges);
   }, [flow, setCards, setWires]);
 
+  // The view that shows the graph as large as is readable: all of it when its boxes stay wide enough, and otherwise its
+  // start, with the rest a pan away (`view.ts`). The boxes are measured from where they sit, so no frame is waited for.
+  const showGraph = useCallback(() => {
+    const { width, height } = store.getState();
+    const nodes = board.getNodes();
+    if (nodes.length === 0 || width === 0 || height === 0) {
+      return;
+    }
+    const left = Math.min(...nodes.map((node) => node.position.x));
+    const top = Math.min(...nodes.map((node) => node.position.y));
+    const right = Math.max(...nodes.map((node) => node.position.x + CARD_WIDTH));
+    const bottom = Math.max(...nodes.map((node) => node.position.y + CARD_HEIGHT));
+    void board.setViewport(
+      readableViewport(
+        { x: left, y: top, width: right - left, height: bottom - top },
+        { width, height },
+      ),
+    );
+  }, [board, store]);
+
   // The pane of a chosen step takes room from the graph when it opens and gives it back when it closes: the view then
-  // fits the whole graph again, so no node is left under the pane.
+  // shows the graph from its start again. A chosen step that the pane or the edge of the board would hide is panned to
+  // the middle of what is left, at the zoom the person has; one already in view stays where it is.
+  const chosen =
+    selection?.kind === "node" ? selection.id : selection?.kind === "trigger" ? TRIGGER : null;
   const paneOpen = selection !== null;
-  // biome-ignore lint/correctness/useExhaustiveDependencies: refits only when the pane opens or closes
+  // biome-ignore lint/correctness/useExhaustiveDependencies: runs when the pane opens or closes, or another step is chosen
   useEffect(() => {
-    const timer = setTimeout(() => void board.fitView({ padding: 0.2 }), 60);
+    const timer = setTimeout(() => {
+      if (!paneOpen) {
+        showGraph();
+        return;
+      }
+      const card = chosen === null ? undefined : board.getNode(chosen);
+      if (card && !inView(board, card.position)) {
+        void board.setCenter(card.position.x + CARD_WIDTH / 2, card.position.y + CARD_HEIGHT / 2, {
+          zoom: board.getZoom(),
+        });
+      }
+    }, 60);
     return () => clearTimeout(timer);
-  }, [paneOpen]);
+  }, [paneOpen, chosen]);
 
   const add = useCallback(
     (kind: NodeKind, params: Record<string, unknown>, at?: { x: number; y: number }) => {
-      const withNode = addNode(draft, kind.kind, at ?? nextPosition(draft), params);
+      // A step added by a press, with another chosen, follows the chosen one and hangs off its first way out.
+      const after = at || selection === null || selection.kind === "edge" ? null : selection;
+      const afterId = after?.kind === "node" ? after.id : TRIGGER;
+      const afterCard = after ? board.getNode(afterId) : undefined;
+      const port = !after
+        ? undefined
+        : after.kind === "trigger"
+          ? "out"
+          : portsOf(nodeOf(draft, afterId)?.kind ?? "", nodeOf(draft, afterId)?.params).outputs[0];
+      const place =
+        at ?? (afterCard ? positionAfter(draft, afterCard.position) : nextPosition(draft));
+      let withNode = addNode(draft, kind.kind, place, params);
       const added = withNode.nodes[withNode.nodes.length - 1];
+      if (added && afterCard && port) {
+        withNode = connect(withNode, { from: afterId, to: added.id, port }) ?? withNode;
+      }
       setDraft(withNode);
       if (added) {
         // A node added by the palette or the keyboard lands where the graph ends, which may be out of sight, past the edge.
         // The board then fits the whole graph, so what was in view stays in view; a node dropped where the pointer is, or one already in view, leaves the view as it is.
         if (!at && !inView(board, added.position)) {
-          void board.fitView({ padding: 0.2 });
+          showGraph();
         }
       }
     },
-    [draft, board],
+    [draft, board, selection, showGraph],
   );
 
   const onNodesChange = useCallback(
@@ -401,9 +453,7 @@ function Canvas({
               }
             }}
             onPaneClick={() => setSelection(null)}
-            onInit={(instance) => {
-              void instance.fitView({ padding: 0.2 });
-            }}
+            onInit={() => showGraph()}
             onDrop={drop}
             onDragOver={(event) => {
               event.preventDefault();
@@ -420,7 +470,7 @@ function Canvas({
               size={1}
               color="var(--hairline)"
             />
-            <Controls showInteractive={false} position="bottom-left" />
+            <Controls showInteractive={false} position="bottom-left" onFitView={showGraph} />
           </ReactFlow>
           {save.isError ? (
             <div

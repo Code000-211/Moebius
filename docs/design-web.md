@@ -414,6 +414,17 @@ one screen in the app that is a surface rather than a list of rows. What that as
 - The graph is the tab. It fills the panel beside the palette of kinds at its left and the pane of the chosen step at its
   right, and nothing is laid over it: no box, no heading, no band of padding. A step is edited in that pane, which sits
   beside the graph and opens and closes with the choice. Pan and zoom belong to the graph, so the tab itself never scrolls.
+- The palette is a slim column of 170px titled "Add a step": one row per kind, a mark (`kindIcons.tsx`) and one name
+  (Agent, Code, Condition, For each, HTTP, Approval, Merge, Chat, Publish), no boxed cards and no second line in
+  monospace, and at its end the muted hint "Drag onto the canvas". A row is dragged onto the graph, where it was
+  dropped, or pressed: with a step chosen the new one goes to its right and hangs off its first way out, otherwise it
+  goes where there is room.
+- Boxes are readable before anything else. A step box is 224px wide and is never shown narrower than 200px: the view
+  opens on the whole graph only as far as that allows (`view.ts`, `readableViewport`: fit, never past zoom 1, never
+  below 200/224), and a graph too wide for it opens at its start and is panned, not shrunk. A box shows its kind (mark
+  and small muted label), the node id in bold, and one muted summary line. A port is named, on the box and on its wire,
+  only where the node has more than one way out. Choosing a step that the pane or the board's edge would hide pans it
+  into the middle of what is left, at the zoom the person has.
 - Where a node sits is what the file holds, and the file holds it because a person put it there. A node opens at the
   place it was saved at, a node dragged is a change to the file like any other, and the read-only view of the same
   workflow's Overview lists its nodes in the order its edges give, so the two never disagree about what comes first.
