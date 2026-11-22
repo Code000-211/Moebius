@@ -606,12 +606,12 @@ describe("live data", () => {
       expect(made.ok(), await made.text()).toBe(true);
       ids.push(((await made.json()) as { id: number }).id);
     }
-    await page.goto(`${server.url}/issues`);
+    await page.goto(`${server.url}/views/all-issues`);
     await page.getByTestId("list-row").filter({ hasText: "First issue" }).click();
-    await page.waitForURL(`**/issues?**card=${ids[0]}`);
+    await page.waitForURL(`**/views/all-issues?**card=${ids[0]}`);
     await dock().getByText("First issue").first().waitFor();
     await page.goBack();
-    await page.getByTestId("issues-page").waitFor();
+    await page.getByTestId("all-issues").waitFor();
   });
 
   it.skipIf(usesRealServer)("links the pull request of a card from the dock", async () => {

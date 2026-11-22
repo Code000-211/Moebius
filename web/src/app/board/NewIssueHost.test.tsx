@@ -115,10 +115,10 @@ describe("C", () => {
   });
 });
 
-describe("C on the Issues page filtered to a project", () => {
+describe("C on the All issues view filtered to a project", () => {
   it("starts with that project's repository, not the first one", async () => {
     stub();
-    await page("/issues?project=5");
+    await page("/views/all-issues?project=5");
     // The project's repositories are read once the page is filtered.
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
     await new Promise((r) => setTimeout(r, 50));
@@ -129,7 +129,7 @@ describe("C on the Issues page filtered to a project", () => {
 
   it("starts with the first repository when no project is filtered", async () => {
     stub();
-    await page("/issues");
+    await page("/views/all-issues");
     fireEvent.keyDown(document.body, { key: "c" });
     const dialog = await screen.findByRole("dialog", { name: "New issue" });
     expect(dialog.textContent).toContain("Backlog of travel-timeline");

@@ -69,6 +69,20 @@ describe("the sidebar's rows", () => {
     }
   });
 
+  it("lists Skills and MCP servers as tabs of Agents, to an owner alone, and none of the four in Settings", () => {
+    const listed = new Set(NAV.filter((e) => e.sidebar !== undefined).map((e) => e.path));
+    expect(listed.has("agents/skills")).toBe(false);
+    expect(listed.has("agents/mcp-servers")).toBe(false);
+    const owner = settingsEntries("owner").map((e) => e.label);
+    for (const gone of ["Agents", "Skills", "MCP servers", "Rules"])
+      expect(owner, gone).not.toContain(gone);
+    for (const path of ["agents/skills", "agents/mcp-servers"]) {
+      const entry = NAV.find((e) => e.path === path);
+      expect(entry?.shownTo).toBe("owner");
+      expect(inSettingsArea(`/${path}`), path).toBe(false);
+    }
+  });
+
   it("lists Cycles, Milestones, Intake, Workflows and Automations nowhere: they live in projects", () => {
     const listed = new Set(NAV.filter((e) => e.sidebar !== undefined).map((e) => e.path));
     for (const path of ["cycles", "milestones", "intake", "workflows", "automations", "more"])
@@ -95,7 +109,7 @@ describe("the Settings navigation", () => {
 
   it("finds an entry by its name or its group's", () => {
     const owner = settingsEntries("owner");
-    expect(searchEntries(owner, " RUL ")[0]?.entries.map((e) => e.label)).toEqual(["Rules"]);
+    expect(searchEntries(owner, " MOD ")[0]?.entries.map((e) => e.label)).toEqual(["Models"]);
     expect(searchEntries(owner, "zzz")).toEqual([]);
   });
 

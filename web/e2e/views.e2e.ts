@@ -95,4 +95,20 @@ describe.skipIf(usesRealServer)("the Views page", () => {
     await page.getByRole("link", { name: /Team board/ }).click();
     await page.getByRole("button", { name: "Edit" }).waitFor();
   });
+
+  it("lists All issues first and opens it from the old Issues address, filters kept", async () => {
+    await open("/issues?kind=Bug");
+    await page.waitForURL("**/views/all-issues?kind=Bug");
+    await page.getByTestId("all-issues").waitFor();
+    const links = page.getByRole("list", { name: "Views" }).getByRole("link");
+    expect(await links.first().textContent()).toBe("All issues");
+    expect(await links.first().getAttribute("aria-current")).toBe("page");
+    // It is built in: nothing to edit or delete.
+    await expect.poll(() => page.getByRole("button", { name: "Edit" }).count()).toBe(0);
+    await expect.poll(() => page.getByRole("button", { name: "Delete" }).count()).toBe(0);
+    // A saved view is still opened beside it at its own address.
+    await page.getByRole("link", { name: /Team board/ }).click();
+    await page.waitForURL("**/views/1");
+    await page.getByTestId("view").waitFor();
+  });
 });

@@ -37,6 +37,9 @@ export function workflowRunPath(runId: number): string {
   return `/workflow-runs/${runId}`;
 }
 
+/** The path of the built-in view "All issues" of the Views page (what `/issues` was). */
+export const ALL_ISSUES_PATH = "/views/all-issues";
+
 /** The path of one cycle's page, under the Cycles tab of its project. */
 export function cyclePath(projectId: number, cycleId: number): string {
   return `${projectTabPath(projectId, "cycles")}/${cycleId}`;

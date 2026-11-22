@@ -74,8 +74,8 @@ describe.skipIf(usesRealServer)("kinds of issues", () => {
     );
 
     // The Issues page lists the cards of both projects.
-    await page.goto(`${server.url}/issues`);
-    await page.getByTestId("issues-page").waitFor();
+    await page.goto(`${server.url}/views/all-issues`);
+    await page.getByTestId("all-issues").waitFor();
     await page.getByTestId("list-row").first().waitFor();
     expect(await titles(page)).toEqual([
       "Login is broken",
@@ -84,7 +84,7 @@ describe.skipIf(usesRealServer)("kinds of issues", () => {
     ]);
 
     // Filtered by a field of the kind, the cards of both projects that have the value are left.
-    const issues = page.getByTestId("issues-page");
+    const issues = page.getByTestId("all-issues");
     await issues.getByRole("button", { name: "Filter", exact: true }).click();
     await page.getByRole("menuitem", { name: "Severity" }).click();
     await page.getByRole("menuitemradio", { name: "high" }).click();
@@ -111,10 +111,10 @@ describe.skipIf(usesRealServer)("kinds of issues", () => {
 
     // A row opens its card window over the Issues, and Back closes it with the filter and the order still in the address.
     await page.getByTestId("list-row").filter({ hasText: "Login is broken" }).click();
-    await page.waitForURL("**/issues?**card=1");
+    await page.waitForURL("**/views/all-issues?**card=1");
     await page.getByRole("dialog", { name: "Card inspector" }).waitFor();
     await page.goBack();
-    await page.getByTestId("issues-page").waitFor();
+    await page.getByTestId("all-issues").waitFor();
     expect(new URL(page.url()).searchParams.get("field.Severity")).toBe("high");
     expect(new URL(page.url()).searchParams.get("sort")).toBe("asc:Estimate");
     await context.close();
