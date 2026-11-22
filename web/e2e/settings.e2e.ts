@@ -1,6 +1,6 @@
 /**
  * Settings as one page in a real browser: the sub-navigation reaches Models, Plugins and Kinds of issues without leaving the
- * layout, keeps the address on reload, and narrows by what is typed in its search.
+ * layout, keeps the address on reload.
  */
 import { type Browser, chromium, type Page } from "playwright";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
@@ -50,18 +50,20 @@ describe("Settings", () => {
     ).toBe("page");
   });
 
-  it("narrows the entries by search, and says when nothing matches", async () => {
+  it("has no search field, and an icon before each entry", async () => {
     server = await startServer();
     const page = await (await browser.newContext()).newPage();
     page.setDefaultTimeout(8000);
     await page.goto(server.loginUrl);
     await page.goto(`${server.url}/settings`);
-    const search = nav(page).getByRole("searchbox", { name: "Search settings" });
-    await search.fill("mod");
-    await nav(page).getByRole("link", { name: "Models" }).waitFor();
-    await expect.poll(() => nav(page).getByRole("link").count()).toBe(1);
-    await search.fill("zzz");
-    await nav(page).getByText("No settings match.").waitFor();
+    await nav(page).waitFor();
+    expect(await nav(page).getByRole("searchbox").count()).toBe(0);
+    const links = nav(page).getByRole("link");
+    const count = await links.count();
+    expect(count).toBeGreaterThan(0);
+    for (let at = 0; at < count; at += 1) {
+      expect(await links.nth(at).locator("svg").count()).toBe(1);
+    }
   });
 
   it("opens Profile, My tokens and Members from the navigation and by address, with no Ask field", async () => {

@@ -117,6 +117,11 @@ describe("a project's settings", () => {
       "Repositories",
       "Columns",
     ]);
+    // Each row has its icon, and there is no search field, as in Settings.
+    for (const link of Array.from(nav.querySelectorAll("a"))) {
+      expect(link.querySelector("svg"), link.textContent ?? "").toBeTruthy();
+    }
+    expect(screen.queryByRole("searchbox")).toBeNull();
     fireEvent.click(screen.getByRole("link", { name: "Repositories" }));
     expect(screen.getByTestId("where").textContent).toBe("/projects/7/settings/repositories");
     fireEvent.click(screen.getByRole("link", { name: "General" }));

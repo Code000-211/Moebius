@@ -130,7 +130,10 @@ function json(response: ServerResponse, value: unknown): void {
 export async function startFakeServer(): Promise<FakeServer> {
   /** Each session's person, by id. */
   /** What each person chose for themselves (`/v1/preferences`), by person id. */
-  const preferences = new Map<number, boolean>();
+  const preferences = new Map<
+    number,
+    { show_thinking_expanded: boolean; wrap_long_lines: boolean }
+  >();
   const sessions = new Map<string, number>();
   const people = [
     { id: 1, handle: "owner", name: "Owner", role: "owner", disabled: false, created_at: 0 },
@@ -250,10 +253,19 @@ export async function startFakeServer(): Promise<FakeServer> {
     const mine = (id: number) => [...accessTokens.entries()].filter(([, t]) => t.person_id === id);
     if (path === "/v1/preferences") {
       if (method === "PUT") {
-        const body = JSON.parse(await readBody(request)) as { show_thinking_expanded: boolean };
-        preferences.set(asker, body.show_thinking_expanded);
+        const body = JSON.parse(await readBody(request)) as {
+          show_thinking_expanded?: boolean;
+          wrap_long_lines?: boolean;
+        };
+        preferences.set(asker, {
+          show_thinking_expanded: body.show_thinking_expanded ?? false,
+          wrap_long_lines: body.wrap_long_lines ?? false,
+        });
       }
-      return json(response, { show_thinking_expanded: preferences.get(asker) ?? false });
+      return json(
+        response,
+        preferences.get(asker) ?? { show_thinking_expanded: false, wrap_long_lines: false },
+      );
     }
     if (path === "/v1/people" && method === "GET") return json(response, people);
     if (path === "/v1/people" && method === "POST") {

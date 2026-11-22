@@ -25,6 +25,7 @@ import { AgentButton } from "../../app/shell/AgentButton";
 import { useSidebarToggle } from "../../app/shell/SidebarToggle";
 import { IconButton } from "../components/IconButton";
 import { SidebarIcon } from "../icons";
+import { cn } from "../lib/cn";
 
 /**
  * True inside the content of a Settings area. There a page's title is the area's title, the one every area has: in
@@ -41,6 +42,8 @@ export function PageHeader({
   primary,
   /** The way back, for a page that is a thing inside another thing. */
   back,
+  /** Keeps the header to one row of 48px however narrow it gets: the tabs, not the buttons, give way. */
+  oneRow = false,
 }: {
   title: string;
   /** The tabs of the page, after its title. A page with nothing to choose between has none. */
@@ -52,6 +55,7 @@ export function PageHeader({
   /** The page's one primary button, after the Moebius button. */
   primary?: ReactNode;
   back?: ReactNode;
+  oneRow?: boolean;
 }) {
   const sidebar = useSidebarToggle();
   const inArea = useContext(InSettingsArea);
@@ -74,8 +78,13 @@ export function PageHeader({
   }
   return (
     <header
+      data-page-header
       data-tauri-drag-region
-      className="sticky -top-4 z-10 -mx-4 -mt-4 mb-6 flex min-h-12 shrink-0 flex-wrap items-center gap-x-4 gap-y-1 py-1 border-b border-hairline bg-panel pl-4 pr-[calc(1rem+var(--window-buttons))]"
+      style={{ containerType: "inline-size", containerName: "header" }}
+      className={cn(
+        "sticky -top-4 z-10 -mx-4 -mt-4 mb-6 flex min-h-12 shrink-0 items-center gap-x-4 gap-y-1 py-1 border-b border-hairline bg-panel pl-4 pr-[calc(1rem+var(--window-buttons))]",
+        oneRow ? "h-12 flex-nowrap" : "flex-wrap",
+      )}
     >
       <div className="flex min-w-0 items-center gap-1">
         {sidebar?.narrow && (
@@ -95,11 +104,23 @@ export function PageHeader({
         </h1>
       </div>
       {tabs && (
-        <div className="-mb-1 flex min-w-0 self-stretch [&>[role=tablist]]:items-stretch [&_[role=tab]]:h-full [&_[role=tab]]:pb-1">
+        <div
+          className={cn(
+            "-mb-1 flex self-stretch [&>[role=tablist]]:items-stretch [&_[role=tab]]:h-full [&_[role=tab]]:pb-1",
+            // One row: the tabs keep theirs and the title gives way (it is cut with an ellipsis), so a tab never
+            // wraps below the header.
+            oneRow ? "shrink-0 [&>[role=tablist]]:flex-nowrap [&>[role=tablist]]:gap-3" : "min-w-0",
+          )}
+        >
           {tabs}
         </div>
       )}
-      <div className="ml-auto flex min-w-0 max-w-full flex-wrap items-center gap-2">
+      <div
+        className={cn(
+          "ml-auto flex max-w-full items-center gap-2",
+          oneRow ? "shrink-0 flex-nowrap" : "min-w-0 flex-wrap",
+        )}
+      >
         {actions}
         {menu}
         <AgentButton />

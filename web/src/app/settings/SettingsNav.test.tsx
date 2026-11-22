@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { render, screen } from "@testing-library/react";
 import { MemoryRouter } from "react-router";
 import { describe, expect, it } from "vitest";
 import { settingsEntries } from "../nav";
@@ -50,16 +50,12 @@ describe("SettingsNav", () => {
     expect(screen.queryByText("Server")).toBeNull();
   });
 
-  it("narrows as one types and says so in one line when nothing matches", () => {
+  it("has no search field and draws an icon before every entry", () => {
     show();
-    fireEvent.change(screen.getByRole("searchbox", { name: "Search settings" }), {
-      target: { value: "mod" },
-    });
-    expect(screen.getAllByRole("link").map((l) => l.textContent)).toEqual(["Models"]);
-    fireEvent.change(screen.getByRole("searchbox", { name: "Search settings" }), {
-      target: { value: "zzz" },
-    });
-    expect(screen.queryAllByRole("link")).toHaveLength(0);
-    expect(screen.getByText("No settings match.")).toBeTruthy();
+    expect(screen.queryByRole("searchbox")).toBeNull();
+    expect(screen.queryByPlaceholderText("Search settings")).toBeNull();
+    for (const link of screen.getAllByRole("link")) {
+      expect(link.querySelector("svg"), link.textContent ?? "").toBeTruthy();
+    }
   });
 });

@@ -49,6 +49,7 @@ export function BriefBox({
   return (
     <Box
       title="Brief"
+      className="lg:border-t-0"
       actions={
         research.status === "draft" ? (
           <IconButton

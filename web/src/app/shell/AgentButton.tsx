@@ -44,12 +44,13 @@ export function AgentButton() {
       type="button"
       variant="secondary"
       size="sm"
+      aria-label="Moebius"
       aria-pressed={open}
       onClick={toggle}
       className={cn(open && "bg-accent-tint text-accent-text hover:bg-accent-tint")}
     >
       <SparklesIcon />
-      Moebius
+      <span className="header-word">Moebius</span>
     </Button>
   );
 }

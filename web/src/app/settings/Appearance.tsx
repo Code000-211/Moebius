@@ -6,6 +6,7 @@
  */
 import { useRef } from "react";
 import { useShowThinking } from "../../chat/thinking";
+import { useWrapSwitch } from "../../chat/wrapping";
 import { useReduceMotion } from "../../motion";
 import { type ThemePreference, useTheme } from "../../theme";
 import { cn } from "../../ui/lib/cn";
@@ -25,6 +26,7 @@ export function Appearance() {
   const motion = useReduceMotion();
   const blur = useBlur();
   const thinking = useShowThinking();
+  const wrap = useWrapSwitch();
   const row = useRef<HTMLDivElement>(null);
   return (
     <Rows>
@@ -76,6 +78,9 @@ export function Appearance() {
         description="While an answer streams it is always open"
       >
         <Switch label="Show thinking expanded" checked={thinking.on} onChange={thinking.set} />
+      </FieldRow>
+      <FieldRow label="Wrap long lines">
+        <Switch label="Wrap long lines" checked={wrap.on} onChange={wrap.set} />
       </FieldRow>
       <FieldRow label="Reduce motion" description={motion.system ? "Set by the system" : undefined}>
         <Switch

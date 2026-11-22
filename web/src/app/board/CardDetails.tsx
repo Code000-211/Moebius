@@ -10,10 +10,12 @@ import { cardRuns, script } from "../../api/calls/board";
 import { isApiError } from "../../api/http";
 import { keys } from "../../api/keys";
 import type { Board, Card, InboxItem } from "../../api/types/board";
+import { useWrapLines } from "../../chat/wrapping";
 import { ChangesCard } from "../../diff/Changes";
 import { Button } from "../../ui/components/Button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "../../ui/components/Dialog";
 import { PrBadge } from "../../ui/components/PrBadge";
+import { cn } from "../../ui/lib/cn";
 import { Notice } from "../../ui/page/Notice";
 import { SkeletonLines } from "../../ui/page/Skeleton";
 import { scriptPath } from "../pages";
@@ -40,6 +42,7 @@ export function CardDetails({
   onOpenChange: (open: boolean) => void;
 }) {
   const repository = board.repository;
+  const wrap = useWrapLines();
   const runs = useQuery({
     queryKey: keys.cardRuns(card.id),
     queryFn: () => cardRuns(card.id),
@@ -133,7 +136,10 @@ export function CardDetails({
               </p>
               <pre
                 data-testid="script"
-                className="m-0 max-h-48 overflow-auto rounded-control bg-code p-4 font-mono text-sm text-text"
+                className={cn(
+                  "m-0 max-h-48 overflow-auto rounded-control bg-code p-4 font-mono text-sm text-text",
+                  wrap && "whitespace-pre-wrap break-words",
+                )}
               >
                 {source.data.text}
               </pre>

@@ -1,7 +1,9 @@
 //! What a person chose for themselves in the web app, kept on the server so that it follows them to every browser.
 //!
-//! - `GET /v1/preferences`: `{"show_thinking_expanded": bool}` of the person asking; `false` until they choose.
-//! - `PUT /v1/preferences` `{show_thinking_expanded}`: replaces them and answers with them.
+//! - `GET /v1/preferences`: `{"show_thinking_expanded": bool, "wrap_long_lines": bool}` of the person asking; both
+//!   `false` until they choose.
+//! - `PUT /v1/preferences` `{show_thinking_expanded, wrap_long_lines}`: replaces them (a key left out is `false`) and
+//!   answers with them.
 //!
 //! Only a person may ask, never an agent's run token.
 
@@ -86,9 +88,76 @@ mod tests {
         let (status, body) = call("GET", &addr, &lea, None).await;
         assert_eq!(
             (status, body),
-            (200, json!({"show_thinking_expanded": false}))
+            (
+                200,
+                json!({"show_thinking_expanded": false, "wrap_long_lines": false})
+            )
         );
         let (status, body) = call(
+            "PUT",
+            &addr,
+            &lea,
+            Some(json!({"show_thinking_expanded": true, "wrap_long_lines": false})),
+        )
+        .await;
+        assert_eq!(
+            (status, body),
+            (
+                200,
+                json!({"show_thinking_expanded": true, "wrap_long_lines": false})
+            )
+        );
+        let (_, body) = call("GET", &addr, &lea, None).await;
+        assert_eq!(
+            body,
+            json!({"show_thinking_expanded": true, "wrap_long_lines": false})
+        );
+        let (_, body) = call("GET", &addr, &bo, None).await;
+        assert_eq!(
+            body,
+            json!({"show_thinking_expanded": false, "wrap_long_lines": false})
+        );
+        call(
+            "PUT",
+            &addr,
+            &lea,
+            Some(json!({"show_thinking_expanded": false, "wrap_long_lines": false})),
+        )
+        .await;
+        let (_, body) = call("GET", &addr, &lea, None).await;
+        assert_eq!(
+            body,
+            json!({"show_thinking_expanded": false, "wrap_long_lines": false})
+        );
+    }
+
+    #[tokio::test]
+    async fn wrapping_long_lines_is_kept_for_the_person_and_a_key_left_out_is_off() {
+        let (_d, state, addr) = start().await;
+        let lea = person(&state, "lea", 1);
+        let bo = person(&state, "bo", 2);
+        let (_, body) = call(
+            "PUT",
+            &addr,
+            &lea,
+            Some(json!({"show_thinking_expanded": true, "wrap_long_lines": true})),
+        )
+        .await;
+        assert_eq!(
+            body,
+            json!({"show_thinking_expanded": true, "wrap_long_lines": true})
+        );
+        let (_, body) = call("GET", &addr, &lea, None).await;
+        assert_eq!(
+            body,
+            json!({"show_thinking_expanded": true, "wrap_long_lines": true})
+        );
+        let (_, body) = call("GET", &addr, &bo, None).await;
+        assert_eq!(
+            body,
+            json!({"show_thinking_expanded": false, "wrap_long_lines": false})
+        );
+        let (_, body) = call(
             "PUT",
             &addr,
             &lea,
@@ -96,21 +165,8 @@ mod tests {
         )
         .await;
         assert_eq!(
-            (status, body),
-            (200, json!({"show_thinking_expanded": true}))
+            body,
+            json!({"show_thinking_expanded": true, "wrap_long_lines": false})
         );
-        let (_, body) = call("GET", &addr, &lea, None).await;
-        assert_eq!(body, json!({"show_thinking_expanded": true}));
-        let (_, body) = call("GET", &addr, &bo, None).await;
-        assert_eq!(body, json!({"show_thinking_expanded": false}));
-        call(
-            "PUT",
-            &addr,
-            &lea,
-            Some(json!({"show_thinking_expanded": false})),
-        )
-        .await;
-        let (_, body) = call("GET", &addr, &lea, None).await;
-        assert_eq!(body, json!({"show_thinking_expanded": false}));
     }
 }

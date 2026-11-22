@@ -326,11 +326,12 @@ export function sidebarRows(group: SidebarGroup, role: string | undefined): NavE
   return NAV.filter((entry) => entry.sidebar === group && shownTo(entry, role));
 }
 
-/** An entry of the Settings navigation: a row with the name and group it has there. */
+/** An entry of the Settings navigation: a row with the name, group and icon it has there. */
 export interface SettingsEntry {
   group: SettingsGroup;
   label: string;
   path: string;
+  icon: Icon;
 }
 
 /** The entries of the Settings navigation a person of `role` is shown, in the table's order. */
@@ -342,27 +343,20 @@ export function settingsEntries(role: string | undefined): SettingsEntry[] {
             group: entry.settings.group,
             label: entry.settings.label ?? entry.label,
             path: entry.path,
+            icon: entry.icon,
           },
         ]
       : [],
   );
 }
 
-/** The groups of `entries` that hold an entry matching `query` (by its name or its group's), in the list's order. */
-export function searchEntries(
+/** The groups of `entries` that hold any, in the groups' order. */
+export function groupEntries(
   entries: readonly SettingsEntry[],
-  query: string,
 ): Array<{ group: SettingsGroup; entries: SettingsEntry[] }> {
-  const needle = query.trim().toLowerCase();
   return SETTINGS_GROUPS.map((group) => ({
     group,
-    entries: entries.filter(
-      (e) =>
-        e.group === group &&
-        (needle === "" ||
-          e.label.toLowerCase().includes(needle) ||
-          e.group.toLowerCase().includes(needle)),
-    ),
+    entries: entries.filter((e) => e.group === group),
   })).filter((g) => g.entries.length > 0);
 }
 
