@@ -5,7 +5,7 @@
  */
 
 import type { Snapshot } from "../api/types/board";
-import { pageByPath } from "../app/pages";
+import { entryByPath } from "../app/nav";
 
 export interface PageContext {
   /** The lines for the agent. */
@@ -52,13 +52,10 @@ export function pageContext(
     );
     return { text: lines.join("\n"), name: project ? project.name : "Project", repository: null };
   }
-  const page = first === undefined ? undefined : pageByPath(first);
+  const page = first === undefined ? undefined : entryByPath(first);
+  const group = page?.sidebar || page?.settings?.group;
   const lines = [
-    page
-      ? page.group && page.group !== "Other"
-        ? `Page: ${page.group} > ${page.title}`
-        : `Page: ${page.title}`
-      : `Page: ${pathname}`,
+    page ? (group ? `Page: ${group} > ${page.label}` : `Page: ${page.label}`) : `Page: ${pathname}`,
   ];
   if (first === "settings" || first === "plugin-settings") {
     lines.push(
@@ -66,5 +63,5 @@ export function pageContext(
     );
   }
   if (first === "chat" && second !== undefined) lines.push(`Open chat: ${second}`);
-  return { text: lines.join("\n"), name: page ? page.title : pathname, repository: null };
+  return { text: lines.join("\n"), name: page ? page.label : pathname, repository: null };
 }

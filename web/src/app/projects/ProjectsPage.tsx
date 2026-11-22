@@ -7,8 +7,8 @@
  */
 import { PlusIcon } from "@phosphor-icons/react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
-import { Link } from "react-router";
+import { useEffect, useState } from "react";
+import { Link, useSearchParams } from "react-router";
 import { addProject, listProjects } from "../../api/calls/projects";
 import { sayError } from "../../api/errorText";
 import { keys } from "../../api/keys";
@@ -44,23 +44,30 @@ const SHOWN_MEMBERS = 4;
 export function ProjectsPage() {
   const data = useQuery({ queryKey: keys.projects, queryFn: listProjects });
   const [making, setMaking] = useState(false);
+  // The sidebar's `+` asks for the dialog with `?new=project`; the address is cleaned once it is open.
+  const [params, setParams] = useSearchParams();
+  useEffect(() => {
+    if (params.get("new") !== "project") return;
+    setMaking(true);
+    setParams({}, { replace: true });
+  }, [params, setParams]);
 
   const header = (
     <PageHeader
       title="Projects"
       actions={
-        <>
-          <Button asChild size="sm" variant="secondary">
-            <Link to="/projects/new">
-              <PlusIcon className="size-4" weight="bold" aria-hidden="true" />
-              Add a repository
-            </Link>
-          </Button>
-          <Button size="sm" onClick={() => setMaking(true)}>
+        <Button asChild size="sm" variant="secondary">
+          <Link to="/projects/new">
             <PlusIcon className="size-4" weight="bold" aria-hidden="true" />
-            New project
-          </Button>
-        </>
+            Add a repository
+          </Link>
+        </Button>
+      }
+      primary={
+        <Button size="sm" onClick={() => setMaking(true)}>
+          <PlusIcon className="size-4" weight="bold" aria-hidden="true" />
+          New project
+        </Button>
       }
     />
   );

@@ -8,9 +8,9 @@ import { Suspense } from "react";
 import { Outlet } from "react-router";
 import { InSettingsArea, PageHeader } from "../../ui/page/PageHeader";
 import { SkeletonCard } from "../../ui/page/Skeleton";
+import { settingsEntries } from "../nav";
 import { useRole } from "../shell/session";
 import { SettingsNav } from "./SettingsNav";
-import { shownEntries } from "./settingsEntries";
 
 export function SettingsLayout() {
   const role = useRole();
@@ -20,7 +20,7 @@ export function SettingsLayout() {
         <PageHeader title="Settings" />
       </div>
       <div className="flex min-h-0 flex-1 items-stretch">
-        <SettingsNav entries={shownEntries(role)} />
+        <SettingsNav entries={settingsEntries(role)} />
         <div className="min-w-0 flex-1 overflow-y-auto px-10 pb-6 pt-5">
           <InSettingsArea.Provider value>
             <Suspense fallback={<SkeletonCard lines={4} />}>

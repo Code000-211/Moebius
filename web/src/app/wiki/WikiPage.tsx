@@ -73,15 +73,17 @@ export function WikiPage() {
       title="Wiki"
       actions={
         canWrite && pages.isSuccess ? (
-          <>
-            <Button size="sm" variant="ghost" onClick={() => setTemplating(true)}>
-              Templates
-            </Button>
-            <Button size="sm" onClick={() => open({ new: "" })}>
-              <PlusIcon className="size-4" aria-hidden />
-              New page
-            </Button>
-          </>
+          <Button size="sm" variant="ghost" onClick={() => setTemplating(true)}>
+            Templates
+          </Button>
+        ) : undefined
+      }
+      primary={
+        canWrite && pages.isSuccess ? (
+          <Button size="sm" onClick={() => open({ new: "" })}>
+            <PlusIcon className="size-4" aria-hidden />
+            New page
+          </Button>
         ) : undefined
       }
     />

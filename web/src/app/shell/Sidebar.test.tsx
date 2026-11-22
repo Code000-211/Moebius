@@ -13,6 +13,8 @@ afterEach(() => {
   localStorage.clear();
 });
 
+const OWNER = { person: { id: 1, name: "Olive", handle: "olive", role: "owner" } };
+
 const names = () =>
   within(screen.getByRole("navigation", { name: "Pages" }))
     .getAllByRole("link")
@@ -27,20 +29,85 @@ describe("the list of places", () => {
       within(nav)
         .getAllByRole("button")
         .map((b) => b.getAttribute("aria-label")),
-    ).toEqual(["Search"]);
+    ).toEqual(["Search", "Add a project or a repository"]);
+    // Without a role, as a member sees it: Build and Insight are the owner's.
     expect(names().map((name) => name?.replace(/\d+( running)?$/, ""))).toEqual([
       "Inbox",
       "My issues",
       "Fleet",
+      "Chat",
       "Projects",
       "moebius-platform",
       "notes",
       "Wiki",
-      "Cycles",
       "Views",
-      "More",
       "Settings",
     ]);
+  });
+
+  it("lists, for an owner, Build with Agents and Rules and Insight with Insights and Improve", async () => {
+    show({ session: OWNER });
+    await screen.findByRole("link", { name: "notes" });
+    const nav = screen.getByRole("navigation", { name: "Pages" });
+    // The order of the DOM: the group names and the rows between them, as the approved mockup draws them.
+    const lines = Array.from(nav.querySelectorAll("a, div")).flatMap((node) => {
+      if (node.tagName === "A") return [node.textContent?.replace(/\d+( running)?$/, "") ?? ""];
+      return node.className.includes("text-sidebar-group") && !node.closest("a")
+        ? [`# ${node.textContent}`]
+        : [];
+    });
+    expect(lines.filter((line) => !["moebius-platform", "notes"].includes(line))).toEqual([
+      "Inbox",
+      "My issues",
+      "Fleet",
+      "Chat",
+      "Projects",
+      "# Workspace",
+      "Wiki",
+      "Views",
+      "# Build",
+      "Agents",
+      "Rules",
+      "# Insight",
+      "Insights",
+      "Improve",
+      "Settings",
+    ]);
+    for (const gone of ["More", "Cycles", "Milestones", "Intake", "Workflows", "Automations"])
+      expect(screen.queryByRole("link", { name: gone })).toBeNull();
+  });
+
+  it("leaves Build and Insight out for a member", async () => {
+    show({ session: { person: { id: 2, name: "Mia", handle: "mia", role: "member" } } });
+    await screen.findByRole("link", { name: "notes" });
+    for (const gone of ["Agents", "Rules", "Insights", "Improve"])
+      expect(screen.queryByRole("link", { name: gone })).toBeNull();
+    expect(screen.queryByText("Build")).toBeNull();
+    expect(screen.queryByText("Insight")).toBeNull();
+  });
+
+  it("shows Get started above Settings only while a step is missing", async () => {
+    show({ start: { done: false, steps: [{ id: "a", done: false }], warnings: [] } });
+    const row = await screen.findByRole("link", { name: "Get started" });
+    expect(row.getAttribute("href")).toBe("/start");
+    expect(names().slice(-2)).toEqual(["Get started", "Settings"]);
+    cleanup();
+    show();
+    await screen.findByRole("link", { name: "notes" });
+    expect(screen.queryByRole("link", { name: "Get started" })).toBeNull();
+  });
+
+  it("adds a project or a repository from the + of Projects", async () => {
+    show();
+    fireEvent.pointerDown(
+      await screen.findByRole("button", { name: "Add a project or a repository" }),
+      {
+        button: 0,
+        ctrlKey: false,
+      },
+    );
+    expect(await screen.findByRole("menuitem", { name: "New project" })).toBeTruthy();
+    expect(screen.getByRole("menuitem", { name: "Add repository" })).toBeTruthy();
   });
 
   it("shows the server's name at the head with the search button beside it, and no rail of servers", async () => {
@@ -63,8 +130,8 @@ describe("the list of places", () => {
     const href = (name: string | RegExp) => screen.getByRole("link", { name }).getAttribute("href");
     await screen.findByRole("link", { name: "notes" });
     expect(href("Projects")).toBe("/projects");
-    expect(href("moebius-platform")).toBe("/projects/1?repository=1");
-    expect(href("More")).toBe("/more");
+    expect(href("moebius-platform")).toBe("/projects/1");
+    expect(href("Chat")).toBe("/chat");
     expect(href("Settings")).toBe("/settings");
     expect(href(/^Inbox/)).toBe("/inbox");
   });
@@ -113,7 +180,6 @@ describe("the list of places", () => {
     expect(container.querySelector("[data-testid=connection]")).toBeNull();
     for (const element of container.querySelectorAll("*"))
       expect(element.className.toString()).not.toMatch(/mask|scroll-fade|rail/);
-    expect(screen.queryByText("Improve")).toBeNull();
     expect(screen.queryByText(/^Back$/)).toBeNull();
   });
 });
@@ -151,6 +217,8 @@ describe("where an entry leads", () => {
     expect(await current("/projects/2/list")).toEqual(["notes"]);
     expect(await current("/projects/2/settings/columns/Backlog")).toEqual(["notes"]);
     expect(await current("/projects/2?repository=2")).toEqual(["notes"]);
+    expect(await current("/projects/2/cycles")).toEqual(["notes"]);
+    expect(await current("/projects/2/workflows")).toEqual(["notes"]);
     expect(await current("/projects/2/settings")).toEqual([]);
     expect(await current("/projects/2/repositories/2")).toEqual([]);
   });
@@ -158,12 +226,19 @@ describe("where an entry leads", () => {
   it("keeps the same list on a Settings page, with Settings chosen and no Back row", async () => {
     show({ at: "/models" });
     await screen.findByRole("link", { name: "notes" });
-    expect(names().length).toBe(11);
+    expect(names().length).toBe(10);
     expect(screen.getByRole("link", { name: "Settings" }).getAttribute("aria-current")).toBe(
       "page",
     );
     expect(screen.queryByRole("link", { name: /Back/ })).toBeNull();
     expect(screen.queryByRole("link", { name: "General" })).toBeNull();
+  });
+
+  it("chooses the row of Build, not Settings, on a page both list", async () => {
+    show({ at: "/agents", session: OWNER });
+    await screen.findByRole("link", { name: "notes" });
+    expect(screen.getByRole("link", { name: "Agents" }).getAttribute("aria-current")).toBe("page");
+    expect(screen.getByRole("link", { name: "Settings" }).getAttribute("aria-current")).toBeNull();
   });
 
   it("chooses Settings on the pages of its own list as well", async () => {

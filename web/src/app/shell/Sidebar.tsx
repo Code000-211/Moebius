@@ -2,40 +2,42 @@
  * The sidebar on every page, as the standard draws it (`docs/design-web.md`, Sidebar): 224px of quiet rows on the
  * canvas. At the top the server switch (`desktop/ServerSwitch.tsx`) with the search button beside it; then Inbox with the
  * count of what needs you, My issues and Fleet, which says "n running" beside a green dot only while anything runs;
- * Projects — its name leads to the project list, a row for each project leads to its board; Workspace with Wiki,
- * Cycles, Views and More; and at the foot Settings, alone. The sidebar never changes its contents: on a Settings page
- * the same list stands, with Settings chosen. The counts come from the snapshot. The sidebar also notes the places a
+ * Chat; Projects — its name leads to the project list, its `+` adds a project or a repository, a row for each project
+ * leads to its board; Workspace with Wiki and Views; Build with Agents and Rules and Insight with Insights and Improve
+ * (an owner's); and at the foot Get started, only while a step is missing, and Settings. Every row but Projects' and
+ * Get started's is a row of the table in `nav.ts`. The sidebar never changes its contents: on a Settings page the
+ * same list stands, with Settings chosen. The counts come from the snapshot. The sidebar also notes the places a
  * person opens (a project's board, a card on it) for the server to keep.
  *
  * In a narrow window (`narrow.ts`) it is not beside the page: it is drawn only while open, as a solid panel lying over
  * the page at the left on a scrim, and the shell closes it for a chosen page, `Escape` or a click on the scrim.
  */
 
-import { HashIcon } from "@phosphor-icons/react";
+import { HashIcon, PlusIcon } from "@phosphor-icons/react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef } from "react";
-import { useLocation } from "react-router";
+import { useLocation, useNavigate } from "react-router";
 import { snapshot } from "../../api/calls/board";
 import { notices as readNotices } from "../../api/calls/notices";
 import { seen } from "../../api/calls/places";
-import { serverInfo } from "../../api/calls/server";
+import { listProjects } from "../../api/calls/projects";
+import { serverInfo, start } from "../../api/calls/server";
 import { keys } from "../../api/keys";
 import { liveRuns } from "../../api/types/board";
 import { desktopBridge } from "../../desktop/bridge";
 import { ServerSwitch } from "../../desktop/ServerSwitch";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "../../ui/components/DropdownMenu";
 import { IconButton } from "../../ui/components/IconButton";
 import { SearchIcon } from "../../ui/icons";
 import { cn } from "../../ui/lib/cn";
 import { waiting } from "../inbox/notices";
-import {
-  isSettingsPage,
-  PAGES,
-  type PageDef,
-  pageByPath,
-  repositoryBoardPath,
-  shownTo,
-} from "../pages";
-import { inSettingsArea } from "../settings/settingsEntries";
+import { entryByPath, inSettingsArea, type NavEntry, type SidebarGroup, sidebarRows } from "../nav";
+import { boardPath } from "../pages";
 import { placeAt } from "./places";
 import { Entry, type Trailing } from "./SidebarEntry";
 import { SettingsFoot } from "./SidebarFoot";
@@ -56,14 +58,13 @@ export function Sidebar({ onSearch, narrow = false, open = false, onClose }: Sid
   const boards = data.data?.boards ?? [];
   const location = useLocation();
   const at = location.pathname;
-  // The board a project address shows: the repository `?repository=` names, else the project's first.
-  // Only its board pages: the list and the editor of a column's script, as before; not the settings or a repository.
-  const projectAt = /^\/projects\/(\d+)(?:\/list|\/settings\/columns\/.*)?$/.exec(at)?.[1];
-  const shownRepository =
-    projectAt === undefined
-      ? undefined
-      : Number(new URLSearchParams(location.search).get("repository")) ||
-        boards.find((b) => b.repository.home_project_id === Number(projectAt))?.repository.id;
+  // The project an address shows: its board, the list, a tab of it, and the editor of a column's script; not its
+  // settings or a repository page.
+  const projectAt =
+    /^\/projects\/(\d+)(?:\/list|\/workflows|\/cycles|\/milestones|\/intake|\/settings\/columns\/.*)?$/.exec(
+      at,
+    )?.[1];
+  const projectList = useQuery({ queryKey: keys.projects, queryFn: listProjects });
   const here = at.replace(/^\/+|\/+$/g, "").split("/")[0] ?? "";
   // What waits for you: the items of the inbox and the unread notices given to you or naming you.
   const notices = useQuery({ queryKey: keys.notices, queryFn: readNotices });
@@ -121,19 +122,23 @@ export function Sidebar({ onSearch, narrow = false, open = false, onClose }: Sid
     return undefined;
   };
 
-  const entryOf = (page: PageDef) => (
+  const entryOf = (page: NavEntry) => (
     <Entry
       key={page.path}
       to={`/${page.path}`}
       current={here === page.path}
       icon={page.icon}
-      label={page.title}
+      label={page.label}
       trailing={trailingOf(page.path)}
     />
   );
-  const pagesOf = (group: PageDef["group"]) =>
-    PAGES.filter((page) => page.group === group && shownTo(page, role));
-  const projectList = pageByPath("projects");
+  const rowsOf = (group: SidebarGroup) => sidebarRows(group, role).map(entryOf);
+  const projectsEntry = entryByPath("projects");
+  // Get started is a row only while a step is missing; the page itself stays reachable from the command bar.
+  const steps = useQuery({ queryKey: keys.start, queryFn: () => start() });
+  const missing = steps.data?.steps?.some((step) => !step.done) ?? false;
+  const getStarted = entryByPath("start");
+  const navigate = useNavigate();
 
   const panel = useRef<HTMLElement>(null);
   const overlay = narrow && open;
@@ -170,27 +175,50 @@ export function Sidebar({ onSearch, narrow = false, open = false, onClose }: Sid
         />
       </div>
       <div className="flex min-h-0 flex-1 flex-col overflow-y-auto px-2 pb-2">
-        <Section>{pagesOf("").map(entryOf)}</Section>
-        <Section title="Projects" to={projectList ? `/${projectList.path}` : undefined}>
-          {boards.map((board) => {
-            const to = repositoryBoardPath(board.repository);
-            return (
-              <Entry
-                key={board.repository.id}
-                to={to}
-                icon={HashIcon}
-                label={board.repository.name}
-                current={projectAt !== undefined && shownRepository === board.repository.id}
-              />
-            );
-          })}
+        <Section>{rowsOf("")}</Section>
+        <Section
+          title="Projects"
+          to={projectsEntry ? `/${projectsEntry.path}` : undefined}
+          action={
+            <DropdownMenu>
+              <DropdownMenuTrigger
+                aria-label="Add a project or a repository"
+                title="Add a project or a repository"
+                className="inline-flex size-7 shrink-0 cursor-pointer items-center justify-center rounded-control text-sidebar-group transition-colors duration-(--motion-routine) ease-out hover:bg-row-hover hover:text-text data-[state=open]:bg-row-hover data-[state=open]:text-text"
+              >
+                <PlusIcon className="size-4" weight="regular" aria-hidden="true" />
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="start">
+                <DropdownMenuItem onSelect={() => navigate("/projects?new=project")}>
+                  New project
+                </DropdownMenuItem>
+                <DropdownMenuItem onSelect={() => navigate("/projects/new")}>
+                  Add repository
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          }
+        >
+          {(projectList.data ?? []).map((project) => (
+            <Entry
+              key={project.id}
+              to={boardPath(project.id)}
+              icon={HashIcon}
+              label={project.name}
+              current={projectAt === String(project.id)}
+            />
+          ))}
         </Section>
-        <Section title="Workspace">
-          {pagesOf("Workspace").map(entryOf)}
-          {pagesOf("More").map(entryOf)}
-        </Section>
-        <div className="mt-auto pt-4">
-          <SettingsFoot current={inSettingsArea(at) || isSettingsPage(here)} />
+        <Section title="Workspace">{rowsOf("Workspace")}</Section>
+        {sidebarRows("Build", role).length > 0 && (
+          <Section title="Build">{rowsOf("Build")}</Section>
+        )}
+        {sidebarRows("Insight", role).length > 0 && (
+          <Section title="Insight">{rowsOf("Insight")}</Section>
+        )}
+        <div className="mt-auto flex flex-col gap-0.5 pt-4">
+          {missing && getStarted && <Section>{entryOf(getStarted)}</Section>}
+          <SettingsFoot current={inSettingsArea(at)} />
         </div>
       </div>
     </nav>

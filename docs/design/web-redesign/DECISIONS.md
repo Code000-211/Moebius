@@ -34,9 +34,13 @@ Reference feel: Linear. Dense but not full; nearly monochrome; light theme is pr
 
 ## Shell
 - Left sidebar (Linear style): workspace/server switch on top with search button, Inbox (count), My issues, Fleet ("n running"
-  with green dot), Projects, Workspace (Wiki, Cycles, Views, More), Settings at the bottom. No live box.
+  with green dot), Chat, Projects, Workspace (Wiki, Views), Build (Agents, Rules), Insight (Insights, Improve), Get started
+  (only while a step is missing) and Settings at the bottom. No live box. Changed by [ADR 0024](../../adr/0024-navigation-by-what-you-do.md)
+  and issue #700: More, Cycles, Milestones, Intake and Workflows are no sidebar entries (a project owns them); Build and
+  Insight are an owner's; the sidebar, the command bar and the Settings navigation read one table (`web/src/app/nav.ts`).
 - Desktop app: no title strip; window buttons (– □ ×) sit in the page header on the right.
-- Page header: title, tabs, on the right at most quiet text buttons (Filter, Display) and one primary button.
+- Page header: title, tabs, on the right at most quiet text buttons (Filter, Display) and one primary button. The order at
+  the right is the same on every page: the page's quiet buttons, its gear or `...` menu, the Moebius button, the primary button.
 - Narrow (< ~1000 px): sidebar hides; a button overlays it.
 
 ## Lists (Inbox, My issues, project list, Fleet)

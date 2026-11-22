@@ -132,4 +132,28 @@ describe.skipIf(usesRealServer)("blur", () => {
       await page.mouse.move(700, 600);
     }
   });
+
+  it("keeps a menu solid enough to read in both themes: opaque in dark, at least 90% in light, with blur on", async () => {
+    server = await startServer();
+    context = await browser.newContext({ viewport: { width: 1280, height: 720 } });
+    page = await context.newPage();
+    await page.goto(server.loginUrl);
+    await page.getByRole("navigation", { name: "Pages" }).waitFor();
+    await page.goto(`${server.url}/projects/1`);
+    await page.getByRole("heading", { name: "demo", level: 1 }).waitFor();
+    await setBlur("on");
+    for (const theme of ["dark", "light"] as const) {
+      await page.evaluate((value) => {
+        document.documentElement.dataset.theme = value;
+      }, theme);
+      await page.getByRole("button", { name: "More project actions" }).click();
+      const menu = page.getByRole("menu");
+      await menu.waitFor();
+      const alpha = await alphaOf(menu);
+      if (theme === "dark") expect(alpha).toBe(1);
+      else expect(alpha).toBeGreaterThanOrEqual(0.9);
+      await page.keyboard.press("Escape");
+      await menu.waitFor({ state: "detached" });
+    }
+  });
 });

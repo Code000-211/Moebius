@@ -99,6 +99,11 @@ function oldWorkflows(
 
 export const LEGACY_ROUTES: readonly LegacyRoute[] = [
   {
+    // More listed pages that now have a place of their own; the list itself is gone, and the Inbox is home.
+    path: "more",
+    resolve: () => "/inbox",
+  },
+  {
     // The board of a repository is the board of its home project, at that repository.
     path: "board/:repoId",
     resolve: ({ repoId }, projects, search) => {

@@ -36,7 +36,7 @@ export function MyIssuesPage() {
   const [picked, setChosen] = useState<string | null>(null);
   const [params] = useSearchParams();
 
-  const header = <PageHeader title="My issues" actions={<NewIssueButton />} />;
+  const header = <PageHeader title="My issues" primary={<NewIssueButton />} />;
   const empty = (
     <Empty
       centered

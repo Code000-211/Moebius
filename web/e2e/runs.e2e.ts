@@ -499,14 +499,12 @@ describe("the terminals", () => {
 });
 
 describe("the Ports page", () => {
-  it("opens from More", async () => {
+  it("opens from the command bar", async () => {
     await open("/inbox");
-    const nav = page.getByRole("navigation", { name: "Pages", exact: true });
-    await nav.getByRole("link", { name: "More" }).click();
-    await page
-      .getByRole("navigation", { name: "More pages" })
-      .getByRole("link", { name: "Ports" })
-      .click();
+    await page.getByRole("navigation", { name: "Pages", exact: true }).waitFor();
+    await page.keyboard.press("Control+k");
+    await page.getByPlaceholder("Search…").fill("Ports");
+    await page.getByRole("option", { name: "Ports" }).click();
     await page.waitForURL("**/ports");
     await page.getByRole("heading", { name: "Ports", level: 1 }).waitFor();
   });

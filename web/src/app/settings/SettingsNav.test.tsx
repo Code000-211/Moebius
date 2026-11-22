@@ -1,13 +1,13 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { MemoryRouter } from "react-router";
 import { describe, expect, it } from "vitest";
+import { settingsEntries } from "../nav";
 import { SettingsNav } from "./SettingsNav";
-import { shownEntries } from "./settingsEntries";
 
 const show = () =>
   render(
     <MemoryRouter initialEntries={["/models"]}>
-      <SettingsNav entries={shownEntries("owner")} />
+      <SettingsNav entries={settingsEntries("owner")} />
     </MemoryRouter>,
   );
 

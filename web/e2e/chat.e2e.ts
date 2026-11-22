@@ -802,7 +802,7 @@ describe("the Moebius agent", () => {
       expect(fake().started).toHaveLength(1);
       expect(fake().said[0]?.body).toMatchObject({
         message: "And this one?",
-        context: "Page: Improve > Retro",
+        context: "Page: Insight > Improve",
       });
 
       await window.getByRole("button", { name: "Close the Moebius agent" }).click();
@@ -1103,11 +1103,9 @@ describe("the chat page on a phone", () => {
     await openWith("/plugins", { viewport: { width, height: 900 } });
     await page.getByRole("button", { name: "Browse packages" }).first().click();
     await sheet().getByTestId("list-card").first().waitFor();
-    // The chat page is one of More's rows.
-    const pages = page.getByRole("navigation", { name: "Pages", exact: true });
-    await pages.getByRole("link", { name: "More" }).click();
+    // The chat page is a row of the sidebar.
     await page
-      .getByRole("navigation", { name: "More pages" })
+      .getByRole("navigation", { name: "Pages", exact: true })
       .getByRole("link", { name: "Chat" })
       .click();
     await field().waitFor();
