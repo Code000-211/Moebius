@@ -22,6 +22,7 @@ describe("the reach of every page", () => {
   /** Pages that are on no list on purpose, each with the reason. */
   const EXCEPTIONS: Record<string, string> = {
     issues: "the all-issues list is reached from the command palette and the project pages",
+    workflows: "a project's Workflows tab, which the command palette and the old address lead to",
   };
 
   it("leaves no page orphaned: each is in the sidebar, Settings, More or a named exception", () => {

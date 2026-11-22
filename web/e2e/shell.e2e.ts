@@ -199,7 +199,7 @@ describe.skipIf(usesRealServer)("the Moebius agent", () => {
   const PANEL = { name: "Moebius agent" } as const;
 
   it("opens at the panel's right and closes again, the page kept", async () => {
-    const page = await signedIn("/workflows/release");
+    const page = await signedIn("/projects/1/workflows/release");
     const properties = page.getByRole("region", { name: "Definition", exact: true });
     await properties.getByText("3 nodes").waitFor();
     const panel = await box(page, '[data-surface="page"]');

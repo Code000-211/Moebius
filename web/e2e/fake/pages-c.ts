@@ -26,6 +26,8 @@ export interface PagesCFake {
   readonly research: Array<Json & { id: number; status: string }>;
   /** What `GET /v1/retros` lists. A test that needs more days than the four writes them here. */
   readonly days: Array<{ date: string; status: string; errors: number; proposals: number }>;
+  /** The automations as the server lists them now: each is a schedule workflow of its project, named like it. */
+  automationList(): Array<{ id: number; name: string; project_id: number }>;
 }
 
 type Json = Record<string, unknown>;
@@ -778,6 +780,7 @@ export function createPagesCFake(
             agent: body.agent,
             prompt: String(body.prompt).trim(),
             repository_id: body.repository ?? null,
+            project_id: body.project ?? automation.project_id,
             harness_repository: body.harness === true,
             enabled: body.enabled !== false,
             next_firing: body.enabled === false ? null : IN(8),
@@ -885,6 +888,12 @@ export function createPagesCFake(
     scripts,
     research,
     days: retroDays,
+    automationList: () =>
+      automations.map((each) => ({
+        id: each.id,
+        name: String(each.name),
+        project_id: Number(each.project_id),
+      })),
     refuseNext(method, path, status, message) {
       refusals.set(`${method} ${path}`, { status, message });
     },
