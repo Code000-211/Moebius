@@ -28,6 +28,7 @@ import { PageHeader } from "../../ui/page/PageHeader";
 import { ReadFailed } from "../../ui/page/ReadFailed";
 import { SkeletonCard } from "../../ui/page/Skeleton";
 import { useToast } from "../../ui/page/Toast";
+import { ImproveTabs } from "../improve/ImproveTabs";
 import { BriefBox } from "./BriefBox";
 import { EditBrief, NewBrief } from "./BriefForms";
 import { Baseline, Levers } from "./Levers";
@@ -76,7 +77,8 @@ export function ExperimentsPage() {
 
   const header = (
     <PageHeader
-      title="Experiments"
+      title="Improve"
+      tabs={<ImproveTabs value="improve/experiments" />}
       primary={
         <Button
           size="sm"

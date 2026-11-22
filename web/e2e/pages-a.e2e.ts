@@ -211,7 +211,7 @@ describe("the inbox", () => {
       await expect.poll(() => harness.getByText("Retro", { exact: true }).count()).toBe(0);
       // The preview lands on the proposal itself, not at the top of the day.
       await reason.click();
-      expect(path()).toBe("/retro?day=2026-10-25&proposal=4");
+      expect(path()).toBe("/improve?day=2026-10-25&proposal=4");
       await page.getByText("proposal/2026-10-25-read-tests").waitFor();
     },
   );
@@ -1163,8 +1163,8 @@ async function expectFlatFigures(page: Page) {
 
 describe("usage", () => {
   it("loads for a real server and for the fake", async () => {
-    await open("/usage");
-    await page.getByRole("heading", { name: "Usage", level: 1 }).waitFor();
+    await open("/insights/usage");
+    await page.getByRole("heading", { name: "Insights", level: 1 }).waitFor();
     await page.getByText("Model calls", { exact: true }).waitFor();
     await page.getByRole("button", { name: "Today" }).waitFor();
     await page.getByRole("heading", { name: "Tokens per day" }).waitFor();
@@ -1174,7 +1174,7 @@ describe("usage", () => {
   it.skipIf(usesRealServer)(
     "shows the tiles, the heatmap, the models, the time, the waits, the checks and the agents",
     async () => {
-      await open("/usage");
+      await open("/insights/usage");
       await page.getByText("1.84M", { exact: true }).first().waitFor();
       await expectFlatFigures(page);
       // The figure and the budget it is measured against are read together, in that order.
@@ -1202,7 +1202,7 @@ describe("usage", () => {
   it.skipIf(usesRealServer)(
     "narrows every figure to an agent chosen in the bar and keeps it across a reload",
     async () => {
-      await open("/usage");
+      await open("/insights/usage");
       await page.getByText("of the 8M token budget, 23% used").waitFor();
       const bar = page.getByRole("search", { name: "Filter the usage" });
       await addFilter(page, bar, "Agent", "Coder");
@@ -1213,7 +1213,7 @@ describe("usage", () => {
       await expect.poll(() => page.getByText("1,284", { exact: true }).count()).toBe(0);
       await expect.poll(() => page.getByRole("cell", { name: "Reviewer" }).count()).toBe(0);
       await page.getByRole("cell", { name: "Coder" }).waitFor();
-      expect(path()).toBe("/usage?agent=Coder");
+      expect(path()).toBe("/insights/usage?agent=Coder");
 
       await page.reload();
       await bar.getByRole("button", { name: "Agent is Coder", exact: true }).waitFor();
@@ -1226,7 +1226,7 @@ describe("usage", () => {
   );
 
   it.skipIf(usesRealServer)("reads another window when it is chosen", async () => {
-    await open("/usage");
+    await open("/insights/usage");
     await page.getByText("of the 8M token budget, 23% used").waitFor();
     await page.getByRole("button", { name: "7 days" }).click();
     await page.getByText("12.9M", { exact: true }).first().waitFor();
@@ -1240,8 +1240,8 @@ describe("analytics", () => {
   it.skipIf(usesRealServer)(
     "shows what was done, the times, the burn-ups, and narrows to an agent and another window",
     async () => {
-      await open("/analytics");
-      await page.getByRole("heading", { name: "Analytics", level: 1 }).waitFor();
+      await open("/insights");
+      await page.getByRole("heading", { name: "Insights", level: 1 }).waitFor();
       await page.getByText("Start to done").waitFor();
       await page.getByText("Time in each column").waitFor();
       await page.getByRole("cell", { name: "demo" }).waitFor();
@@ -1255,14 +1255,14 @@ describe("analytics", () => {
       await addFilter(page, bar, "Agent", "Coder");
       // The Coder's share of the same week.
       await tile.getByText("4", { exact: true }).waitFor();
-      expect(path()).toBe("/analytics?days=7&agent=Coder");
+      expect(path()).toBe("/insights?days=7&agent=Coder");
       await page.reload();
       await bar.getByRole("button", { name: "Agent is Coder", exact: true }).waitFor();
       // The window is in the address too, so a reload keeps it.
       await page.locator('[data-window="7"]').waitFor();
       await page.getByRole("button", { name: "30 days" }).click();
       await page.locator('[data-window="30"]').waitFor();
-      expect(path()).toBe("/analytics?agent=Coder");
+      expect(path()).toBe("/insights?agent=Coder");
     },
   );
 });

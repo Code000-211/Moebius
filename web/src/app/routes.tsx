@@ -16,6 +16,7 @@ import { DEFAULT_PAGE } from "./nav";
 import { buildRoutes } from "./routes/build";
 import { fleetRoutes } from "./routes/fleet";
 import { improveRoutes } from "./routes/improve";
+import { insightsRoutes } from "./routes/insights";
 import { LegacyRedirect } from "./routes/LegacyRedirect";
 import { projectsRoutes } from "./routes/projects";
 import { LEGACY_ROUTES } from "./routes/redirects";
@@ -50,6 +51,7 @@ export const routes = [
       ...workflowsRoutes,
       ...buildRoutes,
       ...improveRoutes,
+      ...insightsRoutes,
       ...LEGACY_ROUTES.map((route) => ({
         path: route.path,
         element: <LegacyRedirect route={route} />,

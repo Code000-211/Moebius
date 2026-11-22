@@ -83,6 +83,38 @@ describe("the sidebar's rows", () => {
     }
   });
 
+  it("lists Insights and Improve in the Insight group to an owner alone, with their tabs and none in Settings", () => {
+    expect(sidebarRows("Insight", "owner").map((e) => e.label)).toEqual(["Insights", "Improve"]);
+    expect(sidebarRows("Insight", "member")).toEqual([]);
+    const owner = settingsEntries("owner").map((e) => e.label);
+    for (const gone of ["Analytics", "Retro", "Lessons", "Export", "Usage"])
+      expect(owner, gone).not.toContain(gone);
+    expect(SETTINGS_GROUPS).not.toContain("Insight");
+    for (const path of [
+      "insights/usage",
+      "improve/lessons",
+      "improve/experiments",
+      "improve/decisions",
+    ]) {
+      const entry = NAV.find((e) => e.path === path);
+      expect(entry?.shownTo, path).toBe("owner");
+      expect(entry?.sidebar, path).toBeUndefined();
+    }
+    for (const old of [
+      "analytics",
+      "retro",
+      "lessons",
+      "export",
+      "experiments",
+      "decision-model",
+      "usage",
+    ])
+      expect(
+        NAV.some((e) => e.path === old),
+        old,
+      ).toBe(false);
+  });
+
   it("lists Cycles, Milestones, Intake, Workflows and Automations nowhere: they live in projects", () => {
     const listed = new Set(NAV.filter((e) => e.sidebar !== undefined).map((e) => e.path));
     for (const path of ["cycles", "milestones", "intake", "workflows", "automations", "more"])
@@ -99,12 +131,10 @@ describe("the Settings navigation", () => {
       expect(settingsEntries(role).map((e) => e.label)).not.toContain("Members");
   });
 
-  it("names the page of /settings General and keeps Keyboard, Analytics and Retro under their names", () => {
+  it("names the page of /settings General and keeps Keyboard under its name", () => {
     const labels = Object.fromEntries(settingsEntries("owner").map((e) => [e.path, e.label]));
     expect(labels.settings).toBe("General");
     expect(labels.shortcuts).toBe("Keyboard");
-    expect(labels.analytics).toBe("Analytics");
-    expect(labels.retro).toBe("Retro");
   });
 
   it("finds an entry by its name or its group's", () => {
@@ -114,7 +144,7 @@ describe("the Settings navigation", () => {
   });
 
   it("chooses Settings on its own pages, not on a page the sidebar has a row for", () => {
-    for (const path of ["/profile", "/settings", "/tokens", "/usage"])
+    for (const path of ["/profile", "/settings", "/tokens"])
       expect(inSettingsArea(path), path).toBe(true);
     for (const path of [
       "/inbox",
@@ -125,8 +155,10 @@ describe("the Settings navigation", () => {
       "/projects/3",
       "/agents",
       "/rules",
-      "/analytics",
-      "/retro",
+      "/insights",
+      "/insights/usage",
+      "/improve",
+      "/improve/decisions",
     ])
       expect(inSettingsArea(path), path).toBe(false);
   });

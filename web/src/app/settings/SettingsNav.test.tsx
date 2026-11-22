@@ -19,15 +19,15 @@ describe("SettingsNav", () => {
     expect(screen.getByRole("link", { name: "Profile" })).toBeTruthy();
     // Runners is a tab of Fleet now, not a setting.
     expect(screen.queryByRole("link", { name: "Runners" })).toBeNull();
-    expect(screen.getAllByRole("link")).toHaveLength(15);
+    expect(screen.getAllByRole("link")).toHaveLength(11);
   });
 
   it("narrows as one types and says so in one line when nothing matches", () => {
     show();
     fireEvent.change(screen.getByRole("searchbox", { name: "Search settings" }), {
-      target: { value: "ret" },
+      target: { value: "mod" },
     });
-    expect(screen.getAllByRole("link").map((l) => l.textContent)).toEqual(["Retro"]);
+    expect(screen.getAllByRole("link").map((l) => l.textContent)).toEqual(["Models"]);
     fireEvent.change(screen.getByRole("searchbox", { name: "Search settings" }), {
       target: { value: "zzz" },
     });

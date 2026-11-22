@@ -1,4 +1,4 @@
-/** The routes of the app's area: what is set up once: Get started, usage, kinds of issues, tokens, plugin settings, and Settings itself with the pages the table of `nav.ts` gives an entry of its navigation. Pages are fetched when their route opens. */
+/** The routes of the app's area: what is set up once: Get started, kinds of issues, tokens, plugin settings, and Settings itself with the pages the table of `nav.ts` gives an entry of its navigation. Pages are fetched when their route opens. */
 import { type ComponentType, lazy } from "react";
 import { SettingsLayout } from "../settings/SettingsLayout";
 
@@ -15,10 +15,6 @@ const SETTINGS_PAGES: Record<string, ComponentType> = {
   plugins: named(() => import("../plugins/PluginsPage"), "PluginsPage"),
   "column-scripts": named(() => import("../settings/ColumnScriptsPage"), "ColumnScriptsPage"),
   schedules: named(() => import("../settings/SchedulesPage"), "SchedulesPage"),
-  analytics: named(() => import("../analytics/AnalyticsPage"), "AnalyticsPage"),
-  retro: named(() => import("../retro/RetroPage"), "RetroPage"),
-  lessons: named(() => import("../settings/LessonsPage"), "LessonsPage"),
-  export: named(() => import("../settings/ExportPage"), "ExportPage"),
   settings: named(() => import("../settings/SettingsPage"), "SettingsPage"),
   repositories: named(() => import("../settings/RepositoriesPage"), "RepositoriesPage"),
   people: named(() => import("../people/PeoplePage"), "PeoplePage"),
@@ -36,9 +32,6 @@ const PluginSettingsPage = lazy(() =>
 const StartPage = lazy(() =>
   import("../start/StartPage").then((all) => ({ default: all.StartPage })),
 );
-const UsagePage = lazy(() =>
-  import("../usage/UsagePage").then((all) => ({ default: all.UsagePage })),
-);
 
 /** The routes of this area, as children of the shell's route. */
 export const settingsRoutes = [
@@ -47,7 +40,6 @@ export const settingsRoutes = [
     element: <SettingsLayout />,
     children: Object.entries(SETTINGS_PAGES).map(([path, Page]) => ({ path, element: <Page /> })),
   },
-  { path: "usage", element: <UsagePage /> },
   { path: "start", element: <StartPage /> },
   { path: "kinds", element: <KindsPage /> },
   { path: "tokens", element: <TokensPage /> },

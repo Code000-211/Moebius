@@ -19,6 +19,7 @@ import { Figures } from "../../ui/page/Figures";
 import { Notice } from "../../ui/page/Notice";
 import { PageHeader } from "../../ui/page/PageHeader";
 import { Reading, SkeletonLines } from "../../ui/page/Skeleton";
+import { InsightsTabs } from "../insights/InsightsTabs";
 import { useDays, useScopeFilters } from "../scope";
 import { AgentsBox, ModelsBox, TimeBox, WaitsBox } from "./Boxes";
 import { Heatmap } from "./Heatmap";
@@ -84,7 +85,7 @@ export function UsagePage() {
   const data = report.data;
   return (
     <>
-      <PageHeader title="Usage" />
+      <PageHeader title="Insights" tabs={<InsightsTabs value="insights/usage" />} />
       <FilterBar
         label="Filter the usage"
         leading={

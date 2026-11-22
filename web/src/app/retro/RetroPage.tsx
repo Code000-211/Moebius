@@ -29,12 +29,12 @@ import { Box } from "../../ui/page/Box";
 import { Empty } from "../../ui/page/Empty";
 import { ListCard, ListDetail } from "../../ui/page/List";
 import { Notice } from "../../ui/page/Notice";
-import { Body } from "../../ui/page/PageHeader";
+import { Body, PageHeader } from "../../ui/page/PageHeader";
 import { Property } from "../../ui/page/Property";
 import { ReadFailed } from "../../ui/page/ReadFailed";
 import { SkeletonCard, SkeletonList } from "../../ui/page/Skeleton";
 import { useToast } from "../../ui/page/Toast";
-import { AreaTitle } from "../settings/parts";
+import { ImproveTabs } from "../improve/ImproveTabs";
 import {
   cardsLine,
   groupErrors,
@@ -83,9 +83,10 @@ export function RetroPage() {
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <AreaTitle
-        title="Retro"
-        actions={
+      <PageHeader
+        title="Improve"
+        tabs={<ImproveTabs value="improve" />}
+        primary={
           <Button size="sm" disabled={run.isPending} onClick={() => run.mutate()}>
             {run.isPending ? "Running" : "Run now"}
           </Button>

@@ -225,6 +225,33 @@ export const LEGACY_ROUTES: readonly LegacyRoute[] = [
     resolve: (_params, _projects, search) => withQuery("/rules", {}, search),
   },
   {
+    // Analytics and Usage are the tabs of Insights; the Retro, Lessons, Experiments and Decisions pages the tabs of
+    // Improve, and the training export a section of Decisions. The query (`?project=`, `?days=`, `?day=`) is kept.
+    path: "analytics",
+    resolve: (_params, _projects, search) => withQuery("/insights", {}, search),
+  },
+  {
+    path: "usage",
+    resolve: (_params, _projects, search) => withQuery("/insights/usage", {}, search),
+  },
+  { path: "retro", resolve: (_params, _projects, search) => withQuery("/improve", {}, search) },
+  {
+    path: "lessons",
+    resolve: (_params, _projects, search) => withQuery("/improve/lessons", {}, search),
+  },
+  {
+    path: "experiments",
+    resolve: (_params, _projects, search) => withQuery("/improve/experiments", {}, search),
+  },
+  {
+    path: "decision-model",
+    resolve: (_params, _projects, search) => withQuery("/improve/decisions", {}, search),
+  },
+  {
+    path: "export",
+    resolve: (_params, _projects, search) => withQuery("/improve/decisions", {}, search),
+  },
+  {
     // The list of every issue is the built-in view "All issues"; its filters and sort stay in the query.
     path: "issues",
     resolve: (_params, _projects, search) => withQuery(ALL_ISSUES_PATH, {}, search),

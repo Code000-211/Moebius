@@ -379,10 +379,10 @@ describe("the shell", () => {
     await fresh();
     await page.goto(server.loginUrl);
     await pages().waitFor();
-    await page.goto(`${server.url}/usage`);
-    await page.getByRole("heading", { name: "Usage" }).waitFor();
+    await page.goto(`${server.url}/insights/usage`);
+    await page.getByRole("heading", { name: "Insights" }).waitFor();
     await page.reload();
-    await page.getByRole("heading", { name: "Usage" }).waitFor();
+    await page.getByRole("heading", { name: "Insights" }).waitFor();
   });
 
   it("keeps the shell standing when a page's file cannot be fetched", async () => {
@@ -459,9 +459,9 @@ describe("the command bar", () => {
     await page.getByRole("option", { name: "Improve" }).waitFor();
     await expect.poll(() => page.getByRole("option").count()).toBe(1);
     await page.keyboard.press("Enter");
-    await page.waitForURL("**/retro");
+    await page.waitForURL("**/improve");
     await input.waitFor({ state: "detached" });
-    await page.getByRole("heading", { name: "Retro" }).first().waitFor();
+    await page.getByRole("heading", { name: "Improve" }).first().waitFor();
   });
 
   it("draws rows of 36px with an icon and no key hint", async () => {

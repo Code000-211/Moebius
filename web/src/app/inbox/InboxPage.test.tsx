@@ -254,7 +254,7 @@ describe("the inbox page", () => {
       expect(within(window).getByRole("button", { name: "Merge" })).toBeTruthy();
       expect(within(window).getByRole("button", { name: "Dismiss" })).toBeTruthy();
       expect(within(window).getByRole("link", { name: "Open as page" }).getAttribute("href")).toBe(
-        "/retro?day=2026-10-25&proposal=3",
+        "/improve?day=2026-10-25&proposal=3",
       );
     });
   });
