@@ -37,7 +37,7 @@ impl App {
             .ok_or_else(|| AppError::NotFound(format!("automation {id}")))?;
         let automation = self.stored_automation(automation)?;
         let definition = self.definition_of(&automation)?;
-        fire(self, runs, &automation, &definition, None, true)
+        fire(self, runs, &automation, &definition, None, true, None)
     }
 
     /// Fires the automation-shaped workflow `definition` because its schedule came due at `at`.
@@ -48,6 +48,31 @@ impl App {
         definition: &WorkflowDefinition,
         at: PrimitiveDateTime,
     ) -> Result<Firing> {
+        self.fire_definition(runs, key, definition, at, None)
+    }
+
+    /// The same for an automation a project owns (ADR 0025), whose file is `key` in the project `project_id`'s
+    /// workflows. The firing is recorded and published as any other, an automation that names no repository starts its
+    /// chat itself, and a run it starts records the project.
+    pub fn fire_project_automation_definition(
+        self: &Arc<Self>,
+        runs: &dyn Runs,
+        project_id: i64,
+        key: &str,
+        definition: &WorkflowDefinition,
+        at: PrimitiveDateTime,
+    ) -> Result<Firing> {
+        self.fire_definition(runs, key, definition, at, Some((project_id, key)))
+    }
+
+    fn fire_definition(
+        self: &Arc<Self>,
+        runs: &dyn Runs,
+        key: &str,
+        definition: &WorkflowDefinition,
+        at: PrimitiveDateTime,
+        project: Option<(i64, &str)>,
+    ) -> Result<Firing> {
         if !is_automation(definition) {
             return Err(AppError::Invalid(format!(
                 "{} is not an automation",
@@ -55,6 +80,9 @@ impl App {
             )));
         }
         let row = self.ensure_automation(key, definition)?;
+        if let Some((project_id, _)) = project {
+            self.store.move_automation_to_project(key, project_id)?;
+        }
         let automation = self.automation_from_workflow(row.clone(), definition)?;
         // The row is the shortcut's copy: what the file now says is what the next firing, the page and the CLI see.
         self.store.update_automation(
@@ -69,7 +97,15 @@ impl App {
                 enabled: automation.enabled,
             },
         )?;
-        fire(self, runs, &automation, definition, Some(at), false)
+        fire(
+            self,
+            runs,
+            &automation,
+            definition,
+            Some(at),
+            false,
+            project,
+        )
     }
 }
 
@@ -82,6 +118,7 @@ fn fire(
     definition: &WorkflowDefinition,
     at: Option<PrimitiveDateTime>,
     manual: bool,
+    project: Option<(i64, &str)>,
 ) -> Result<Firing> {
     let named_repository = schedule_trigger::of(definition).and_then(|trigger| trigger.repository);
     let before = app.store.last_started_firing(automation.id)?;
@@ -119,12 +156,22 @@ fn fire(
         let started = app
             .store
             .add_firing(automation.id, "started", None, None, manual, "")?;
-        match app.start_workflow_run_for_firing(
-            definition.clone(),
-            repository_id,
-            value,
-            started.id,
-        ) {
+        let run = match project {
+            Some(project) => app.start_project_workflow_run_for_firing(
+                definition.clone(),
+                repository_id,
+                value,
+                started.id,
+                project,
+            ),
+            None => app.start_workflow_run_for_firing(
+                definition.clone(),
+                repository_id,
+                value,
+                started.id,
+            ),
+        };
+        match run {
             Ok(_) => app
                 .store
                 .firing(started.id)?
@@ -216,7 +263,7 @@ pub fn on_schedule(app: &Arc<App>, runs: &dyn Runs) -> Result<()> {
             continue;
         };
         let definition = app.definition_of(&automation)?;
-        fire(app, runs, &automation, &definition, Some(at), false)?;
+        fire(app, runs, &automation, &definition, Some(at), false, None)?;
     }
     app.store.set_automations_checked(&now_text)?;
     Ok(())

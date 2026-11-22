@@ -240,6 +240,16 @@ impl Store {
         Ok(moved > 0)
     }
 
+    /// The workflow file names of the automations that belong to no project yet, in the order of their ids.
+    pub fn server_wide_automation_keys(&self) -> Result<Vec<String>> {
+        let conn = self.read();
+        let mut statement = conn.prepare(
+            "SELECT workflow FROM automations WHERE project_id IS NULL AND workflow IS NOT NULL ORDER BY id",
+        )?;
+        let rows = statement.query_map([], |row| row.get::<_, String>(0))?;
+        Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
+    }
+
     /// The first automation called `name` that has no workflow file of its own yet.
     pub fn automation_without_workflow_named(&self, name: &str) -> Result<Option<Automation>> {
         Ok(self

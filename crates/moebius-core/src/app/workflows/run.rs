@@ -65,6 +65,25 @@ impl App {
         self.start_workflow_run_with(source, repository_id, value, (Some(firing), None))
     }
 
+    /// Starts a run of the workflow `file` of the project `project_id` for the firing `firing`, as
+    /// [`Self::start_workflow_run_for_firing`] does for a workflow kept server-wide: the run records the project, and
+    /// is stored under the file's name.
+    pub fn start_project_workflow_run_for_firing<S: WorkflowSource>(
+        self: &Arc<Self>,
+        source: S,
+        repository_id: i64,
+        value: Value,
+        firing: i64,
+        (project_id, file): (i64, &str),
+    ) -> Result<WorkflowRun> {
+        self.start_workflow_run_with(
+            source,
+            repository_id,
+            value,
+            (Some(firing), Some((project_id, file))),
+        )
+    }
+
     /// `(firing, project)` are the firing the run carries and the project that owns its workflow with the workflow's
     /// file name, when there are any. A run of a project's workflow is stored under that file name, which is how
     /// every lookup names it, and not under the `name` written inside the file; the two need not match.
