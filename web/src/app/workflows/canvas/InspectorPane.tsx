@@ -39,10 +39,11 @@ export function InspectorPane({
   closing.current = close;
   useEffect(() => {
     const listen = (event: KeyboardEvent) => {
-      if (event.key === "Escape" && !event.defaultPrevented) closing.current();
+      const over = document.querySelector("[role=dialog], [role=menu], [role=listbox]");
+      if (event.key === "Escape" && !over) closing.current();
     };
-    window.addEventListener("keydown", listen);
-    return () => window.removeEventListener("keydown", listen);
+    window.addEventListener("keydown", listen, true);
+    return () => window.removeEventListener("keydown", listen, true);
   }, []);
   return (
     <aside

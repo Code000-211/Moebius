@@ -309,9 +309,9 @@ describe("a workflow saved through the API (a real server and the fake alike)", 
 
     await row.getByRole("link", { name: "wf1" }).click();
     await page.getByRole("heading", { name: "wf1", level: 1 }).waitFor();
-    const graph = page.getByRole("region", { name: "Definition graph" });
-    await graph.getByRole("heading", { name: "shape" }).waitFor();
-    await graph.getByText("code", { exact: true }).waitFor();
+    const step = page.getByTestId("workflow-step").filter({ hasText: "shape" });
+    await step.waitFor();
+    await step.getByText("Code", { exact: true }).waitFor();
     await page.getByText("This workflow has not run.").first().waitFor();
     await page.getByRole("button", { name: "Run" }).waitFor();
     expect(errors).toEqual([]);

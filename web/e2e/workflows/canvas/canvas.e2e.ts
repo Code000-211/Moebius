@@ -169,7 +169,7 @@ function kind(kind: string): Locator {
 describe.skipIf(usesRealServer)("the workflow canvas", () => {
   it("draws the graph the file holds, its start in front of it", async () => {
     await openCanvas();
-    await shows(card("trigger"), "Trigger", "schedule");
+    await shows(card("trigger"), "Trigger", "Schedule");
     await shows(card("build"), "build", "agent");
     await shows(card("test"), "test");
     await thereAre(wires(), 3);
@@ -218,7 +218,7 @@ describe.skipIf(usesRealServer)("the workflow canvas", () => {
     expect(saved?.position.x ?? 0).toBeLessThan(from.x ?? 0);
     expect(saved?.position.y ?? 0).toBeGreaterThan(from.y ?? 0);
     // The save went through the route, and the file the read-only page shows was written with it.
-    await page.getByRole("tab", { name: "Overview" }).click();
+    await page.getByRole("tab", { name: "File" }).click();
     await page.getByRole("heading", { name: "release", level: 1 }).waitFor();
     await shows(page.locator("main"), "at = [");
   });
