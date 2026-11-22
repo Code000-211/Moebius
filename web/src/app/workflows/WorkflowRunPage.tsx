@@ -6,7 +6,9 @@
  *
  * A waiting run says on its own panel where it stopped and what it asks, and marks that node's panel, so a person can
  * see what a run needs without reading every node. The page reads `GET /v1/workflow-runs/{id}` and the run and node
- * events make it read again, so a node that starts, ends or asks something arrives without a reload.
+ * events make it read again, so a node that starts, ends or asks something arrives without a reload. A run belongs to
+ * a project, and the way back and the link to the definition lead to that project's Workflows tab; a run from before
+ * workflows belonged to projects leads back to the list of projects.
  */
 import { ArrowLeftIcon } from "@phosphor-icons/react";
 import { useQuery } from "@tanstack/react-query";
@@ -22,6 +24,7 @@ import { JsonValue } from "../../ui/page/JsonValue";
 import { PageHeader } from "../../ui/page/PageHeader";
 import { ReadFailed } from "../../ui/page/ReadFailed";
 import { SkeletonLines } from "../../ui/page/Skeleton";
+import { projectTabPath, workflowPath } from "../pages";
 import { runStatus, triggerName } from "./model";
 
 export function WorkflowRunPage() {
@@ -31,11 +34,12 @@ export function WorkflowRunPage() {
     queryFn: () => workflowRun(id),
     enabled: Number.isInteger(id) && id > 0,
   });
+  const owner = run.data?.project ?? null;
   const back = (
     <Button asChild variant="ghost" size="sm">
-      <Link to="/workflows">
+      <Link to={owner === null ? "/projects" : projectTabPath(owner, "workflows")}>
         <ArrowLeftIcon className="size-4" aria-hidden="true" />
-        Workflows
+        {owner === null ? "Projects" : `${run.data?.project_name ?? "Project"} workflows`}
       </Link>
     </Button>
   );
@@ -83,12 +87,14 @@ export function WorkflowRunPage() {
         title={`${shown.workflow} · run ${shown.id}`}
         back={back}
         actions={
-          <Link
-            className="rounded-round text-sm underline-offset-4 hover:underline"
-            to={`/workflows/${encodeURIComponent(shown.workflow)}`}
-          >
-            Open definition
-          </Link>
+          shown.project === null ? undefined : (
+            <Link
+              className="rounded-round text-sm underline-offset-4 hover:underline"
+              to={workflowPath(shown.project, shown.workflow)}
+            >
+              Open definition
+            </Link>
+          )
         }
       />
       <div className="min-h-0 overflow-y-auto">

@@ -166,6 +166,21 @@ export function projectTabPath(projectId: number, tab: "board" | ProjectTab): st
   return tab === "board" ? boardPath(projectId) : `${boardPath(projectId)}/${tab}`;
 }
 
+/** The path of the definition of a workflow, under the Workflows tab of its project. */
+export function workflowPath(projectId: number, name: string): string {
+  return `${projectTabPath(projectId, "workflows")}/${encodeURIComponent(name)}`;
+}
+
+/** The path of the canvas of a workflow. */
+export function workflowCanvasPath(projectId: number, name: string): string {
+  return `${workflowPath(projectId, name)}/canvas`;
+}
+
+/** The path of one run of a workflow; a run is addressed by its id, and its page links back to its project. */
+export function workflowRunPath(runId: number): string {
+  return `/workflow-runs/${runId}`;
+}
+
 /** The path of one cycle's page, under the Cycles tab of its project. */
 export function cyclePath(projectId: number, cycleId: number): string {
   return `${projectTabPath(projectId, "cycles")}/${cycleId}`;

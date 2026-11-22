@@ -36,7 +36,6 @@ const Models = named(() => import("../models/ModelsPage"), "ModelsPage");
 const Skills = named(() => import("../skills/SkillsPage"), "SkillsPage");
 const Plugins = named(() => import("../plugins/PluginsPage"), "PluginsPage");
 const Rules = named(() => import("../rules/RulesPage"), "RulesPage");
-const Workflows = named(() => import("../workflows/WorkflowsPage"), "WorkflowsPage");
 const Analytics = named(() => import("../analytics/AnalyticsPage"), "AnalyticsPage");
 const Retro = named(() => import("../retro/RetroPage"), "RetroPage");
 const Lessons = named(() => import("./LessonsPage"), "LessonsPage");
@@ -57,7 +56,6 @@ export const SETTINGS_ENTRIES: readonly SettingsEntry[] = [
   { group: "Agents", label: "Plugins", path: "plugins", page: Plugins },
   { group: "Agents", label: "MCP servers", path: "mcp-servers", page: Mcp },
   { group: "Automation", label: "Rules", path: "rules", page: Rules },
-  { group: "Automation", label: "Workflows", path: "workflows", page: Workflows },
   { group: "Automation", label: "Column scripts", path: "column-scripts", page: ColumnScripts },
   { group: "Automation", label: "Schedules", path: "schedules", page: Schedules },
   { group: "Insight", label: "Analytics", path: "analytics", page: Analytics },

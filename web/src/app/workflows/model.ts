@@ -1,13 +1,13 @@
 /**
- * The words the Workflows pages use for the states the server sends: a trigger's kind, a run's status and a node's
+ * The words the Workflows tab and its pages use for the states the server sends: a trigger's kind, a run's status and a node's
  * status, each as the label a person reads and the tone it wears. They live here so the list, the definition and the
  * run cannot drift apart in what they call the same thing. Also the shape test of the server (`is_automation`), which
  * the pages need to say when a workflow is one of the Automations page's entries rather than a plain workflow.
  */
 
+import type { Automation } from "../../api/types/automations";
 import type { LastRun, WorkflowDefinition, WorkflowSummary } from "../../api/types/workflows";
 import type { TagTone } from "../../ui/chat/Tag";
-import type { FilterField } from "../../ui/filters/model";
 
 /** The trigger's kind as a word: what starts the workflow. */
 export function triggerName(kind: string | null | undefined): string {
@@ -71,48 +71,31 @@ export function looksLikeAutomation(definition: WorkflowDefinition): boolean {
   );
 }
 
-/** The value of the "Last run" filter for a workflow that has never run. */
-export const NEVER_RUN = "never";
+/** The filters of the runs of a project: all of them, those a schedule started, those that failed. */
+export type RunFilter = "all" | "scheduled" | "failed";
 
-/** The keys of the list's filters in the address, in the order the bar offers them. */
-export const FILTER_KEYS = ["trigger", "last"] as const;
-
-/** The fields the list is filtered by: what starts a workflow, and how its last run went. */
-export function filterFields(
-  list: readonly WorkflowSummary[],
-  values: Readonly<Record<string, string>>,
-): FilterField[] {
-  const triggers = new Set(list.map((each) => each.trigger_kind));
-  const last = new Set(list.map((each) => each.last_run?.status ?? NEVER_RUN));
-  if (values.trigger) triggers.add(values.trigger);
-  if (values.last) last.add(values.last);
-  return [
-    {
-      key: "trigger",
-      label: "Trigger",
-      options: [...triggers].sort().map((kind): [string, string] => [kind, triggerName(kind)]),
-    },
-    {
-      key: "last",
-      label: "Last run",
-      options: [...last]
-        .sort()
-        .map((status): [string, string] => [
-          status,
-          status === NEVER_RUN ? "Never run" : runStatus(status).label,
-        ]),
-    },
-  ];
+/** The filter an address names (`?runs=`); anything else is all the runs. */
+export function runFilter(asked: string | null): RunFilter {
+  return asked === "scheduled" || asked === "failed" ? asked : "all";
 }
 
-/** The workflows that pass the filters; a filter that is not set lets everything through. */
-export function filtered(
-  list: readonly WorkflowSummary[],
-  values: Readonly<Record<string, string>>,
-): WorkflowSummary[] {
-  return list.filter(
-    (each) =>
-      (!values.trigger || each.trigger_kind === values.trigger) &&
-      (!values.last || (each.last_run?.status ?? NEVER_RUN) === values.last),
-  );
+/** Whether `name` is the file an automation is kept in: its own name, or `automation-<id>` when that name is no file's. */
+function keeps(automation: Automation, name: string): boolean {
+  return name === automation.name || new RegExp(`^automation-${automation.id}(-\\d+)?$`).test(name);
+}
+
+/**
+ * The workflows a schedule starts, each with the automation that is it when it is one (a schedule that starts one chat)
+ * and so knows its schedule and when it fires next; a schedule that starts something else has no automation row.
+ */
+export function scheduledWorkflows(
+  workflows: readonly WorkflowSummary[],
+  automations: readonly Automation[],
+): Array<{ workflow: WorkflowSummary; automation?: Automation }> {
+  return workflows
+    .filter((each) => each.trigger_kind === "schedule")
+    .map((workflow) => {
+      const automation = automations.find((each) => keeps(each, workflow.name));
+      return automation ? { workflow, automation } : { workflow };
+    });
 }

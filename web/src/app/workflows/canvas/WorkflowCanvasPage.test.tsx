@@ -45,7 +45,7 @@ function show() {
     "fetch",
     vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
-      if (init?.method === "PUT" && url === "/v1/workflows/nightly") {
+      if (init?.method === "PUT" && url === "/v1/projects/3/workflows/nightly") {
         saves.push(init);
         return { ok: true, status: 200, text: async () => JSON.stringify(SAVED) };
       }
@@ -59,13 +59,13 @@ function show() {
   // A data router, which `useBlocker` — the ask-before-leaving — needs.
   const router = createMemoryRouter(
     [
-      { path: "/workflows", element: <WorkflowsProbe /> },
-      { path: "/workflows/:name/canvas", element: <WorkflowCanvasPage /> },
+      { path: "/projects/:projectId/workflows", element: <WorkflowsProbe /> },
+      { path: "/projects/:projectId/workflows/:name/canvas", element: <WorkflowCanvasPage /> },
     ],
     {
       initialEntries: [
         {
-          pathname: "/workflows/nightly/canvas",
+          pathname: "/projects/3/workflows/nightly/canvas",
           state: { draft: newWorkflowDraft("nightly", "Build the change every night.") },
         },
       ],
@@ -84,9 +84,11 @@ describe("a canvas opened with a new draft", () => {
     await screen.findByTestId("canvas-page");
     expect(screen.getAllByTestId("canvas-node").length).toBe(1);
     expect(screen.getByTestId("canvas-state").textContent).toBe("Unsaved changes");
-    expect(screen.getByRole("link", { name: "nightly" }).getAttribute("href")).toBe("/workflows");
+    expect(screen.getByRole("link", { name: "nightly" }).getAttribute("href")).toBe(
+      "/projects/3/workflows",
+    );
     // No read of a workflow that does not exist was made.
-    expect(fetch).not.toHaveBeenCalledWith("/v1/workflows/nightly", expect.anything());
+    expect(fetch).not.toHaveBeenCalledWith("/v1/projects/3/workflows/nightly", expect.anything());
   });
 
   it("saves under the new name, and then leads back to the workflow", async () => {
@@ -111,7 +113,7 @@ describe("a canvas opened with a new draft", () => {
       expect(screen.getByTestId("canvas-state").textContent).toBe("Saved as 0123456");
     });
     expect(screen.getByRole("link", { name: "nightly" }).getAttribute("href")).toBe(
-      "/workflows/nightly",
+      "/projects/3/workflows/nightly",
     );
   });
 });

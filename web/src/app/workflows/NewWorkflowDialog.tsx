@@ -1,17 +1,17 @@
 /**
- * The "New workflow" dialog, which opens from the Workflows page's header and its empty state. It asks for a name —
+ * The "New workflow" dialog, which opens from the Workflows tab of a project. It asks for a name —
  * the workflow's file name, so it is fixed once the file exists — and one sentence of what the workflow is for.
  *
- * The name is checked here, before the first save, because the server's `PUT /v1/workflows/{name}` takes any name:
+ * The name is checked here, before the first save, because the server's `PUT /v1/projects/{id}/workflows/{name}` takes any name:
  * the rules it must already meet are the safe name's (letters, digits, `-` and `_`, per `docs/reference/workflows.md`)
- * and not being taken, which is read off the workflows list. Confirming does not call the server: it opens the canvas
+ * and not being taken in this project, which is read off the project's workflows list; the same name in another project is another workflow. Confirming does not call the server: it opens the canvas
  * with a blank draft as router state, and the canvas's first save is what creates the file. The small race — two
  * people confirming the same name at once — stays, as the save the second one leads to is refused there.
  */
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { useNavigate } from "react-router";
-import { workflows } from "../../api/calls/workflows";
+import { projectWorkflows } from "../../api/calls/workflows";
 import { keys } from "../../api/keys";
 import { Button } from "../../ui/components/Button";
 import {
@@ -24,15 +24,18 @@ import {
 } from "../../ui/components/Dialog";
 import { Input } from "../../ui/components/Input";
 import { Field, TextArea } from "../../ui/page/Field";
+import { workflowCanvasPath } from "../pages";
 import { newWorkflowDraft } from "./canvas/model";
 
 /** A file name under the harness configuration repository: letters, digits, `-` and `_`. */
 const SAFE_NAME = /^[a-zA-Z0-9_-]+$/;
 
 export function NewWorkflowDialog({
+  project,
   open,
   onOpenChange,
 }: {
+  project: number;
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }) {
@@ -40,8 +43,8 @@ export function NewWorkflowDialog({
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const taken = useQuery({
-    queryKey: keys.workflows,
-    queryFn: workflows,
+    queryKey: keys.projectWorkflows(project),
+    queryFn: () => projectWorkflows(project),
     enabled: open,
   });
 
@@ -96,7 +99,7 @@ export function NewWorkflowDialog({
             data-testid="new-workflow-create"
             disabled={!ready}
             onClick={() => {
-              navigate(`/workflows/${encodeURIComponent(trimmed)}/canvas`, {
+              navigate(workflowCanvasPath(project, trimmed), {
                 state: { draft: newWorkflowDraft(trimmed, description.trim()) },
               });
               setName("");

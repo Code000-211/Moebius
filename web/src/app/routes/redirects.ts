@@ -9,7 +9,15 @@
  * This is the one place that may name `/board/`: components use the path helpers of `pages.ts`.
  */
 import type { Project } from "../../api/types/projects";
-import { boardPath, cyclePath, projectTabPath, repositoryPath, scriptPath } from "../pages";
+import {
+  boardPath,
+  cyclePath,
+  projectTabPath,
+  repositoryPath,
+  scriptPath,
+  workflowCanvasPath,
+  workflowPath,
+} from "../pages";
 import { holdsRepository, homeProjectOf, projectForOldAddress } from "../projects/model";
 
 export interface LegacyRoute {
@@ -73,6 +81,22 @@ function oldTab(
   return withQuery(path, {}, search, ["project", "cycle"]);
 }
 
+/**
+ * Where the old project-less Workflows and Automations addresses lead: the Workflows tab (or the definition or canvas
+ * of `name` under it) of the project named by `?project=`, else of the one opened last or the only one, else the list
+ * of projects. An old Automations address leads to the Scheduled runs; the automation that was open (`?automation=`)
+ * stays open.
+ */
+function oldWorkflows(
+  projects: Project[],
+  search: URLSearchParams,
+  to: (project: number) => string,
+  first: Record<string, string> = {},
+): string {
+  const project = projectForOldAddress(projects, search);
+  return project ? withQuery(to(project.id), first, search, ["project"]) : "/projects";
+}
+
 export const LEGACY_ROUTES: readonly LegacyRoute[] = [
   {
     // The board of a repository is the board of its home project, at that repository.
@@ -115,4 +139,30 @@ export const LEGACY_ROUTES: readonly LegacyRoute[] = [
     resolve: (_params, projects, search) => oldTab("milestones", projects, search),
   },
   { path: "intake", resolve: (_params, projects, search) => oldTab("intake", projects, search) },
+  {
+    path: "workflows",
+    resolve: (_params, projects, search) =>
+      oldWorkflows(projects, search, (project) => projectTabPath(project, "workflows")),
+  },
+  {
+    path: "workflows/:name",
+    resolve: ({ name }, projects, search) =>
+      name === undefined
+        ? null
+        : oldWorkflows(projects, search, (project) => workflowPath(project, name)),
+  },
+  {
+    path: "workflows/:name/canvas",
+    resolve: ({ name }, projects, search) =>
+      name === undefined
+        ? null
+        : oldWorkflows(projects, search, (project) => workflowCanvasPath(project, name)),
+  },
+  {
+    path: "automations",
+    resolve: (_params, projects, search) =>
+      oldWorkflows(projects, search, (project) => projectTabPath(project, "workflows"), {
+        runs: "scheduled",
+      }),
+  },
 ];
