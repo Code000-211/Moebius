@@ -151,7 +151,7 @@ the token (`docs/reference/configuration.md`, `[github]`).
 ## Skills and MCP servers
 
 Both live in the harness configuration repository and are named in an agent's `skills` and `mcp`. A server without
-one cannot have them. Only the person can set one up: the "Set up" button of the Skills, MCP servers or Agents page of
+one cannot have them. Only the person can set one up: the "Set up" button of the Agents page (its Agents, Skills and MCP servers tabs) of
 the app (`POST /v1/harness/setup`, which refuses you with `403`) moves the agents and rules of `moebius.toml` into a new
 repository and restarts the server. Tell the person that, and do not try to make one yourself.
 
