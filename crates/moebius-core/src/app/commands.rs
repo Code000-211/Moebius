@@ -102,7 +102,8 @@ impl App {
     /// Reads the commands of the comments the poll read on the card's issue, newer than the last it read, and does
     /// each. Skipped: the server's own comments, comments from before the commands were turned on, and a repository
     /// whose commands are off. Each comment is read once, whatever came of it: the newest is remembered before it is
-    /// acted on.
+    /// acted on, and a command that fails on the forge or the store is answered with the reason and "try again" (the
+    /// person comments again), reported as a forge error, and never stops the comments after it.
     pub(in crate::app) fn read_commands(
         &self,
         card: &Card,
@@ -127,8 +128,19 @@ impl App {
             let Some((command, rest)) = command_in(&comment.body) else {
                 continue;
             };
-            let current = self.card(card.id)?;
-            let reply = self.run_command(&repository, &current, &comment.author, command, &rest)?;
+            let done = self.card(card.id).and_then(|current| {
+                self.run_command(&repository, &current, &comment.author, command, &rest)
+            });
+            let reply = done.unwrap_or_else(|e| {
+                self.bus.publish(Event::ForgeError {
+                    repository: repository.name.clone(),
+                    message: format!("#{}: a command of @{}: {e}", card.number, comment.author),
+                });
+                let reason = e.to_string();
+                let reason = reason.lines().next().unwrap_or_default();
+                let reason: String = reason.chars().take(120).collect();
+                format!("Could not do that: {reason}. Try again.")
+            });
             self.answer(&repository, card.id, &reply);
         }
         Ok(())

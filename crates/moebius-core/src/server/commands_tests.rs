@@ -374,3 +374,35 @@ async fn the_owner_can_always_release_what_was_taken_with_a_command() {
             .unwrap();
     assert!(again.is_err());
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_command_that_fails_is_answered_and_does_not_stop_the_comments_after_it() {
+    let f = ready(3).await;
+    f.says(1, "alice", "/take").await;
+    // The forge fails for a moment while two comments wait to be read in one poll.
+    f.fake
+        .unassign_fails
+        .store(true, std::sync::atomic::Ordering::SeqCst);
+    f.fake.comment(1, "alice", "/release");
+    f.fake.comment(1, "alice", "/done it works");
+    f.server.poll_github().await;
+    let answers: Vec<String> = f.answers().into_iter().map(|a| a.1).collect();
+    assert_eq!(answers.len(), 3, "{answers:?}");
+    assert!(
+        answers[1].starts_with("Could not do that: ") && answers[1].ends_with("Try again."),
+        "{answers:?}"
+    );
+    assert_eq!(answers[2], "Thanks, the owner will take a look.");
+    assert!(
+        f.asked_about(1).is_some(),
+        "the comment after the failure was read"
+    );
+    // The failed comment is not retried by the next polls: asking again is the person's to do.
+    f.fake
+        .unassign_fails
+        .store(false, std::sync::atomic::Ordering::SeqCst);
+    f.server.poll_github().await;
+    assert_eq!(f.answers().len(), 3);
+    f.says(1, "alice", "/release").await;
+    assert_eq!(f.last_answer(), "Released.");
+}

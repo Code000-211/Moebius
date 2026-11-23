@@ -37,7 +37,9 @@ import {
   changeOf,
   chatOf,
   confirmable,
+  DONE_ASKED,
   type Draft,
+  doneLogin,
   draftsOf,
   type Fact,
   facts,
@@ -240,6 +242,20 @@ export function Decision({
       buttons.push(plain("Open the card", board ? () => openCard(item.card_id as number) : null));
     } else if (item.kind === APPROVE_ISSUE && item.card_id !== null) {
       buttons.push(primary("Approve", { kind: "approve", card: item.card_id }));
+    } else if (item.kind === DONE_ASKED && item.card_id !== null) {
+      buttons.push(
+        primary("Close the issue", { kind: "done", card: item.card_id, answer: "close" }),
+      );
+      buttons.push(
+        plain(`Give it back to @${doneLogin(item)}`, () =>
+          act({ kind: "done", card: item.card_id as number, answer: "give_back" }),
+        ),
+      );
+      buttons.push(
+        plain("Release it", () =>
+          act({ kind: "done", card: item.card_id as number, answer: "release" }),
+        ),
+      );
     } else if ((item.kind === STUCK || item.kind === CHANGE_CLOSED) && item.card_id !== null) {
       buttons.push(primary("Retry", { kind: "retry", card: item.card_id }));
     } else if (item.kind === PROPOSAL && proposal !== null) {

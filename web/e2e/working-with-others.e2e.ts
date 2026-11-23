@@ -188,6 +188,8 @@ describe.skipIf(usesRealServer)("working with others", () => {
     );
     await block.getByRole("button", { name: "Give it back to @alice" }).waitFor();
     await block.getByRole("button", { name: "Release it" }).waitFor();
+    // The same action is not offered twice: the top of the window has no release while the question is open.
+    expect(await window.getByRole("button", { name: "Release from @alice" }).count()).toBe(0);
     if (SHOTS) await shoot("done-question-window");
     await block.getByRole("button", { name: "Close the issue" }).click();
     await page.getByText(/^Closed #/).waitFor();

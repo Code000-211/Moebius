@@ -53,6 +53,8 @@ pub(super) struct FakeGitHub {
     pub(super) posted: Mutex<Vec<(u64, String)>>,
     /// The id of the next comment it is given: ids only grow, as GitHub's do.
     pub(super) next_comment: std::sync::atomic::AtomicI64,
+    /// Whether taking an assignee off an issue fails with a server error, as a forge does for a moment.
+    pub(super) unassign_fails: std::sync::atomic::AtomicBool,
     /// The states it was asked to give an issue (`open` or `closed`), as issue number and state.
     pub(super) state_writes: Mutex<Vec<(u64, String)>>,
 }
@@ -161,6 +163,7 @@ pub(super) async fn fake_github() -> (String, Arc<FakeGitHub>) {
         threads: Mutex::new(Default::default()),
         posted: Mutex::new(Vec::new()),
         state_writes: Mutex::new(Vec::new()),
+        unassign_fails: std::sync::atomic::AtomicBool::new(false),
         next_comment: std::sync::atomic::AtomicI64::new(1000),
         pulls: Mutex::new(Pulls {
             opened: Vec::new(),
@@ -334,6 +337,9 @@ pub(super) async fn fake_github() -> (String, Arc<FakeGitHub>) {
                 |State(fake): State<Arc<FakeGitHub>>,
                  UrlPath(number): UrlPath<u64>,
                  axum::Json(body): axum::Json<Value>| async move {
+                    if fake.unassign_fails.load(std::sync::atomic::Ordering::SeqCst) {
+                        return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+                    }
                     let login = body["assignees"][0].as_str().unwrap().to_string();
                     fake.assigned
                         .lock()
@@ -350,7 +356,7 @@ pub(super) async fn fake_github() -> (String, Arc<FakeGitHub>) {
                         issue["assignees"] = json!(kept);
                     });
                     fake.unassigned.lock().unwrap().push((number, login));
-                    axum::Json(json!({}))
+                    axum::Json(json!({})).into_response()
                 },
             ),
         )

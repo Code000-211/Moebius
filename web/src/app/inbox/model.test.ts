@@ -529,3 +529,20 @@ describe("the list of the page", () => {
     );
   });
 });
+
+describe("the tag of a done question", () => {
+  it("is a word of its own", async () => {
+    const { kindTag } = await import("./model");
+    const item = {
+      id: 1,
+      kind: "done_asked",
+      card_id: 5,
+      title: "t",
+      data: {},
+      resolved_at: null,
+      at: 1,
+      assignees: [],
+    };
+    expect(kindTag(item)).toEqual({ label: "Says it is done", mark: "none" });
+  });
+});

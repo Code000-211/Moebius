@@ -1,5 +1,5 @@
 /** What a person can do with an item of the inbox, and the request each is. The words are what the item says while the request is on its way. */
-import { approve, merge, reject, retry } from "../../api/calls/board";
+import { answerDone, approve, type DoneAnswer, merge, reject, retry } from "../../api/calls/board";
 import {
   confirmGrilling,
   dismissGrilling,
@@ -16,6 +16,7 @@ export type Action =
   | { kind: "reject"; change: number; reason: string }
   | { kind: "approve"; card: number }
   | { kind: "retry"; card: number }
+  | { kind: "done"; card: number; answer: DoneAnswer }
   | { kind: "mergeProposal"; proposal: number }
   | { kind: "dismissProposal"; proposal: number }
   | { kind: "mergeTakeover"; takeover: number }
@@ -30,6 +31,7 @@ const WORKING: Record<Action["kind"], string> = {
   reject: "Sending back…",
   approve: "Approving…",
   retry: "Retrying…",
+  done: "Answering…",
   mergeProposal: "Merging…",
   dismissProposal: "Dismissing…",
   mergeTakeover: "Merging…",
@@ -56,6 +58,9 @@ export async function perform(action: Action): Promise<void> {
       return;
     case "retry":
       await retry(action.card);
+      return;
+    case "done":
+      await answerDone(action.card, action.answer);
       return;
     case "mergeProposal":
       return mergeProposal(action.proposal);
