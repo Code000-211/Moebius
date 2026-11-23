@@ -83,6 +83,14 @@ pub trait Polled: Send + Sync {
     ) -> impl Future<Output = Result<Vec<OpenRequest>, ForgeError>> + Send {
         async { Ok(Vec::new()) }
     }
+    /// Whether `login` may write to the repository `name` on the forge; a forge that cannot say answers no.
+    fn can_write(
+        &self,
+        _name: &str,
+        _login: &str,
+    ) -> impl Future<Output = Result<bool, ForgeError>> + Send {
+        async { Ok(false) }
+    }
     /// What became of the pull or merge request `number` of `name`.
     fn request(
         &self,
@@ -151,8 +159,24 @@ async fn poll_outside_requests<F: Polled>(
         .open_requests(name)
         .await
         .map_err(|e| e.to_string())?;
+    if requests.is_empty() {
+        return Ok(());
+    }
+    let (checking, repo, list) = (app.clone(), repository.clone(), requests.clone());
+    let authors = blocking(move || checking.request_authors_to_check(&repo, &list)).await?;
+    // Whether each author may write is asked once per poll.
+    let mut writers = std::collections::BTreeSet::new();
+    for author in authors {
+        match client.can_write(name, &author).await {
+            Ok(true) => {
+                writers.insert(author.to_lowercase());
+            }
+            Ok(false) => {}
+            Err(e) => return Err(format!("whether {author} may write: {e}")),
+        }
+    }
     let (app, repository) = (app.clone(), repository.clone());
-    blocking(move || app.follow_open_requests(&repository, &requests)).await
+    blocking(move || app.follow_open_requests(&repository, &requests, &writers)).await
 }
 
 /// Runs a blocking call on the core off the async threads.

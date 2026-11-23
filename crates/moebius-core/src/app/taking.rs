@@ -13,6 +13,7 @@
 //!   followed: the card is in review with it, as if it were Moebius's own change ([`App::follow_open_requests`]).
 
 use std::collections::BTreeSet;
+use std::path::Path;
 use std::sync::LazyLock;
 
 use regex::Regex;
@@ -21,6 +22,7 @@ use serde_json::json;
 use super::{App, AppError, Result, columns};
 use crate::bus::Event;
 use crate::repos::forge::Issue;
+use crate::repos::git;
 use crate::store::{Card, Change, Person, Repository};
 
 /// A pull or merge request that is open on a forge, as the poll lists it.
@@ -33,6 +35,17 @@ pub struct OpenRequest {
     pub author: String,
     /// The commit at its head.
     pub head: String,
+    /// The branch it is against.
+    pub base: String,
+}
+
+/// What taking an issue came to.
+enum Took {
+    /// This server's person is an assignee and no other server's login came before theirs (or there is nothing to
+    /// assign on the forge).
+    Held,
+    /// Another server's login was already an assignee before ours: it took the issue first, and ours was taken off.
+    Lost(String),
 }
 
 /// The local branch the head of the followed request `number` is kept on in the clone.
@@ -140,25 +153,38 @@ impl App {
 
     /// A person takes the card's issue: their login on the card's forge becomes an assignee of the issue, so that
     /// other servers leave it alone. `by` is the person who took it; without one it is the person the card is given to,
-    /// or the one person of this server who has a login. Nothing here fails what took the issue: when no login is set,
-    /// or the forge refuses (the token may not assign, or the login is no collaborator), the reason is kept on the card
-    /// as `assign_problem`. An issue of a repository without a forge has nothing to assign.
-    pub fn take_issue(&self, card: &Card, by: Option<&Person>) {
+    /// or the one person of this server who has a login. Says whether this server may go on with the issue. It may when
+    /// no login is set or the forge refuses (the reason is kept on the card as `assign_problem`, and nothing fails), and
+    /// when nothing is assigned on the forge for lack of one. It may not when another server took the issue first: two
+    /// servers that take at once both find themselves in the forge's list of assignees, and the one listed first keeps
+    /// the issue; the other takes its own login off again and starts nothing. An issue of a repository without a forge
+    /// has nothing to assign.
+    pub fn take_issue(&self, card: &Card, by: Option<&Person>) -> bool {
         let outcome = self.try_take(card, by);
-        let problem = outcome.as_ref().err().map(String::as_str);
-        if let Ok(true) = self.store.set_assign_problem(card.id, problem)
+        let (problem, may) = match &outcome {
+            Ok(Took::Held) => (None, true),
+            Ok(Took::Lost(other)) => (
+                Some(format!(
+                    "@{other} took the issue first, on another server, so this server leaves it to them."
+                )),
+                false,
+            ),
+            Err(why) => (Some(why.clone()), true),
+        };
+        if let Ok(true) = self.store.set_assign_problem(card.id, problem.as_deref())
             && let Ok(card) = self.card(card.id)
         {
             self.bus.publish(Event::CardUpdated(card));
         }
+        may
     }
 
-    fn try_take(&self, card: &Card, by: Option<&Person>) -> std::result::Result<(), String> {
+    fn try_take(&self, card: &Card, by: Option<&Person>) -> std::result::Result<Took, String> {
         let repository = self
             .repository(card.repository_id)
             .map_err(|e| e.to_string())?;
         if repository.forge == "none" {
-            return Ok(());
+            return Ok(Took::Held);
         }
         let (person, login) = self.taker(card, &repository, by)?;
         let known = self
@@ -166,10 +192,10 @@ impl App {
             .forge_assignees(card.id)
             .map_err(|e| e.to_string())?;
         if known.iter().any(|l| l.eq_ignore_ascii_case(&login)) {
-            return Ok(());
+            return Ok(Took::Held);
         }
-        self.forge(&repository)
-            .map_err(|e| e.to_string())?
+        let forge = self.forge(&repository).map_err(|e| e.to_string())?;
+        let after = forge
             .assign_issue(&repository, card.number, &login)
             .map_err(|e| {
                 format!(
@@ -179,12 +205,42 @@ impl App {
                     person.handle
                 )
             })?;
-        let mut assigned = known;
-        assigned.push(login);
+        // The forge lists the assignees in the order they were added: when another server's login came before ours, it
+        // took the issue first.
+        let ours: BTreeSet<String> = self
+            .store
+            .logins_on(&repository.forge)
+            .map_err(|e| e.to_string())?
+            .into_iter()
+            .map(|(_, l)| l.to_lowercase())
+            .collect();
+        let mine = after.iter().position(|l| l.eq_ignore_ascii_case(&login));
+        let first_other = after.iter().position(|l| !ours.contains(&l.to_lowercase()));
+        if let (Some(other), Some(mine)) = (first_other, mine)
+            && other < mine
+        {
+            let winner = after[other].clone();
+            forge
+                .unassign_issue(&repository, card.number, &login)
+                .map_err(|e| {
+                    format!(
+                        "@{winner} took the issue first, but @{} could not be taken off it: {e}",
+                        person.handle
+                    )
+                })?;
+            let rest: Vec<String> = after
+                .into_iter()
+                .filter(|l| !l.eq_ignore_ascii_case(&login))
+                .collect();
+            self.store
+                .set_forge_assignees(card.id, &rest)
+                .map_err(|e| e.to_string())?;
+            return Ok(Took::Lost(winner));
+        }
         self.store
-            .set_forge_assignees(card.id, &assigned)
+            .set_forge_assignees(card.id, &after)
             .map_err(|e| e.to_string())?;
-        Ok(())
+        Ok(Took::Held)
     }
 
     /// Why no run may start for the card on this server: someone on another server took the issue, or the repository's
@@ -364,9 +420,58 @@ impl App {
         &self,
         repository: &Repository,
         requests: &[OpenRequest],
+        writers: &BTreeSet<String>,
     ) -> Result<()> {
+        for (request, card) in self.followable(repository, requests)? {
+            let author = request.author.to_lowercase();
+            // Anyone may open a pull request on a public repository: only one of someone who may write to it, or whom the
+            // issue is assigned to, is taken for the work on the issue.
+            let assigned = self
+                .store
+                .forge_assignees(card.id)?
+                .iter()
+                .any(|l| l.to_lowercase() == author);
+            if writers.contains(&author) || assigned {
+                self.follow(&card, repository, request)?;
+            }
+        }
+        Ok(())
+    }
+
+    /// The logins of the authors of `requests` whose right to write to the repository decides whether their request is
+    /// followed: the poll asks the forge about each once.
+    pub fn request_authors_to_check(
+        &self,
+        repository: &Repository,
+        requests: &[OpenRequest],
+    ) -> Result<BTreeSet<String>> {
+        let mut authors = BTreeSet::new();
+        for (request, card) in self.followable(repository, requests)? {
+            let author = request.author.to_lowercase();
+            let assigned = self
+                .store
+                .forge_assignees(card.id)?
+                .iter()
+                .any(|l| l.to_lowercase() == author);
+            if !assigned {
+                authors.insert(request.author.clone());
+            }
+        }
+        Ok(authors)
+    }
+
+    /// The requests of `requests`, each with the card it would be followed by, that pass everything but the right of
+    /// its author to write: it is none of this server's people's and no change of Moebius's own that is known (a closed
+    /// request of someone else that is open again counts as new); it is against the repository's default branch; it
+    /// closes an issue whose card is not done and has no open change and no run going; and the issue is not taken by
+    /// someone other than its author. One request is followed by one card.
+    fn followable<'a>(
+        &self,
+        repository: &Repository,
+        requests: &'a [OpenRequest],
+    ) -> Result<Vec<(&'a OpenRequest, Card)>> {
         let Some(name) = repository.forge_name() else {
-            return Ok(());
+            return Ok(Vec::new());
         };
         let people: BTreeSet<String> = self
             .store
@@ -374,10 +479,20 @@ impl App {
             .into_iter()
             .map(|(_, login)| login.to_lowercase())
             .collect();
-        let changes = self.store.changes(repository.id)?;
-        let known: BTreeSet<i64> = changes.iter().filter_map(|c| c.pull_request).collect();
+        // A request that was followed and closed is followed again when it is open again; one of Moebius's own never is.
+        let known: BTreeSet<i64> = self
+            .store
+            .changes(repository.id)?
+            .iter()
+            .filter(|c| c.outside_author.is_none() || c.state != "closed")
+            .filter_map(|c| c.pull_request)
+            .collect();
+        let mut found = Vec::new();
         for request in requests {
-            if known.contains(&request.number) || people.contains(&request.author.to_lowercase()) {
+            if known.contains(&request.number)
+                || people.contains(&request.author.to_lowercase())
+                || request.base != repository.default_branch
+            {
                 continue;
             }
             let text = format!("{}\n{}", request.title, request.body);
@@ -385,18 +500,28 @@ impl App {
                 let Some(card) = self.store.card_by_number(repository.id, number)? else {
                     continue;
                 };
+                let running = self
+                    .store
+                    .runs_for_card(card.id)?
+                    .iter()
+                    .any(|r| matches!(r.status.as_str(), "starting" | "running"));
+                let taken_by_another = card
+                    .taken_by
+                    .as_deref()
+                    .is_some_and(|t| !t.eq_ignore_ascii_case(&request.author));
                 if card.closed
                     || card.column == columns::DONE
+                    || running
+                    || taken_by_another
                     || !self.open_changes(&card)?.is_empty()
                 {
                     continue;
                 }
-                self.follow(&card, repository, request)?;
-                // One request is followed by one card.
+                found.push((request, card));
                 break;
             }
         }
-        Ok(())
+        Ok(found)
     }
 
     fn follow(&self, card: &Card, repository: &Repository, request: &OpenRequest) -> Result<()> {
@@ -461,9 +586,20 @@ impl App {
             return Err(AppError::Invalid("there is no Reviewer agent".into()));
         }
         let repository = self.repository_of(&change)?;
+        // The Reviewer reads what is fetched now, and the review counts for that commit only.
+        let mut reviewed = change.head.clone();
         if let Some(number) = change.pull_request {
             self.forge(&repository)?
                 .fetch_request(&repository, number, &change.branch)?;
+            reviewed = Some(git(
+                Path::new(&repository.path),
+                &["rev-parse", &change.branch],
+            )?);
+        }
+        if let Some(head) = &reviewed {
+            self.store
+                .set_change_head(change.id, head, crate::store::now())?;
+            self.store.set_change_reviewed_head(change.id, head)?;
         }
         let context = BTreeMap::from([
             ("repository".into(), repository.name.clone()),

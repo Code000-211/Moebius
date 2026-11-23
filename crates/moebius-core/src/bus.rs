@@ -515,6 +515,7 @@ mod tests {
             harness_repository: false,
             outside_author: None,
             taken_from: None,
+            reviewed_head: None,
         }
     }
 

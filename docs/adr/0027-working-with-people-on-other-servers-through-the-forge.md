@@ -55,3 +55,13 @@ record says how two servers keep out of each other's way without a link between 
   GitHub.
 - A card another server took is greyed, not hidden: the owner still sees the issue and who has it, and the card goes
   on when the assignee is removed.
+
+## Safeguards
+
+- A pull request is followed only when it is against the default branch and its author may write to the repository or is
+  assigned to the issue, so that a stranger's fork saying "Fixes #n" cannot freeze a card. A card with a run going, or
+  taken by someone other than the author, is never moved.
+- A merge of a followed pull request is pinned to the head the poll read, and is refused until the checks are known for
+  that head. A review counts for the commit it read.
+- Two servers that take an issue at once are told apart by the forge's own order of assignees: the one listed first
+  keeps it, the other takes itself off and starts nothing.

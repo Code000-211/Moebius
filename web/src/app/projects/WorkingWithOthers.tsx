@@ -46,7 +46,7 @@ export function WorkingWithOthers({ repository }: { repository: Repository }) {
     },
   });
   return (
-    <Box title="Working with others" testId="working-with-others">
+    <Box title="Working with others" testId="working-with-others" strong>
       <form
         className="flex max-w-xl flex-col gap-5"
         onSubmit={(e) => {
@@ -54,7 +54,7 @@ export function WorkingWithOthers({ repository }: { repository: Repository }) {
           if (changed && trimmed !== "" && !save.isPending) save.mutate();
         }}
       >
-        <p className="m-0 max-w-prose text-base text-secondary">
+        <p className="m-0 text-base text-secondary">
           {`People who each run a server on this repository coordinate through ${forge} alone: taking an issue makes you its assignee there, and an issue someone else is assigned to is left alone.`}
         </p>
         <div className="flex items-start justify-between gap-4">

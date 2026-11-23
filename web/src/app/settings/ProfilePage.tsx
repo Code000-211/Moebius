@@ -48,8 +48,10 @@ function ForgeLogins() {
   return (
     <Section title="Your logins on forges">
       <Rows>
-        {shown.map((forge) => {
+        {shown.map((forge, at) => {
           const name = forgeName({ forge } as Parameters<typeof forgeName>[0]) ?? forge;
+          // Save stands beside the last login, in the row of the fields it saves.
+          const last = at === shown.length - 1;
           return (
             <FieldRow
               key={forge}
@@ -61,25 +63,27 @@ function ForgeLogins() {
               }
               wide
             >
-              <Input
-                aria-label={`Your login on ${name}`}
-                value={value(forge)}
-                placeholder="login, without @"
-                autoComplete="off"
-                onChange={(e) => setTyped({ ...typed, [forge]: e.target.value })}
-              />
+              <div className="flex w-full items-center gap-2">
+                <Input
+                  aria-label={`Your login on ${name}`}
+                  value={value(forge)}
+                  placeholder="login, without @"
+                  autoComplete="off"
+                  onChange={(e) => setTyped({ ...typed, [forge]: e.target.value })}
+                />
+                {last && (
+                  <Button
+                    size="sm"
+                    disabled={!changed || save.isPending}
+                    onClick={() => save.mutate({ ...kept.data, ...typed })}
+                  >
+                    {save.isPending ? "Saving" : "Save logins"}
+                  </Button>
+                )}
+              </div>
             </FieldRow>
           );
         })}
-        <FieldRow label="Logins">
-          <Button
-            size="sm"
-            disabled={!changed || save.isPending}
-            onClick={() => save.mutate({ ...kept.data, ...typed })}
-          >
-            {save.isPending ? "Saving" : "Save logins"}
-          </Button>
-        </FieldRow>
       </Rows>
       {save.isError && (
         <p role="alert" className="m-0 mt-2 text-sm text-error-text">

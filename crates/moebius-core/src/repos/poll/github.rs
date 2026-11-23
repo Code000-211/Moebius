@@ -96,6 +96,10 @@ impl Polled for GitHub {
         self.forget_issues_etag(name);
     }
 
+    async fn can_write(&self, name: &str, login: &str) -> Result<bool, ForgeError> {
+        Ok(self.can_write(name, login).await?)
+    }
+
     async fn open_requests(&self, name: &str) -> Result<Vec<OpenRequest>, ForgeError> {
         Ok(self
             .open_pull_requests(name)
@@ -107,6 +111,7 @@ impl Polled for GitHub {
                 body: pull.body.unwrap_or_default(),
                 author: pull.user.login,
                 head: pull.head.sha,
+                base: pull.base.branch,
             })
             .collect())
     }

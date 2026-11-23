@@ -128,6 +128,16 @@ impl Engine {
                         if super::free_run_slots(&app, run_limit)? == 0 {
                             return Ok(None);
                         }
+                        // The person it is run for is the issue's assignee on the forge before the run starts: when another
+                        // server took it first, nothing starts (ADR 0027).
+                        if !app.take_issue(&card_copy, None) {
+                            return Err(crate::board::StartError::LeftAlone(
+                                app.left_alone(&card_copy)
+                                    .ok()
+                                    .flatten()
+                                    .unwrap_or_else(|| "taken by someone on another server".into()),
+                            ));
+                        }
                         let run = runs.start(
                             &app,
                             &card_copy,
@@ -138,8 +148,6 @@ impl Engine {
                                 runner: runner.as_deref(),
                             },
                         )?;
-                        // The person it is run for is the issue's assignee on the forge from now on (ADR 0027).
-                        app.take_issue(&card_copy, None);
                         Ok(Some(run))
                     });
                     let run = match run {

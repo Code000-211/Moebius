@@ -380,6 +380,13 @@ const BoardCard = memo(function BoardCard({
       isSelected={selected}
       onOpen={() => onSelect(card)}
       onContextMenu={bulk?.onContextMenu(card)}
+      // An issue someone on another server took is not this server's to work on: the whole card is dim and flat, and
+      // is still opened by a click.
+      className={
+        card.taken_by && !card.change?.outside_author
+          ? "bg-sunken opacity-60 outline-hairline"
+          : undefined
+      }
     >
       <CardContent
         card={card}

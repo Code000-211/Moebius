@@ -90,6 +90,15 @@ impl Engine {
                             }
                             other => other,
                         };
+                        // The person the attempts are for becomes the issue's assignee before the first starts; when another
+                        // server took it first, nothing starts (ADR 0027).
+                        if started.is_empty() && !app.take_issue(&card_copy, None) {
+                            left_alone =
+                                Some(app.left_alone(&card_copy).ok().flatten().unwrap_or_else(
+                                    || "taken by someone on another server".into(),
+                                ));
+                            break;
+                        }
                         let run = may
                             .and_then(|()| {
                                 runs.start(
@@ -119,7 +128,6 @@ impl Engine {
                 });
                 if let Some(first) = started.first() {
                     fx.borrow_mut().started_run = Some(*first);
-                    app.take_issue(&card_copy, None);
                 }
                 if let (Some(why), true) = (left_alone, started.is_empty()) {
                     // Someone else took the issue, or this server's agents do not take it: it waits here.

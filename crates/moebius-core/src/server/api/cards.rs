@@ -274,7 +274,8 @@ fn card_view(
             },
             state: change.state.clone(),
             checks: lookups.checks_of(&change)?.to_string(),
-            review_verdict: verdict.clone(),
+            // A review of a pull request someone else opened counts for the commit it read, not for a later push.
+            review_verdict: verdict.clone().filter(|_| change.review_is_current()),
             outside_author: change.outside_author.clone(),
         };
         if change.repository_id == Some(view.card.repository_id) {

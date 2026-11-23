@@ -38,6 +38,10 @@ pub(super) struct FakeGitHub {
     /// Whether it assigns the logins it is asked to; when not, it answers as GitHub does for one that is no
     /// collaborator: with the issue as it was.
     pub(super) assignable: std::sync::atomic::AtomicBool,
+    /// The assignees it was asked to take off, as issue number and login.
+    pub(super) unassigned: Mutex<Vec<(u64, String)>>,
+    /// The logins that may write to the repository; any other has the permission `none`.
+    pub(super) writers: Mutex<Vec<String>>,
     /// The labels it was asked to put on an issue, as the issue's number and the whole set.
     pub(super) label_writes: Mutex<Vec<(u64, Vec<String>)>>,
     /// The open pull requests `GET /pulls` lists.
@@ -113,6 +117,8 @@ pub(super) async fn fake_github() -> (String, Arc<FakeGitHub>) {
         scopes: Mutex::new(None),
         limited: std::sync::atomic::AtomicBool::new(false),
         assigned: Mutex::new(Vec::new()),
+        unassigned: Mutex::new(Vec::new()),
+        writers: Mutex::new(Vec::new()),
         assignable: std::sync::atomic::AtomicBool::new(true),
         label_writes: Mutex::new(Vec::new()),
         listed_pulls: Mutex::new(Vec::new()),
@@ -246,6 +252,38 @@ pub(super) async fn fake_github() -> (String, Arc<FakeGitHub>) {
                     let mut answer = issue(number, "open", "leon", "");
                     answer["assignees"] = json!(assignees);
                     (StatusCode::CREATED, axum::Json(answer))
+                },
+            )
+            .delete(
+                |State(fake): State<Arc<FakeGitHub>>,
+                 UrlPath(number): UrlPath<u64>,
+                 axum::Json(body): axum::Json<Value>| async move {
+                    let login = body["assignees"][0].as_str().unwrap().to_string();
+                    fake.assigned
+                        .lock()
+                        .unwrap()
+                        .retain(|(n, l)| !(*n == number && *l == login));
+                    fake.edit_issue(number, |issue| {
+                        let kept: Vec<Value> = issue["assignees"]
+                            .as_array()
+                            .cloned()
+                            .unwrap_or_default()
+                            .into_iter()
+                            .filter(|a| a["login"] != json!(login))
+                            .collect();
+                        issue["assignees"] = json!(kept);
+                    });
+                    fake.unassigned.lock().unwrap().push((number, login));
+                    axum::Json(json!({}))
+                },
+            ),
+        )
+        .route(
+            "/repos/acme/widgets/collaborators/{login}/permission",
+            get(
+                |State(fake): State<Arc<FakeGitHub>>, UrlPath(login): UrlPath<String>| async move {
+                    let writes = fake.writers.lock().unwrap().contains(&login);
+                    axum::Json(json!({ "permission": if writes { "write" } else { "none" } }))
                 },
             ),
         )

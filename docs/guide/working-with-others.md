@@ -49,9 +49,9 @@ For the owner, on their server, once:
 - **You open a pull request for an issue you took.** Write a closing keyword for the issue in its title or description
   (`Fixes #12`, or `Fixes owner/repo#12`; a plain mention is not enough). On the owner's server, at the next poll, the
   card moves to **In review**, the head of the pull request is kept in the local branch `moebius/pr-<number>`, and an
-  Inbox item "outside change" names you. The owner's column scripts do not run for the card while the request is open.
+  Inbox item "outside change" names you. The owner's server follows a request only when it is against the default branch and you may write to the repository or are assigned to the issue; a stranger's fork that says "Fixes #12" is ignored. The owner's column scripts do not run for the card while the request is open.
 - **The owner reviews it.** **Review with agent** (`POST /v1/changes/{id}/review`) has the Reviewer read the pull
-  request. **Merge** is refused, `the checks of pull request #n have not passed`, while its checks are pending or
+  request. **Merge** is refused, `the checks of pull request #n have not passed`, while its checks are pending, unread for its current head or
   failing; a request with no checks may be merged.
 - **It ends.** When the pull request is merged on the forge, or by the owner, the card goes to Done. When it is closed
   without a merge, the change is closed, the Inbox item is resolved, and the card goes back to the column it was in

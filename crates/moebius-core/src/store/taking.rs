@@ -26,6 +26,7 @@ ALTER TABLE repositories ADD COLUMN ready_label TEXT NOT NULL DEFAULT 'Ready for
 ALTER TABLE repositories ADD COLUMN agents_take TEXT NOT NULL DEFAULT 'all';
 ALTER TABLE changes ADD COLUMN outside_author TEXT;
 ALTER TABLE changes ADD COLUMN taken_from TEXT;
+ALTER TABLE changes ADD COLUMN reviewed_head TEXT;
 "#;
 
 /// The label a repository marks ready issues with until it is given another.
@@ -35,10 +36,15 @@ pub const DEFAULT_READY_LABEL: &str = "Ready for agent";
 pub const LOGIN_FORGES: [&str; 3] = ["github", "gitlab", "forgejo"];
 
 /// The login a card is taken by, for a `SELECT`: the first login the card's issue is assigned to on its forge that is no
-/// person's login there, none when there is none.
+/// person's login there, none when there is none or when a login of this server's people came before it: the forge
+/// lists assignees in the order they were added, and the one listed first took the issue first.
 pub(super) const CARD_TAKEN_BY: &str = "(SELECT j.value FROM json_each(cards.forge_assignees) j \
      WHERE NOT EXISTS (SELECT 1 FROM person_logins l JOIN repositories r ON r.id = cards.repository_id \
-     WHERE l.forge = r.forge AND l.login = j.value COLLATE NOCASE) ORDER BY j.key LIMIT 1)";
+     WHERE l.forge = r.forge AND l.login = j.value COLLATE NOCASE) \
+     AND NOT EXISTS (SELECT 1 FROM json_each(cards.forge_assignees) k WHERE k.key < j.key AND EXISTS \
+     (SELECT 1 FROM person_logins l2 JOIN repositories r2 ON r2.id = cards.repository_id \
+     WHERE l2.forge = r2.forge AND l2.login = k.value COLLATE NOCASE)) \
+     ORDER BY j.key LIMIT 1)";
 
 impl Store {
     /// The logins `person` has on forges, by forge name.
@@ -113,6 +119,16 @@ impl Store {
         Ok(())
     }
 
+    /// Records the commit the Reviewer read when it was asked to review the pull request the change follows: a review
+    /// counts only for that commit.
+    pub fn set_change_reviewed_head(&self, change_id: i64, head: &str) -> Result<()> {
+        self.conn().execute(
+            "UPDATE changes SET reviewed_head = ?1 WHERE id = ?2",
+            params![head, change_id],
+        )?;
+        Ok(())
+    }
+
     /// Sets how a repository works with others: whether the server marks ready issues with a label, which label, and
     /// whether its agents take every approved issue (`all`) or only the labelled ones nobody took (`labelled`).
     pub fn set_repository_working_with_others(
@@ -162,6 +178,10 @@ mod tests {
             &BTreeMap::from([("github".into(), "alice".into())]),
         )
         .unwrap();
+        // It came first, so the issue is this server's and bob, listed after it, does not take it.
+        assert_eq!(s.card(card.id).unwrap().unwrap().taken_by, None);
+        s.set_forge_assignees(card.id, &["bob".into(), "Alice".into()])
+            .unwrap();
         assert_eq!(
             s.card(card.id).unwrap().unwrap().taken_by.as_deref(),
             Some("bob")
@@ -174,7 +194,7 @@ mod tests {
         .unwrap();
         assert_eq!(
             s.card(card.id).unwrap().unwrap().taken_by.as_deref(),
-            Some("Alice")
+            Some("bob")
         );
     }
 

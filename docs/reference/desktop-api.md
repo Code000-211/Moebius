@@ -502,7 +502,7 @@ latest review's state in lower case, such as `approved`; on GitLab `approved` on
 latest review given that was not dismissed, with `REQUEST_CHANGES` as `changes_requested`; or null), `head` (the published commit), `published_at`, `checks_head` (the commit
 `checks` are for), `failed_checks` (the failing checks of a pull request, the failed jobs of a pipeline, or the failed
 statuses of a commit, one per line, or null) and `check_output` (the
-end of the output of the repository's own checks, or null). A change's `branch` is `moebius/card-<number>`, `moebius/chat-<run id>` for the work of a chat, which has no card, `moebius/workflow-run-<run id>` for the work of a workflow run, which has none either and names the run in `run_id`, or `research/<research id>-<name>` for a lever of a research, which has none either. A change that follows a pull request someone else opened (see [Working with people on other servers](#working-with-people-on-other-servers)) has the branch `moebius/pr-<pull request number>`, kept in the clone, and two more fields: `outside_author` (the forge login of whoever opened the request) and `taken_from` (the column the card was in when it began to follow the request); both are null for every other change.
+end of the output of the repository's own checks, or null). A change's `branch` is `moebius/card-<number>`, `moebius/chat-<run id>` for the work of a chat, which has no card, `moebius/workflow-run-<run id>` for the work of a workflow run, which has none either and names the run in `run_id`, or `research/<research id>-<name>` for a lever of a research, which has none either. A change that follows a pull request someone else opened (see [Working with people on other servers](#working-with-people-on-other-servers)) has the branch `moebius/pr-<pull request number>`, kept in the clone, and three more fields: `outside_author` (the forge login of whoever opened the request), `taken_from` (the column the card was in when it began to follow the request) and `reviewed_head` (the commit the Reviewer last read, once it was asked to); all are null for every other change.
 
 `InboxItem`: `id`, `kind`, `card_id` (or null), `title`, `data` (an object that depends on the kind), `resolved_at` (null
 in the snapshot, which holds only open items), `at` and `assignees` (the handles of the people it is given to, like a
@@ -2312,7 +2312,7 @@ the repository `harness`.
 Request: `{"reason": "..."}`; `reason` is optional, but the body is not: send `{}`.
 
 Response: `{"commit": "<sha of the merge commit>"}`. Errors: `404` no such change; `422` the change is not `open`, or a
-change of its card before it is open (`merge the change in <repository> first: ...`), or it follows a pull request someone else opened and the checks are `pending` or `failure` (`the checks of pull request #<n> have not passed`; a request with no checks may be merged); `409` the
+change of its card before it is open (`merge the change in <repository> first: ...`), or it follows a pull request someone else opened and the checks are `pending` or `failure` (`the checks of pull request #<n> have not passed`; a request with no checks may be merged once they were read for its current head); `409` the
 branch does not merge cleanly; `500` the forge failed.
 
 ### `POST /v1/changes/{id}/reject`
@@ -4462,7 +4462,12 @@ forge, and what it wants to know it reads there at each poll of the repository.
   `moebius.start_run` and `moebius.start_runs` of a column script start nothing for it (they return nil and an empty
   array) and make the card wait with the reason `taken by @<login>`; a claim of it is `409`. Another route of a person,
   such as starting a chat, is not blocked. It stays taken until the assignee is removed on the forge. The web app draws
-  such a card greyed, with "Taken by @<login>".
+  such a card greyed, with "Taken by @<login>". The forge lists an issue's assignees in the order they were added, and
+  the one listed first took it first: a login of this server's people listed before any other holds the issue, so
+  `taken_by` is then null, and a login of someone else listed before every one of this server's people's is the taker.
+  The assignment comes before the run starts and the forge's list is read back from the answer: when two servers take an
+  issue at once and the other's login is listed before this server's person's, this server takes its person off again,
+  starts nothing, makes the card wait with `taken by @<login>`, and a claim is released and answered `409`.
 - **Ready label.** While a repository's `mark_ready` is true, at each poll the server adds `ready_label` to every open
   card's issue that is approved (the card is confirmed, or its author is trusted, or its column is not `Backlog`) and has
   no open blocker (`blocked_by` empty: `Blocked by #n` lines, the forge's dependencies and the board's own blockers) and
@@ -4471,17 +4476,24 @@ forge, and what it wants to know it reads there at each poll of the repository.
   refuses it is waited out. A repository whose `agents_take` is `labelled` starts only cards that carry the label.
 - **Following a pull request.** At each poll the server lists the repository's open pull requests (GitHub and Forgejo
   `GET /pulls?state=open`, GitLab `GET /merge_requests?state=opened`). It follows one when its author is none of the
-  logins this server's people have on the forge, it is not a change of this repository already, its title or body
+  logins this server's people have on the forge, it is against the repository's default branch, it is not a change of
+  this repository already (a closed request of someone else that is open again is not one), its author may write to the
+  repository (GitHub and Forgejo the collaborator permission `write`, `maintain` or `admin`, GitLab the role developer
+  or more, asked once per author at each poll) or is an assignee of the issue, its title or body
   closes an issue of this repository with a closing keyword (`close`, `closes`, `closed`, `fix`, `fixes`, `fixed`,
   `resolve`, `resolves`, `resolved`, then optionally a colon, then `#n` or `owner/repo#n` for this repository; a plain
-  mention does not count), and that issue has a card that is not in `Done` or closed and has no open change. Then the head is
+  mention does not count), and that issue has a card that is not in `Done` or closed, has no open change, has no run going and is not taken by
+  someone other than the author. Then the head is
   fetched into the local branch `moebius/pr-<number>` (GitHub and Forgejo `refs/pull/<n>/head`, GitLab
   `refs/merge-requests/<n>/head`; a failure is a `forge_error` event and the request is followed all the same), a
   `Change` is recorded with `pull_request`, `outside_author` and `taken_from`, the card moves to `In review`, an
   `outside_change` inbox item is added and `change_offered` is sent. The checks and the review of the request are read as
   an own change's are, and the local branch moves when the head does. While the request is open the card has no column
   script run, as a held card has none. A person merges it with `POST /v1/changes/{id}/merge`, refused while its checks
-  are `pending` or `failure`, and has the Reviewer read it with `POST /v1/changes/{id}/review`. When it is merged the
+  are `pending` or `failure` or not yet read for its current head, and pinned to the head the poll last read (GitHub
+  and GitLab `sha`, Forgejo `head_commit_id`), so that a push after that is refused by the forge. A person has the
+  Reviewer read it with `POST /v1/changes/{id}/review`; the review counts for the commit it read
+  (`Change.reviewed_head`), so after a push the board change's `review_verdict` is null until it is reviewed again. When it is merged the
   card moves to `Done`, also when its issue is closed. When it is closed without a merge the change is `closed`, its inbox
   item is resolved (no `change_closed` item is added), and the card goes back to `taken_from` (`Not started` when that was `In
   review` or `Done`); it is still taken until the assignee is removed.

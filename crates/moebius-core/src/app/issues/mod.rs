@@ -420,8 +420,18 @@ impl App {
             .strip_prefix(super::PERSON)
             .and_then(|rest| rest.strip_prefix(':'))
             .and_then(|handle| self.store.person_by_handle(handle).ok().flatten());
-        if let Some(person) = person {
-            self.take_issue(&card, Some(&person));
+        if let Some(person) = person
+            && !self.take_issue(&card, Some(&person))
+        {
+            // Another server's person took the issue first: the claim goes with it.
+            self.store.release_claim(card_id)?;
+            self.bus.publish(Event::CardReleased { card: card_id });
+            let taken = self.card(card_id)?;
+            return Err(AppError::Conflict(format!(
+                "#{} is taken by @{} on another server",
+                taken.number,
+                taken.taken_by.unwrap_or_default()
+            )));
         }
         self.card(card_id)
     }

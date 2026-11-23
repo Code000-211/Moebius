@@ -54,7 +54,19 @@ describe.skipIf(usesRealServer)("working with others", () => {
     const takenCard = page.getByTestId(`card-${taken}`);
     await takenCard.waitFor();
     expect(await takenCard.getByTestId("card-activity").textContent()).toBe("Taken by @alice");
+    // The whole card is dimmed and flat, and the followed one, which is a card to act on, is not.
+    expect(await takenCard.evaluate((n) => getComputedStyle(n).opacity)).toBe("0.6");
     const followedCard = page.getByTestId(`card-${followed}`);
+    expect(await followedCard.evaluate((n) => getComputedStyle(n).opacity)).toBe("1");
+    // Its person's avatar sits where an assignee's does on any card: the same distance from the card's right edge.
+    const gap = (card: typeof takenCard) =>
+      card.evaluate((n) => {
+        const mark = n.querySelector('[role="img"]')?.getBoundingClientRect();
+        return Math.round(n.getBoundingClientRect().right - (mark?.right ?? 0));
+      });
+    const assigned = page.getByTestId(`card-${taken + 2}`);
+    expect(await gap(takenCard)).toBe(await gap(assigned));
+    expect(await gap(followedCard)).toBe(await gap(assigned));
     expect(await followedCard.getByTestId("card-activity").textContent()).toBe(
       "Review @alice's pull request",
     );
@@ -130,6 +142,12 @@ describe.skipIf(usesRealServer || !SHOTS)("the pictures", () => {
       await page.getByTestId(`card-${followed}`).click();
       await page.locator("[data-card-window]").getByTestId("elsewhere").waitFor();
       await shoot(`card-window-${scheme}`);
+      await page.goto(`${server.url}/profile`);
+      await page.getByLabel("Your login on GitHub").waitFor();
+      await shoot(`profile-${scheme}`);
+      await page.goto(`${server.url}/projects/1/repositories/1`);
+      await page.getByTestId("working-with-others").waitFor();
+      await shoot(`working-with-others-${scheme}`);
     });
   }
 });

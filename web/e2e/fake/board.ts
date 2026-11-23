@@ -818,6 +818,11 @@ export function createBoardFake(send: (event: ServerEvent) => void): BoardFake {
           column: "Not started",
           taken_by: "alice",
         }),
+        card(first + 2, {
+          title: "Tidy the changelog",
+          column: "Not started",
+          assignees: ["lea"],
+        }),
         card(first + 1, {
           title: "Cache the compiled assets",
           column: "In review",

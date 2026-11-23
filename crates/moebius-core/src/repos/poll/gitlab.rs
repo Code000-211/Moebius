@@ -76,6 +76,10 @@ impl Polled for GitLab {
         self.forget_issues_etag(name);
     }
 
+    async fn can_write(&self, name: &str, login: &str) -> Result<bool, ForgeError> {
+        Ok(self.can_write(name, login).await?)
+    }
+
     async fn open_requests(&self, name: &str) -> Result<Vec<OpenRequest>, ForgeError> {
         Ok(self
             .open_merge_requests(name)
@@ -87,6 +91,7 @@ impl Polled for GitLab {
                 body: request.description.unwrap_or_default(),
                 author: request.author.username,
                 head: request.sha,
+                base: request.target_branch,
             })
             .collect())
     }

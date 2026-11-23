@@ -289,7 +289,7 @@ async fn an_unlabelled_issue_a_person_of_this_server_took_is_started_here() {
 /// A pull request 7 of `alice` that says it fixes issue 1, listed as open.
 fn alices_request() -> Value {
     json!({ "number": 7, "title": "Fix the thing", "body": "Fixes #1\n\nDone by hand.",
-            "user": { "login": "alice" }, "head": { "sha": "deadbeef" } })
+            "user": { "login": "alice" }, "head": { "sha": "deadbeef" }, "base": { "ref": "main" } })
 }
 
 /// Has pull request 7 of the remote name a commit, as GitHub does for the head of every pull request.
@@ -472,4 +472,294 @@ async fn the_reviewer_reads_the_followed_pull_request_from_its_branch() {
     .unwrap()
     .unwrap_err();
     assert!(error.to_string().contains("Reviewer"), "{error}");
+}
+
+/// The head of pull request 7 on the remote, and the fake saying it is the head.
+fn the_pull_head(f: &Fixture) -> String {
+    let head = git(&f.remote, &["rev-parse", "refs/pull/7/head"]).unwrap();
+    f.fake.set_head(&head);
+    head
+}
+
+/// Gives pull request 7 a new head on the remote and in the fake, as a push to its branch does.
+fn push_to_the_pull_request(f: &Fixture) -> String {
+    let tree = git(&f.remote, &["rev-parse", "main^{tree}"]).unwrap();
+    let parent = git(&f.remote, &["rev-parse", "refs/pull/7/head"]).unwrap();
+    let head = git(
+        &f.remote,
+        &[
+            "commit-tree",
+            &tree,
+            "-p",
+            &parent,
+            "-m",
+            "after the review",
+        ],
+    )
+    .unwrap();
+    git(&f.remote, &["update-ref", "refs/pull/7/head", &head]).unwrap();
+    f.fake.set_head(&head);
+    f.fake.listed_pulls.lock().unwrap()[0]["head"]["sha"] = json!(head);
+    head
+}
+
+/// Runs that start a run of any agent, among them a Reviewer.
+struct ReviewerRuns;
+
+impl crate::board::CardRuns for ReviewerRuns {
+    fn start(
+        &self,
+        app: &std::sync::Arc<crate::app::App>,
+        card: &Card,
+        agent: &str,
+        purpose: (&str, Option<&str>),
+        _: crate::board::Variant,
+    ) -> Result<crate::store::Run, crate::board::StartError> {
+        app.store
+            .add_run(Some(card.id), agent, "idle", purpose.0)
+            .map_err(|e| crate::board::StartError::Store(e.to_string()))
+    }
+    fn has_agent(&self, _: &str) -> bool {
+        true
+    }
+    fn runners(&self) -> Vec<crate::harness::remote::RunnerInfo> {
+        Vec::new()
+    }
+    fn agents(&self) -> Vec<crate::board::AgentInfo> {
+        Vec::new()
+    }
+    fn token_budget(&self, _: &str) -> Option<i64> {
+        None
+    }
+    fn steer(&self, _: i64, _: &str) -> bool {
+        false
+    }
+    fn stop(&self, _: i64) -> bool {
+        false
+    }
+    fn hold(&self, _: bool) {}
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn the_merge_of_a_followed_pull_request_is_pinned_to_the_head_the_owner_saw() {
+    let f = Fixture::new().await;
+    let card = following(&f).await;
+    let head = the_pull_head(&f);
+    f.fake.pulls.lock().unwrap().check_runs = vec![check("build", "completed", "success")];
+    f.fake.listed_pulls.lock().unwrap()[0]["head"]["sha"] = json!(head);
+    f.server.poll_github().await;
+    let change = f
+        .server
+        .app
+        .store
+        .open_change_in(card.id, f.repository.id)
+        .unwrap()
+        .unwrap();
+    assert_eq!(change.head.as_deref(), Some(head.as_str()));
+
+    // A push the poll has not read yet: its checks are unknown, so the merge waits.
+    let app = f.server.app.clone();
+    let id = change.id;
+    app.store.set_change_head(id, "ffff", 1).unwrap();
+    let refused = tokio::task::spawn_blocking({
+        let app = app.clone();
+        move || app.merge_change(&Actor::first_owner(), id, "now")
+    })
+    .await
+    .unwrap()
+    .unwrap_err();
+    assert!(refused.to_string().contains("checks"), "{refused}");
+    app.store.set_change_head(id, &head, 1).unwrap();
+
+    // The forge is told which commit is merged, so that a later push is refused there, not merged unseen.
+    tokio::task::spawn_blocking(move || app.merge_change(&Actor::first_owner(), id, "now"))
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(f.fake.pulls.lock().unwrap().merged[0]["sha"], json!(head));
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_review_counts_only_for_the_head_it_read() {
+    let f = Fixture::new().await;
+    let card = following(&f).await;
+    the_pull_head(&f);
+    let change = f
+        .server
+        .app
+        .store
+        .open_change_in(card.id, f.repository.id)
+        .unwrap()
+        .unwrap();
+    assert!(!change.review_is_current(), "nothing was reviewed yet");
+
+    let (app, id) = (f.server.app.clone(), change.id);
+    tokio::task::spawn_blocking(move || {
+        app.review_outside_change(&Actor::first_owner(), &ReviewerRuns, id, "")
+    })
+    .await
+    .unwrap()
+    .unwrap();
+    assert!(f.change(change.id).review_is_current());
+
+    // The author pushes again: the review is of the commit before.
+    let pushed = push_to_the_pull_request(&f);
+    f.server.poll_github().await;
+    let after = f.change(change.id);
+    assert_eq!(after.head.as_deref(), Some(pushed.as_str()));
+    assert!(!after.review_is_current());
+}
+
+/// Polls issue 1 (assigned to `assignees`) with `request` open, in a card in progress.
+async fn polled_with(f: &Fixture, request: Value, assignees: &[&str]) {
+    give_the_remote_a_pull_head(f);
+    let mut issue = open_issue(1, "One.");
+    issue["assignees"] = json!(
+        assignees
+            .iter()
+            .map(|a| json!({ "login": a }))
+            .collect::<Vec<_>>()
+    );
+    f.fake.set_issues("\"v1\"", vec![issue]);
+    f.server.poll_github().await;
+    f.put_in(1, "In progress");
+    *f.fake.listed_pulls.lock().unwrap() = vec![request];
+    f.fake.set_pull("open", false);
+    f.server.poll_github().await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn only_a_pull_request_of_someone_who_may_write_or_is_assigned_is_followed() {
+    // Anyone's fork may say "Fixes #1": a stranger's request does not take the card.
+    let f = Fixture::new().await;
+    polled_with(&f, alices_request(), &[]).await;
+    assert_eq!(f.card(1).unwrap().column, "In progress");
+
+    // A collaborator who may write is believed.
+    f.fake.writers.lock().unwrap().push("alice".into());
+    f.server.poll_github().await;
+    assert_eq!(f.card(1).unwrap().column, "In review");
+
+    // So is the issue's assignee, who needs no permission to be asked about.
+    let g = Fixture::new().await;
+    polled_with(&g, alices_request(), &["alice"]).await;
+    assert_eq!(g.card(1).unwrap().column, "In review");
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_pull_request_against_another_branch_or_for_a_card_at_work_or_taken_by_someone_else_is_not_followed()
+ {
+    let f = Fixture::new().await;
+    f.fake.writers.lock().unwrap().push("alice".into());
+    let mut elsewhere = alices_request();
+    elsewhere["base"]["ref"] = json!("release");
+    polled_with(&f, elsewhere, &[]).await;
+    assert_eq!(
+        f.card(1).unwrap().column,
+        "In progress",
+        "not against the default branch"
+    );
+
+    // A run of Moebius is going on the card.
+    let g = Fixture::new().await;
+    g.fake.writers.lock().unwrap().push("alice".into());
+    polled_with(
+        &g,
+        json!({ "number": 7, "title": "t", "body": "Fixes #2", "user": { "login": "alice" },
+        "head": { "sha": "deadbeef" }, "base": { "ref": "main" } }),
+        &[],
+    )
+    .await;
+    let card = g.card(1).unwrap();
+    g.server
+        .app
+        .store
+        .add_run(Some(card.id), "Coder", "idle", "code")
+        .unwrap();
+    *g.fake.listed_pulls.lock().unwrap() = vec![alices_request()];
+    g.server.poll_github().await;
+    assert_eq!(g.card(1).unwrap().column, "In progress", "its run is going");
+    g.server
+        .app
+        .store
+        .set_run_status(
+            g.server.app.store.runs_for_card(card.id).unwrap()[0].id,
+            "succeeded",
+        )
+        .unwrap();
+    g.server.poll_github().await;
+    assert_eq!(
+        g.card(1).unwrap().column,
+        "In review",
+        "once the run is over it is"
+    );
+
+    // Someone else took the issue: alice's request does not take it from them.
+    let h = Fixture::new().await;
+    h.fake.writers.lock().unwrap().push("alice".into());
+    polled_with(&h, alices_request(), &["bob"]).await;
+    assert_eq!(h.card(1).unwrap().column, "In progress");
+    assert_eq!(h.card(1).unwrap().taken_by.as_deref(), Some("bob"));
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_reopened_pull_request_is_followed_again() {
+    let f = Fixture::new().await;
+    let card = following(&f).await;
+    f.fake.set_pull("closed", false);
+    *f.fake.listed_pulls.lock().unwrap() = Vec::new();
+    f.server.poll_github().await;
+    assert_eq!(f.card(1).unwrap().column, "In progress");
+
+    f.fake.set_pull("open", false);
+    *f.fake.listed_pulls.lock().unwrap() = vec![alices_request()];
+    f.server.poll_github().await;
+    assert_eq!(f.card(1).unwrap().column, "In review");
+    let open = f
+        .server
+        .app
+        .store
+        .open_change_in(card.id, f.repository.id)
+        .unwrap()
+        .unwrap();
+    assert_eq!(open.outside_author.as_deref(), Some("alice"));
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn when_two_servers_take_an_issue_at_once_the_one_listed_first_keeps_it() {
+    // The other server's login was added first: this server's person is taken off again, and nothing starts.
+    let f = Fixture::new().await;
+    f.fake.set_issues("\"v1\"", vec![open_issue(1, "One.")]);
+    f.server.poll_github().await;
+    f.owner_logs_in_as("leon-gh");
+    let card = f.put_in(1, "In progress");
+    f.fake.assigned.lock().unwrap().push((1, "alice".into()));
+    let step = f.settle(&card).await;
+    assert_eq!(f.runs_of(1), 0, "{step:?}");
+    assert_eq!(
+        *f.fake.unassigned.lock().unwrap(),
+        vec![(1, "leon-gh".to_string())]
+    );
+    assert_eq!(f.card(1).unwrap().taken_by.as_deref(), Some("alice"));
+    let refused = f.claim(&f.card(1).unwrap()).await.unwrap_err();
+    assert!(refused.to_string().contains("taken by @alice"), "{refused}");
+
+    // This server's login was added first: the issue is this server's, the other login after it blocks nothing, and
+    // later runs start as before.
+    let g = Fixture::new().await;
+    g.fake.set_issues("\"v1\"", vec![open_issue(1, "One.")]);
+    g.server.poll_github().await;
+    g.owner_logs_in_as("leon-gh");
+    let card = g.put_in(1, "In progress");
+    g.settle(&card).await;
+    assert_eq!(g.runs_of(1), 1);
+    g.fake.edit_issue(1, |issue| {
+        let mut assignees = issue["assignees"].as_array().cloned().unwrap_or_default();
+        assignees.push(json!({ "login": "alice" }));
+        issue["assignees"] = json!(assignees);
+    });
+    g.server.poll_github().await;
+    let card = g.card(1).unwrap();
+    assert_eq!(card.taken_by, None);
+    assert!(g.server.app.left_alone(&card).unwrap().is_none());
 }

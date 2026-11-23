@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 use super::{Result, Store, now};
 
 const CHANGE_COLUMNS: &str = "id, repository_id, card_id, run_id, branch, state, pull_request, checks, review, \
-     head, published_at, checks_head, failed_checks, check_output, harness_repository, outside_author, taken_from";
+     head, published_at, checks_head, failed_checks, check_output, harness_repository, outside_author, taken_from, reviewed_head";
 
 fn change_from_row(r: &rusqlite::Row) -> rusqlite::Result<Change> {
     Ok(Change {
@@ -27,6 +27,7 @@ fn change_from_row(r: &rusqlite::Row) -> rusqlite::Result<Change> {
         harness_repository: r.get(14)?,
         outside_author: r.get(15)?,
         taken_from: r.get(16)?,
+        reviewed_head: r.get(17)?,
     })
 }
 
@@ -66,6 +67,18 @@ pub struct Change {
     /// request is closed without a merge.
     #[serde(default)]
     pub taken_from: Option<String>,
+    /// The head of a followed pull request when the Reviewer was last asked to read it: a review of the card counts only
+    /// while the request's head is still this commit.
+    #[serde(default)]
+    pub reviewed_head: Option<String>,
+}
+
+impl Change {
+    /// Whether a review of the card counts for this change as it is now. For Moebius's own change it does; for a pull
+    /// request someone else opened it counts only while the request's head is the commit the Reviewer read.
+    pub fn review_is_current(&self) -> bool {
+        self.outside_author.is_none() || self.reviewed_head == self.head
+    }
 }
 
 impl Store {
@@ -146,6 +159,7 @@ impl Store {
             harness_repository,
             outside_author: None,
             taken_from: None,
+            reviewed_head: None,
         })
     }
 

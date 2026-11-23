@@ -132,10 +132,18 @@ pub struct Head {
     pub sha: String,
 }
 
+/// The branch a pull request is against.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+pub struct Base {
+    #[serde(rename = "ref")]
+    pub branch: String,
+}
+
 /// An open pull request as the list of them has it: who opened it and what it says, which names the issues it closes.
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 pub struct ListedPull {
     pub number: i64,
+    pub base: Base,
     #[serde(default)]
     pub title: String,
     #[serde(default)]
@@ -754,7 +762,7 @@ impl GitHub {
         github: &str,
         number: i64,
         login: &str,
-    ) -> Result<(), GitHubError> {
+    ) -> Result<Vec<String>, GitHubError> {
         let request = json!({ "assignees": [login] });
         let issue: Issue = self
             .repository_call(
@@ -764,14 +772,54 @@ impl GitHub {
                 Some(&request),
             )
             .await?;
-        if issue
-            .assignees
-            .iter()
-            .any(|a| a.login.eq_ignore_ascii_case(login))
-        {
-            Ok(())
+        let assignees: Vec<String> = issue.assignees.into_iter().map(|a| a.login).collect();
+        if assignees.iter().any(|a| a.eq_ignore_ascii_case(login)) {
+            Ok(assignees)
         } else {
             Err(GitHubError::NotAssignable(login.to_string()))
+        }
+    }
+
+    /// Takes `login` off the people issue `number` of `github` is assigned to.
+    pub async fn unassign_issue(
+        &self,
+        github: &str,
+        number: i64,
+        login: &str,
+    ) -> Result<(), GitHubError> {
+        let request = json!({ "assignees": [login] });
+        self.repository_do(
+            github,
+            Method::DELETE,
+            &format!("/issues/{number}/assignees"),
+            Some(&request),
+        )
+        .await
+    }
+
+    /// Whether `login` may write to `github`: a collaborator with the write, maintain or admin permission.
+    pub async fn can_write(&self, github: &str, login: &str) -> Result<bool, GitHubError> {
+        #[derive(Deserialize)]
+        struct Permission {
+            permission: String,
+        }
+        match self
+            .repository_call::<Permission>(
+                github,
+                Method::GET,
+                &format!("/collaborators/{login}/permission"),
+                None,
+            )
+            .await
+        {
+            Ok(found) => Ok(matches!(
+                found.permission.as_str(),
+                "admin" | "write" | "maintain"
+            )),
+            Err(GitHubError::Status { status, .. }) if status == reqwest::StatusCode::NOT_FOUND => {
+                Ok(false)
+            }
+            Err(e) => Err(e),
         }
     }
 
@@ -838,8 +886,13 @@ impl GitHub {
         github: &str,
         number: i64,
         title: &str,
+        head: Option<&str>,
     ) -> Result<String, GitHubError> {
-        let request = json!({ "commit_title": title, "merge_method": "merge" });
+        let mut request = json!({ "commit_title": title, "merge_method": "merge" });
+        // GitHub refuses the merge (409) when the head is not the one the person looked at.
+        if let Some(head) = head {
+            request["sha"] = json!(head);
+        }
         let merged: Merged = self
             .repository_call(
                 github,
