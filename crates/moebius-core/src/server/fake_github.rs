@@ -134,6 +134,11 @@ impl FakeGitHub {
         self.pulls.lock().unwrap().pull = pull(state, merged);
     }
 
+    /// Makes pull request 7 be against the branch `branch`, as an author who retargets it does.
+    pub(super) fn set_base(&self, branch: &str) {
+        self.pulls.lock().unwrap().pull["base"]["ref"] = json!(branch);
+    }
+
     /// Makes the head of pull request 7 the commit `sha`, as a push does.
     pub(super) fn set_head(&self, sha: &str) {
         self.pulls.lock().unwrap().pull["head"]["sha"] = json!(sha);
@@ -142,7 +147,8 @@ impl FakeGitHub {
 
 pub(super) fn pull(state: &str, merged: bool) -> Value {
     json!({ "number": 7, "state": state, "merged": merged,
-            "merge_commit_sha": merged.then_some("c0ffee"), "head": { "sha": "deadbeef" } })
+            "merge_commit_sha": merged.then_some("c0ffee"), "head": { "sha": "deadbeef" },
+            "base": { "ref": "main" } })
 }
 
 pub(super) fn check(name: &str, status: &str, conclusion: &str) -> Value {

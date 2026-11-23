@@ -643,6 +643,12 @@ fn a_review_of_a_pull_request_someone_else_opened_is_started_restricted_on_eithe
         .store
         .set_change_reviewed_head(change.id, &head)
         .unwrap();
+    let base = git(&clone, &["rev-parse", "main"]).unwrap();
+    setup
+        .app
+        .store
+        .set_change_reviewed_base(change.id, &base)
+        .unwrap();
     // The card has an earlier code run of Moebius's own: the review is of the pull request all the same.
     let earlier = setup
         .app
@@ -703,6 +709,7 @@ fn a_review_of_a_pull_request_someone_else_opened_is_started_restricted_on_eithe
                         launching.config.runner.clone(),
                         launching.run.clone.is_some(),
                         std::fs::read_dir(&launching.run.worktree).map(|d| d.count()),
+                        launching.run.worktree.clone(),
                         setup.app.store.run_restricted(launching.run.id).unwrap(),
                         prompt,
                     ));
@@ -711,7 +718,7 @@ fn a_review_of_a_pull_request_someone_else_opened_is_started_restricted_on_eithe
             );
             let name = format!("{harness:?}, restricted {restricted}");
             assert!(started.is_err(), "{name}");
-            let (marked, checked, servers, runner, has_clone, files, stored, prompt) =
+            let (marked, checked, servers, runner, has_clone, files, worktree, stored, prompt) =
                 seen.into_inner().expect("the run was launched");
             if !restricted {
                 // Moebius's own change is reviewed as before: a worktree of its clone, its servers, and its token as
@@ -729,6 +736,17 @@ fn a_review_of_a_pull_request_someone_else_opened_is_started_restricted_on_eithe
             assert_eq!(runner, None, "{name}: never on a runner");
             assert!(!has_clone, "{name}: no clone, no checkout");
             assert_eq!(files.ok(), Some(0), "{name}: an empty directory");
+            // Its own directory under the system's temporary directory, with no context file of the data directory
+            // or the home directory above it; the run was undone, so it is gone.
+            assert!(
+                worktree.starts_with(std::env::temp_dir()),
+                "{name}: {worktree:?}"
+            );
+            assert!(
+                !worktree.starts_with(&setup.app.data_dir),
+                "{name}: {worktree:?}"
+            );
+            assert!(!worktree.exists(), "{name}: removed with the run");
             // The prompt holds the pull request as of its commit, and no other branch: not the earlier code run's.
             assert!(prompt.contains(&head), "{name}: {prompt}");
             assert!(prompt.contains("feature.txt"), "{name}");

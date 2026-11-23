@@ -12,10 +12,13 @@ use super::{Result, Store, now};
 pub(super) const SCHEMA: &str = r#"
 ALTER TABLE repositories ADD COLUMN merge_reviewed INTEGER NOT NULL DEFAULT 1;
 ALTER TABLE runs ADD COLUMN restricted INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE changes ADD COLUMN base_branch TEXT;
+ALTER TABLE changes ADD COLUMN reviewed_base TEXT;
 CREATE TABLE external_reviews (
     id INTEGER PRIMARY KEY,
     change_id INTEGER NOT NULL REFERENCES changes(id),
     head TEXT NOT NULL,
+    base TEXT NOT NULL DEFAULT '',
     round INTEGER NOT NULL DEFAULT 0,
     run_id INTEGER,
     state TEXT NOT NULL,
@@ -89,6 +92,50 @@ impl Store {
             params![merge, id],
         )?;
         Ok(())
+    }
+
+    /// Records the branch the pull request is against, as the poll last read it.
+    pub fn set_change_base_branch(&self, change_id: i64, branch: &str) -> Result<()> {
+        self.conn().execute(
+            "UPDATE changes SET base_branch = ?1 WHERE id = ?2",
+            params![branch, change_id],
+        )?;
+        Ok(())
+    }
+
+    /// The branch the pull request is against, as the poll last read it.
+    pub fn change_base_branch(&self, change_id: i64) -> Result<Option<String>> {
+        Ok(self
+            .read()
+            .query_row(
+                "SELECT base_branch FROM changes WHERE id = ?1",
+                [change_id],
+                |r| r.get(0),
+            )
+            .optional()?
+            .flatten())
+    }
+
+    /// Records the commit of the default branch the review of the change is against, with the commit it reads.
+    pub fn set_change_reviewed_base(&self, change_id: i64, base: &str) -> Result<()> {
+        self.conn().execute(
+            "UPDATE changes SET reviewed_base = ?1 WHERE id = ?2",
+            params![base, change_id],
+        )?;
+        Ok(())
+    }
+
+    /// The commit of the default branch the review of the change is against.
+    pub fn change_reviewed_base(&self, change_id: i64) -> Result<Option<String>> {
+        Ok(self
+            .read()
+            .query_row(
+                "SELECT reviewed_base FROM changes WHERE id = ?1",
+                [change_id],
+                |r| r.get(0),
+            )
+            .optional()?
+            .flatten())
     }
 
     /// Marks the run as restricted, as it is started: it reads a pull request someone else opened, has no tools, and
@@ -181,11 +228,11 @@ impl Store {
         id: i64,
         run_id: i64,
         round: i64,
-        head: &str,
+        (head, base): (&str, &str),
     ) -> Result<()> {
         self.conn().execute(
-            "UPDATE external_reviews SET state = 'running', run_id = ?1, round = ?2, head = ?3 WHERE id = ?4",
-            params![run_id, round, head, id],
+            "UPDATE external_reviews SET state = 'running', run_id = ?1, round = ?2, head = ?3, base = ?4 WHERE id = ?5",
+            params![run_id, round, head, base, id],
         )?;
         Ok(())
     }
@@ -242,7 +289,9 @@ mod tests {
                 .unwrap(),
             "only one thread wins"
         );
-        store.start_external_review(first, 5, 1, "bbb").unwrap();
+        store
+            .start_external_review(first, 5, 1, ("bbb", "base0"))
+            .unwrap();
         assert!(
             store.external_review_of_head(change.id, "bbb").unwrap(),
             "the head the run reads"

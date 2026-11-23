@@ -54,8 +54,11 @@ pub(in crate::harness) fn restricted_run(
     app.store
         .set_run_restricted(run.id)
         .map_err(|e| StartError::Store(fail(app, run.id, e.to_string())))?;
-    let empty = app.data_dir.join(format!("runs/{}/empty", run.id));
-    std::fs::create_dir_all(&empty)
+    // A directory of its own under the system's temporary directory, which has no `AGENTS.md` or `CLAUDE.md` above it
+    // for a harness to find, as the data directory may (a person's home directory, say). Removed with the run.
+    let empty =
+        std::env::temp_dir().join(format!("moebius-review-{}-{}", run.id, std::process::id()));
+    std::fs::create_dir(&empty)
         .map_err(|e| StartError::WorktreeFailed(fail(app, run.id, e.to_string())))?;
     app.store
         .set_run_worktree(run.id, &empty.to_string_lossy())

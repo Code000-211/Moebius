@@ -583,6 +583,8 @@ impl App {
         )?;
         self.store
             .set_change_outside(change.id, &request.author, &card.column)?;
+        self.store
+            .set_change_base_branch(change.id, &request.base)?;
         let change = self.change(change.id)?;
         self.move_card(card.id, columns::IN_REVIEW, None)?;
         self.store.add_inbox_item(
@@ -638,6 +640,11 @@ impl App {
             self.store
                 .set_change_head(change.id, head, crate::store::now())?;
             self.store.set_change_reviewed_head(change.id, head)?;
+            let base = git(
+                Path::new(&repository.path),
+                &["rev-parse", &repository.base_ref()],
+            )?;
+            self.store.set_change_reviewed_base(change.id, &base)?;
         }
         let context = BTreeMap::from([
             ("repository".into(), repository.name.clone()),

@@ -676,3 +676,140 @@ async fn whether_a_run_is_restricted_is_kept_on_the_run_and_fails_closed() {
     f.server.app.store.delete_card(card.id, false).ok();
     assert!(f.server.app.is_restricted_review(&run));
 }
+
+/// Has the pull request's checks pending, the Reviewer approve it, and the round wait for them: its run ended, its answer
+/// is read, and the round is `approved`, not merged.
+async fn approved_and_waiting(f: &Fixture, card: &Card) {
+    f.checks_are("in_progress", "");
+    f.server.poll_github().await;
+    f.author_says_done().await;
+    assert_eq!(f.reviews_of(card).len(), 0, "it waits for the checks");
+    f.checks_are("completed", "success");
+    f.server.poll_github().await;
+    let run = f.reviews_of(card).remove(0);
+    f.checks_are("in_progress", "");
+    f.server.poll_github().await;
+    f.reviewer_ends(card, &run, &said("approve", "Fine.", json!([])))
+        .await;
+    let change = f.server.app.followed_change(card).unwrap().unwrap();
+    assert_eq!(
+        f.server.app.store.external_reviews(change.id).unwrap()[0].state,
+        "approved"
+    );
+    assert!(f.merged_requests().is_empty());
+}
+
+async fn tick(f: &Fixture, card: &Card) {
+    let (engine, id) = (f.engine.clone(), card.id);
+    tokio::task::spawn_blocking(move || engine.tick(id).unwrap())
+        .await
+        .unwrap();
+    f.server.poll_github().await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_held_card_or_paused_agents_stop_a_round_from_posting_and_merging() {
+    // An approval that waits for its checks does not merge while the card is held, and does when it is released.
+    let (f, card, _) = ready().await;
+    approved_and_waiting(&f, &card).await;
+    f.server
+        .app
+        .store
+        .hold_card(card.id, "person", Some("wait"))
+        .unwrap();
+    f.checks_are("completed", "success");
+    f.server.poll_github().await;
+    tick(&f, &card).await;
+    assert!(f.merged_requests().is_empty(), "held");
+    assert!(f.fake.review_posts.lock().unwrap().is_empty());
+    f.server.app.store.release_card(card.id).unwrap();
+    tick(&f, &card).await;
+    assert_eq!(f.merged_requests().len(), 1, "released");
+
+    // The same for pause all, which the poll and the author's `/done` meet as well as the engine.
+    let (g, card, _) = ready().await;
+    approved_and_waiting(&g, &card).await;
+    g.server.app.store.pause_runs("person").unwrap();
+    g.checks_are("completed", "success");
+    g.server.poll_github().await;
+    tick(&g, &card).await;
+    g.author_says_done().await;
+    assert!(g.merged_requests().is_empty(), "paused");
+    assert!(g.fake.review_posts.lock().unwrap().is_empty());
+    g.server.app.store.resume_runs().unwrap();
+    tick(&g, &card).await;
+    assert_eq!(g.merged_requests().len(), 1, "resumed");
+
+    // A run that ended while the card was held is read once it is released, and writes nothing before.
+    let (h, card, _) = ready().await;
+    h.author_says_done().await;
+    let run = h.reviews_of(&card).remove(0);
+    h.server
+        .app
+        .store
+        .hold_card(card.id, "person", None)
+        .unwrap();
+    h.reviewer_ends(&card, &run, &said("changes", "No.", json!([])))
+        .await;
+    assert!(h.fake.review_posts.lock().unwrap().is_empty(), "held");
+    h.server.app.store.release_card(card.id).unwrap();
+    tick(&h, &card).await;
+    assert_eq!(h.fake.review_posts.lock().unwrap().len(), 1, "released");
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_pull_request_retargeted_to_another_branch_is_never_merged() {
+    let (f, card, _) = ready().await;
+    f.author_says_done().await;
+    let run = f.reviews_of(&card).remove(0);
+    // The author retargets the approved pull request to a release branch; the poll reads it.
+    f.fake.set_base("release");
+    f.server.poll_github().await;
+    f.reviewer_ends(&card, &run, &said("approve", "Fine.", json!([])))
+        .await;
+    assert!(f.merged_requests().is_empty());
+    assert!(
+        f.fake.review_posts.lock().unwrap().is_empty(),
+        "no approval is written for it either"
+    );
+    let change = f.server.app.followed_change(&card).unwrap().unwrap();
+    assert_eq!(
+        f.server.app.store.external_reviews(change.id).unwrap()[0].state,
+        "stale"
+    );
+    assert!(
+        f.on_the_pull_request()
+            .iter()
+            .any(|t| t.contains("another branch")),
+        "{:?}",
+        f.on_the_pull_request()
+    );
+    // A pull request against another branch is not started on either.
+    let (g, card, _) = ready().await;
+    g.fake.set_base("release");
+    g.server.poll_github().await;
+    g.author_says_done().await;
+    assert_eq!(g.reviews_of(&card).len(), 0);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn what_a_stranger_made_the_reviewer_say_is_redacted_before_it_is_posted() {
+    let (f, card, _) = ready().await;
+    f.author_says_done().await;
+    let run = f.reviews_of(&card).remove(0);
+    let secret = "sk-ant-abcdefghijklmnopqrstuvwxyz0123456789";
+    let text = said(
+        "changes",
+        &format!("A secret in the summary: {secret}."),
+        json!([
+            { "path": "src/lib.rs", "line": 3, "body": format!("And on a line: {secret}") },
+            { "path": "src/lib.rs", "line": 99, "body": format!("Off the diff: {secret}") },
+        ]),
+    );
+    f.reviewer_ends(&card, &run, &text).await;
+    let posts = f.fake.review_posts.lock().unwrap().clone();
+    assert_eq!(posts.len(), 1);
+    let all = posts[0].to_string();
+    assert!(!all.contains(secret), "{all}");
+    assert!(all.contains("[redacted:anthropic-key]"), "{all}");
+}

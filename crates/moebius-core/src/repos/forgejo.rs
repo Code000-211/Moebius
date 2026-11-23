@@ -101,6 +101,9 @@ pub struct PullRequest {
     pub merged: bool,
     pub merge_commit_sha: Option<String>,
     pub head: Head,
+    /// The branch it is against now.
+    #[serde(default)]
+    pub base: Option<Base>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]

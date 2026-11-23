@@ -101,6 +101,9 @@ pub struct MergeRequest {
     pub sha: String,
     pub merge_commit_sha: Option<String>,
     pub squash_commit_sha: Option<String>,
+    /// The branch it is against now.
+    #[serde(default)]
+    pub target_branch: Option<String>,
 }
 
 impl MergeRequest {
@@ -1028,6 +1031,7 @@ mod tests {
     #[test]
     fn a_merge_leaves_the_merge_commit_the_squashed_one_or_the_head() {
         let request = |merge: Option<&str>, squash: Option<&str>| MergeRequest {
+            target_branch: None,
             state: "merged".into(),
             sha: "head".into(),
             merge_commit_sha: merge.map(Into::into),

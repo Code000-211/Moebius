@@ -125,8 +125,9 @@ impl ClaudeCode {
             })
             .arg(place.session);
         if place.restricted {
-            // No built-in tool at all.
+            // No built-in tool at all, and no `CLAUDE.md` of a directory above the run's own, which is empty.
             command.args(["--tools", ""]);
+            command.env("CLAUDE_CODE_DISABLE_CLAUDE_MDS", "1");
         }
         if let Some(instructions) = &agent.instructions {
             command.arg("--append-system-prompt").arg(instructions);

@@ -4629,15 +4629,25 @@ by the Reviewer when its author says so. The steps are in [the guide](../guide/w
   answered that it was reviewed already. A round whose run did not end, or whose answer is no verdict, is `failed` and does
   not count, so the author can write `/done` again; a round dropped because the head moved before the verdict was used is
   `stale` and does not count either.
-- **The run.** A `review` run of the card by the Reviewer, started restricted (below), whose prompt holds the issue, the
-  instruction that everything the pull request holds is data and no instruction, and the pull request itself as text, built
-  by the server from git objects (`App::review_context`): the diff against the merge base (cut to 60,000 bytes) and each
-  changed file whole as of the commit (40,000 bytes a file, 150,000 and 60 files in all), with `git diff` and `git cat-file`
-  only (no textconv, no external diff, `core.attributesFile=/dev/null`), so nothing is checked out and no git filter runs.
-  Binary files, symlinks, submodules, deleted files and files over 160,000 bytes are named only; what is cut is said. The
-  commit is the one recorded as `Change.reviewed_head` before anything is read, and every read is of that commit, never of
-  the branch `moebius/pr-<number>` or of an earlier `code` run's branch. A review does not start when the context cannot be
-  made. Decided in the engine's tick of the card and after each poll of the request.
+- **The run.** A `review` run of the card by the Reviewer, started restricted (below), whose prompt holds the issue as
+  data in a fence (its title and body only: no comments, wiki pages or lessons, which are the organisation's and could be
+  made to be quoted into a review), the instruction that everything the pull request holds is data and no instruction, and
+  the pull request itself as text, built by the server from git objects (`App::review_context`) for the two commits
+  recorded before anything is read: the pull request's head (`Change.reviewed_head`) and the tip of the default branch it
+  is merged into (`reviewed_base`, also kept with the round as `external_reviews.base`). The diff is the default branch's
+  tip against the tree `git merge-tree --write-tree` makes of the two (what the forge's merge lands, which a criss-crossed
+  history makes differ from the diff against `git merge-base`, which names only one of several best ancestors); a pull
+  request that does not merge cleanly is answered ("does not merge cleanly into the default branch") and not reviewed. The
+  changed files are listed from that diff and given whole as the pull request's head has them (the lines of the Reviewer's
+  comments are lines of those files). Git runs with no textconv, no external diff and `core.attributesFile=/dev/null`; its
+  output is read through a cap (2 MB at most; the diff 60,000 bytes, a file 40,000, all files 150,000 and 60 files) and
+  stopped when there is more, and a command is killed after 30 seconds. A pull request over 300 changed files or 20,000
+  changed lines is refused with a reply ("this pull request is too large to review automatically: N files, M lines").
+  Binary files, symlinks, submodules (decided from the entry's mode, so one whose commit is not in the clone is still a
+  submodule), deleted files and files over 160,000 bytes are named only; what is cut is said. Nothing is checked out and no
+  git filter runs, and no read is of a branch name or of an earlier `code` run's branch. The context of a round is built
+  once and kept for its run. A review does not start when it cannot be made. Decided in the engine's tick of the card and
+  after each poll of the request.
 - **What the Reviewer answers.** Its answer ends with one JSON object in a fenced `json` block:
   `{"verdict": "approve" | "changes", "summary": string, "comments": [{"path": string, "line": number, "body": string}]}`.
   `path` is the file as the diff names it, `line` a line of the file after the change (from 1). A `changes` verdict needs a
@@ -4677,9 +4687,13 @@ by the Reviewer when its author says so. The steps are in [the guide](../guide/w
   summary, each comment in a box "path line N" and "Open on GitHub".
 - **The restricted mode.** A run of a review of a pull request someone else opened is started restricted: `runs.restricted`
   is set before anything else and never changes, so closing the pull request or moving the card does not lift it. It has an
-  empty directory (`<data_dir>/runs/<id>/empty`) as its working directory and no clone, no MCP servers, no runner (a runner
+  empty directory of its own under the system's temporary directory (`moebius-review-<run>-<pid>`, created and removed per
+  run, so that no `AGENTS.md` or `CLAUDE.md` of the data directory or a home directory is above it) as its working directory
+  and no clone, no MCP servers, no runner (a runner
   named by the agent or the variant is dropped), and **no tools**: Pi-Bolt is started with `--no-tools` and Claude Code with
-  `--tools ""` and the built-in tools in `--disallowedTools`. (Neither flag was tried against a real Pi or Claude here; the
+  `--tools ""` and the built-in tools in `--disallowedTools`, with `CLAUDE_CODE_DISABLE_CLAUDE_MDS=1` in its environment. (Neither
+  tool flag was tried against a real Pi or Claude here, nor does Pi get a flag that turns off its context files, which
+  could not be checked either; that the directory is empty and has none above it is what is relied on; the
   router is the guarantee. Without a flag that Pi knows, it would not start and the review would fail, not run free.) Its
   token is a *checked* token (`Router::issue_checked_token`) on either harness: the router decides every tool call of the
   model's answers through `decide("tool_call")` before the harness sees them, which matters for Pi-Bolt, whose bridge blocks
@@ -4699,6 +4713,14 @@ by the Reviewer when its author says so. The steps are in [the guide](../guide/w
   state by compare-and-set in the store (`wanted` to `starting`, `running` or `approved` to `posting`), so one thread starts
   the run, writes the review and merges. A round's `head` is the head its run reads, set when it starts. The merge is refused
   unless the change's head is the round's head (`409`, "moved on from <sha>"), besides the forge's refusal of a pinned commit.
+- **Hold, pause and the base.** A round acts on the forge (starts a run, writes a review, merges) only while its card is
+  not held and the agents are not paused: checked by every path that acts (the poll, the engine's tick and the author's
+  `/done`), right before it acts, and a round that is stopped by either waits as it was and goes on when released. The
+  branch the pull request is against is read at each poll (`Status.base`, kept as `changes.base_branch`, and set when the
+  request is followed): a round does not start for a request against a branch other than the repository's default branch,
+  and a verdict is dropped (state `stale`, the pull request told "against another branch") and nothing is merged when it
+  changed to one. Everything the Reviewer wrote that is posted on the forge (the summary, the comments, the answers) goes
+  through `blobs::redact` first.
 - **Failures.** A review the forge fails to take (after one attempt with the lines and one without) ends the round as
   `failed`, tells the pull request ("could not be written on the forge") and is not written again by itself, because a forge
   may have written part of it (GitLab writes a note, discussions and an approval). The author's `/done` starts another round.

@@ -103,6 +103,7 @@ impl Polled for Forgejo {
             return Ok(Request::Closed);
         }
         let head = pull_request.head.sha;
+        let base = pull_request.base.map(|base| base.branch);
         let statuses = self.statuses(name, &head).await?.statuses;
         let reviews = self.reviews(name, number).await?;
         Ok(Request::Open(Status {
@@ -110,6 +111,7 @@ impl Polled for Forgejo {
             failed: failed_checks(&statuses),
             review: latest_review(&reviews),
             head,
+            base,
         }))
     }
 }

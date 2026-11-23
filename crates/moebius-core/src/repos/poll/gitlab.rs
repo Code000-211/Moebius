@@ -108,6 +108,7 @@ impl Polled for GitLab {
             _ => {}
         }
         let head = merge_request.sha;
+        let base = merge_request.target_branch;
         let pipeline = self
             .pipelines(name, number)
             .await?
@@ -127,6 +128,7 @@ impl Polled for GitLab {
             checks,
             failed,
             review: (!approvals.approved_by.is_empty()).then(|| "approved".to_string()),
+            base,
         }))
     }
 }

@@ -24,6 +24,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 use std::sync::Arc;
 
+use super::review_context::ContextError;
 use super::{App, AppError, Result, columns};
 use crate::board::{CardRuns, Variant, structured};
 use crate::decide::Actor;
@@ -36,6 +37,15 @@ pub const ROUND_LIMIT: i64 = 3;
 
 /// The kind of the inbox item that asks the owner to look at a pull request the Reviewer read [`ROUND_LIMIT`] times.
 pub const ROUNDS_SPENT: &str = "review_rounds_spent";
+
+/// `text` with its first letter in upper case.
+fn capitalise(text: &str) -> String {
+    let mut chars = text.chars();
+    chars
+        .next()
+        .map(|c| c.to_uppercase().collect::<String>() + chars.as_str())
+        .unwrap_or_default()
+}
 
 fn reviewer() -> Actor {
     Actor::Script {
@@ -95,6 +105,21 @@ impl App {
         Ok(runs)
     }
 
+    /// Whether a round of the card may act now: the card is not held and the agents are not paused. A round that posts a
+    /// review or merges is the server acting for the owner, and the owner's hold and pause stop it as they stop a run.
+    fn may_act(&self, card_id: i64) -> Result<bool> {
+        Ok(self.card(card_id)?.held.is_none() && self.runs_paused()?.is_none())
+    }
+
+    /// Whether the pull request is against the repository's default branch, as the poll last read it. Unknown, which a
+    /// forge that does not say leaves it, is as the follow found it.
+    fn against_default_branch(&self, repository: &Repository, change: &Change) -> Result<bool> {
+        Ok(self
+            .store
+            .change_base_branch(change.id)?
+            .is_none_or(|branch| branch == repository.default_branch))
+    }
+
     /// The open change of the card that is a pull request someone else opened.
     pub(crate) fn followed_change(&self, card: &Card) -> Result<Option<Change>> {
         Ok(self
@@ -149,9 +174,9 @@ impl App {
         let (true, Some(number)) = (repository.answer_on_forge, change.pull_request) else {
             return;
         };
-        let written = self
-            .forge(repository)
-            .and_then(|forge| Ok(forge.comment_issue(repository, number, text)?));
+        let written = self.forge(repository).and_then(|forge| {
+            Ok(forge.comment_issue(repository, number, &crate::blobs::redact(text))?)
+        });
         if let Err(e) = written {
             self.bus.publish(crate::bus::Event::ForgeError {
                 repository: repository.name.clone(),
@@ -198,6 +223,11 @@ impl App {
                     r.head == head && r.state == "posted" && r.verdict.as_deref() == Some("approve")
                 });
             if let (Some(round), true) = (unmerged, repository.merge_reviewed) {
+                if !self.may_act(card.id)? {
+                    return Ok(
+                        "Moebius is paused, or the card is held, so it is not merged now.".into(),
+                    );
+                }
                 if !matches!(change.checks.as_deref(), Some("success") | None)
                     || change.checks_head.as_deref() != Some(head)
                 {
@@ -264,6 +294,10 @@ impl App {
             {
                 return Ok(());
             }
+            // The owner's hold and pause stop what a round does on the forge, whichever thread comes here.
+            if !self.may_act(card_id)? {
+                return Ok(());
+            }
             self.advance(&card, &change)
         });
         if let Err(e) = result {
@@ -288,6 +322,9 @@ impl App {
                 "running" => self.advance_running(&repository, card, change, &round)?,
                 "approved" => {
                     // The checks of the head may be green now; one thread takes the round to write it.
+                    if !self.may_act(card.id)? {
+                        continue;
+                    }
                     if !self
                         .store
                         .move_external_review(round.id, "approved", "posting")?
@@ -375,6 +412,38 @@ impl App {
                 return Ok(());
             }
         }
+        if !self.against_default_branch(repository, change)? {
+            return end(
+                "another branch",
+                "This pull request is against a branch other than the default branch, so nothing was reviewed.",
+            );
+        }
+        // The commits the review is of, recorded before anything is read: the head, and the default branch's tip it is
+        // merged into. Everything the Reviewer is given is read from these two, never from a name.
+        let base = git(
+            Path::new(&repository.path),
+            &["rev-parse", &repository.base_ref()],
+        )?;
+        self.store.set_change_reviewed_head(change.id, head)?;
+        self.store.set_change_reviewed_base(change.id, &base)?;
+        // What the Reviewer is given is made now, once, so that a pull request that is too big or does not merge is
+        // answered and not started.
+        match self.review_context(card) {
+            Ok(_) => {}
+            Err(e @ ContextError::TooLarge { .. }) => {
+                return end(
+                    "too large",
+                    &format!("{}, so nothing was reviewed.", capitalise(&e.to_string())),
+                );
+            }
+            Err(ContextError::Conflicts) => {
+                return end(
+                    "conflicts",
+                    "This pull request does not merge cleanly into the default branch, so nothing was reviewed. Resolve the conflicts, push, then write /done again.",
+                );
+            }
+            Err(e) => return Err(AppError::Conflict(e.to_string())),
+        }
         // Only one thread starts the run: the poll and the engine both come here.
         if !self
             .store
@@ -382,7 +451,6 @@ impl App {
         {
             return Ok(());
         }
-        self.store.set_change_reviewed_head(change.id, head)?;
         let context = BTreeMap::from([
             ("repository".into(), repository.name.clone()),
             (
@@ -410,7 +478,7 @@ impl App {
         };
         // The round is of the head the run reads, which is the one that was fetched just now.
         self.store
-            .start_external_review(round.id, run.id, rounds, head)?;
+            .start_external_review(round.id, run.id, rounds, (head, &base))?;
         if no_checks {
             self.answer_on_request(
                 repository,
@@ -435,6 +503,9 @@ impl App {
             return Ok(());
         };
         if !matches!(run.status.as_str(), "succeeded" | "failed" | "stopped") {
+            return Ok(());
+        }
+        if !self.may_act(card.id)? {
             return Ok(());
         }
         // One thread reads the answer of the run; the other finds the round moved.
@@ -508,6 +579,28 @@ impl App {
         round: &ExternalReview,
         said: &structured::Structured,
     ) -> Result<()> {
+        // Hold and pause come first: the round is put back as it was found and nothing is written.
+        if !self.may_act(card.id)? {
+            self.store
+                .move_external_review(round.id, "posting", "running")?;
+            return Ok(());
+        }
+        // A pull request that was retargeted to another branch is no pull request that was reviewed.
+        if !self.against_default_branch(repository, change)? {
+            self.store.set_external_review_verdict(
+                round.id,
+                "stale",
+                said.verdict,
+                &said.summary,
+                &said.comments,
+            )?;
+            self.answer_on_request(
+                repository,
+                change,
+                "This pull request is against another branch now, so the review was dropped and nothing was merged.",
+            );
+            return Ok(());
+        }
         let outcome = self.write_verdict(repository, card, change, round, said);
         if let Err(e) = &outcome {
             let reason = e.to_string();
@@ -579,7 +672,15 @@ impl App {
             }
         }
         let (comments, rest) = self.split_comments(repository, &round.head, &said.comments);
-        let body = format!("{}{rest}", said.summary.trim());
+        // Whatever the Reviewer wrote is redacted before it is posted: it was told by a stranger's pull request.
+        let body = crate::blobs::redact(&format!("{}{rest}", said.summary.trim()));
+        let comments: Vec<ReviewComment> = comments
+            .into_iter()
+            .map(|c| ReviewComment {
+                body: crate::blobs::redact(&c.body),
+                ..c
+            })
+            .collect();
         let post = ReviewPost {
             approve,
             head: &round.head,
@@ -593,13 +694,13 @@ impl App {
                 // A forge that refuses the lines still takes the review without them.
                 let plain = ReviewPost {
                     comments: &[],
-                    body: &format!("{}{}", said.summary.trim(), {
+                    body: &crate::blobs::redact(&format!("{}{}", said.summary.trim(), {
                         let all: String = comments
                             .iter()
                             .map(|c| format!("\n\n`{}` line {}: {}", c.path, c.line, c.body))
                             .collect();
                         format!("{all}{rest}")
-                    }),
+                    })),
                     ..post
                 };
                 forge
@@ -655,6 +756,13 @@ impl App {
     ) -> Result<std::result::Result<(), String>> {
         let by = reviewer();
         let author = change.outside_author.clone().unwrap_or_default();
+        // Right before it merges: the owner's hold and pause, and the branch the pull request is against now.
+        if !self.may_act(card.id)? {
+            return Ok(Err("agents are paused, or the card is held".into()));
+        }
+        if !self.against_default_branch(repository, &self.change(change.id)?)? {
+            return Ok(Err("the pull request is against another branch".into()));
+        }
         let merged = self.merge_one(
             &by,
             change.id,

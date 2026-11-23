@@ -275,6 +275,8 @@ pub struct App {
     /// What starts the review runs of followed pull requests in place of `runs`, for tests.
     #[cfg(test)]
     review_runs: Mutex<Option<Arc<dyn crate::board::CardRuns>>>,
+    /// The contexts the Reviewer of followed pull requests is given, built once per round (see `review_context`).
+    review_contexts: review_context::Contexts,
     /// Where the server and the web app run (see `whereabouts`).
     whereabouts: whereabouts::Whereabouts,
 }
@@ -350,6 +352,7 @@ impl App {
             runs: OnceLock::new(),
             #[cfg(test)]
             review_runs: Mutex::default(),
+            review_contexts: Default::default(),
             whereabouts: Default::default(),
         }
     }

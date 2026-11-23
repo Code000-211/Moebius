@@ -78,8 +78,8 @@ impl Router {
         token
     }
 
-    /// Whether the answers to `token` have their tool calls checked.
-    #[cfg(test)]
+    /// Whether the answers to `token` have their tool calls checked. For the tests of the harnesses, which run on Unix.
+    #[cfg(all(test, unix))]
     pub(crate) fn is_checked(&self, token: &str) -> bool {
         self.checked
             .read()

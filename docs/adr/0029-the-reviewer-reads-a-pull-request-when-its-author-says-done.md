@@ -47,10 +47,13 @@ server merge what the Reviewer approves. A pull request is somebody else's code,
   person the server does not trust, and every attempt to let an agent read it with tools failed in another way (a path
   the checks read differently from the harness, arguments the harness repairs after the check, a checkout that runs the
   git filters the pull request's attributes name, a symlink on a runner). So the server reads it itself, from git objects
-  only, and gives it to the Reviewer as text (`app::review_context`): the diff against the merge base and each changed
-  file whole, as of the commit recorded as reviewed, with `git diff` and `git cat-file`, no textconv, no external diff,
-  no attributes file, and no worktree, so no filter or hook of the pull request ever runs. It is cut to a size and says
-  where; binary files, symlinks and submodules are named only. The commit is recorded before anything is read and every
+  only, and gives it to the Reviewer as text (`app::review_context`): the diff of what merging it does to the default
+  branch (the default branch's tip against the tree `git merge-tree --write-tree` makes, since `git merge-base` names one
+  of several best ancestors of a criss-crossed history and hides what the forge's merge would revert) and each changed
+  file whole as the pull request has it, with `git diff` and `git cat-file`, no textconv, no external diff, no attributes
+  file, and no worktree, so no filter or hook of the pull request ever runs. Git's output is read through a cap and a
+  time limit, and a pull request over a size is refused with the reason. It is built once per round and cut to a size,
+  and says where; binary files, symlinks and submodules are named only. The commit is recorded before anything is read and every
   read is of that commit, never of a branch name that may move, so the Reviewer reads the tree that is merged, whatever
   earlier work the card has.
 - **The run is started restricted, once.** It is recorded as restricted on its row before anything else (`runs.restricted`),
@@ -64,6 +67,16 @@ server merge what the Reviewer approves. A pull request is somebody else's code,
 - **The narrower mode stays for other restricted uses** (`guard::restricted_refusal`): only the tools that read files, on
   paths that resolve inside a worktree with symlinks followed, no leading `@` (which Pi strips from a path), no absolute or
   `..` pattern, and arguments that are a JSON object. Nothing uses it for a review of a pull request now.
+- **A round acts only while the owner lets it.** Starting a run, writing a review and merging are the server acting for the
+  owner, so a held card and Pause all stop them on every path (the poll, the tick and the author's `/done`), right before
+  they act. The merge is pinned to the head and to the branch: the poll reads the branch a request is against, and a
+  request retargeted from the default branch is neither started nor merged, and its verdict is dropped. The default branch's
+  tip is recorded with the round, so what was judged is known; the tip may move on, as it does for a person's review.
+- **The prompt holds the issue only, as data.** The wiki pages an issue links, the lessons, and the comments are the
+  organisation's and could be made to be quoted into a review by a stranger's text, so the prompt has none of them; the
+  issue's title and body are in a fence. What the Reviewer wrote is redacted before it is posted.
+- **The run starts in a directory of its own** under the system's temporary directory, with no `AGENTS.md` or `CLAUDE.md`
+  above it, removed with the run.
 - **Rounds are taken by one thread.** The poll and the engine both move rounds along, so a round changes state by a
   compare-and-set in the store (`starting`, `posting`), and only the thread that wins starts the run, writes the review or
   merges. A review the forge fails to take is not written again by itself (a forge such as GitLab may have written part of
