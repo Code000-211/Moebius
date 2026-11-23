@@ -5,6 +5,7 @@ import {
   categoryOf,
   folderOf,
   foldersOf,
+  frontMatterOf,
   groupOf,
   headings,
   joinPath,
@@ -198,5 +199,17 @@ describe("labels", () => {
     expect(labelProblem("a: b")).not.toBeNull();
     expect(labelProblem("x".repeat(41))).not.toBeNull();
     expect(labelProblem("x".repeat(40))).toBeNull();
+  });
+});
+
+describe("front matter", () => {
+  it("is the text before the body", () => {
+    expect(frontMatterOf({ text: "---\nlabels: [A]\n---\n# P\n", body: "# P\n" })).toBe(
+      "---\nlabels: [A]\n---\n",
+    );
+    expect(frontMatterOf({ text: "# P\n", body: "# P\n" })).toBe("");
+    expect(frontMatterOf({ text: "---\nlabels: [A]\n---\n", body: "" })).toBe(
+      "---\nlabels: [A]\n---\n",
+    );
   });
 });

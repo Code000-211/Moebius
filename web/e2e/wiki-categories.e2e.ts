@@ -124,15 +124,19 @@ describe("categories and labels of the wiki", () => {
     await page.getByText(/A label cannot hold/).waitFor();
     await labels.getByLabel("New label").press("Escape");
 
-    // The label is in the page's file as front matter, which the editor shows, and the page does not draw.
+    // The labels are the page's front matter: the page does not draw it and the editor does not show it, and an edit
+    // of the text keeps them.
     const article = page.getByRole("article", { name: "Rota" });
     expect(await article.innerText()).not.toContain("labels:");
     await article.getByRole("button", { name: "Edit" }).click();
     const editor = page.getByRole("form", { name: "Edit Rota" });
-    expect(await editor.getByLabel("Text").inputValue()).toBe(
-      "---\nlabels: [Runbook, On call]\n---\n# Rota\n\nWho is on call.\n",
-    );
-    await editor.getByRole("button", { name: "Cancel" }).click();
+    expect(await editor.getByLabel("Text").inputValue()).toBe("# Rota\n\nWho is on call.\n");
+    await editor.getByLabel("Text").fill("# Rota\n\nWho is on call this week.");
+    await editor.getByRole("button", { name: "Save" }).click();
+    await editor.waitFor({ state: "detached" });
+    await page.getByRole("article", { name: "Rota" }).getByText("this week").waitFor();
+    await page.getByRole("group", { name: "Labels" }).getByText("Runbook").waitFor();
+    await page.getByRole("group", { name: "Labels" }).getByText("On call").waitFor();
 
     // The chips above the tree: every label in use, and All.
     const filter = page.getByRole("group", { name: "Filter by label" });
@@ -167,7 +171,7 @@ describe("categories and labels of the wiki", () => {
     await page.getByRole("article", { name: "Rota" }).getByRole("button", { name: "Edit" }).click();
     expect(
       await page.getByRole("form", { name: "Edit Rota" }).getByLabel("Text").inputValue(),
-    ).toBe("# Rota\n\nWho is on call.\n");
+    ).toBe("# Rota\n\nWho is on call this week.\n");
     await page.context().close();
   });
 });

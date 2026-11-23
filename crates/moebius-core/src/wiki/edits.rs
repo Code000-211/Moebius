@@ -36,12 +36,24 @@ impl Wiki {
         message: Option<&str>,
         base: Option<&str>,
     ) -> Result<PageView> {
+        self.write_page_with(app, by, path, message, base, |_| Ok(text.to_string()))
+    }
+
+    /// [`Wiki::write_page_from`] for an edit of the page as it is: `edit` is given the page's text (`None` for a page
+    /// that is not there) in the turn of the write, after the clone has followed `origin` and `base` has been
+    /// checked, and answers the text to write. A change made from what was read earlier would revert whatever came
+    /// in between; this one cannot.
+    pub(super) fn write_page_with(
+        &self,
+        app: &App,
+        by: &Author,
+        path: &str,
+        message: Option<&str>,
+        base: Option<&str>,
+        edit: impl FnOnce(Option<&str>) -> Result<String>,
+    ) -> Result<PageView> {
         let file = file_of(path)?;
         check_project(app, path)?;
-        let mut text = text.to_string();
-        if !text.is_empty() && !text.ends_with('\n') {
-            text.push('\n');
-        }
         {
             let _turn = self.turn();
             self.follow(app)?;
@@ -69,6 +81,15 @@ impl Wiki {
                         current,
                     });
                 }
+            }
+            let current = if target.is_file() {
+                Some(std::fs::read_to_string(&target)?)
+            } else {
+                None
+            };
+            let mut text = edit(current.as_deref())?;
+            if !text.is_empty() && !text.ends_with('\n') {
+                text.push('\n');
             }
             let verb = if target.is_file() { "Update" } else { "Add" };
             let message = message_or(message, || format!("{verb} {path}"));
@@ -239,6 +260,25 @@ mod tests {
 
     fn origin_log(origin: &Path) -> String {
         git(origin, &["log", "--format=%an <%ae>|%s", "main"]).unwrap_or_default()
+    }
+
+    #[test]
+    fn setting_labels_keeps_a_body_that_came_from_origin_since_the_clone_last_followed_it() {
+        let dir = tempfile::tempdir().unwrap();
+        let (app, wiki, origin) = opened(dir.path());
+        wiki.write_page(&app, &ada(), "Handbook", "Old body\n", None)
+            .unwrap();
+        // Someone else changes the body on origin; the clone has not followed it yet.
+        push_from_elsewhere(dir.path(), &origin, "Handbook.md", "Theirs\n");
+        let page = wiki
+            .set_labels(&app, &ada(), "Handbook", &["Runbook".to_string()], None)
+            .unwrap();
+        assert_eq!(page.text, "---\nlabels: [Runbook]\n---\nTheirs\n");
+        assert_eq!(page.labels, ["Runbook"]);
+        assert!(matches!(
+            wiki.set_labels(&app, &ada(), "Nothing", &["A".to_string()], None),
+            Err(AppError::NotFound(_))
+        ));
     }
 
     #[test]

@@ -225,3 +225,13 @@ export function labelProblem(label: string): string | null {
   }
   return null;
 }
+
+/**
+ * The front matter of a page as its file has it (`---` lines, keys and all), which the editor does not show: the text
+ * before the body, which is the end of the text. Empty for a page without front matter.
+ */
+export function frontMatterOf(page: { text: string; body: string }): string {
+  return page.text.endsWith(page.body)
+    ? page.text.slice(0, page.text.length - page.body.length)
+    : "";
+}

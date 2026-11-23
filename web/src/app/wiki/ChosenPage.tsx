@@ -35,6 +35,7 @@ import {
   categoriesOf,
   categoryOf,
   folderOf,
+  frontMatterOf,
   groupOf,
   headings,
   joinPath,
@@ -183,7 +184,8 @@ export function ChosenPage({
             <PageEditor
               path={path}
               folder={folderOf(path)}
-              text={shown.text}
+              text={shown.body}
+              front={frontMatterOf(shown)}
               version={shown.version.commit}
               latest={shown}
               keys={projectKeys}

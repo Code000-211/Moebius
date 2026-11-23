@@ -1068,12 +1068,17 @@ the same shape.
 #### Page labels
 
 A page has any number of **labels**, short words that sort pages across folders. They are kept in the page file as YAML
-front matter at the very top, between two `---` lines: `---\nlabels: [Runbook, On call]\n---\n# Deploy`. Reading takes
-`labels` as a flow list, a block list (`- Runbook` lines) or one word, trims each, and leaves out an empty one and a
-repeat. A page without front matter has no labels; front matter with no closing `---` line is not front matter, so
-that page has none and its text is as written. Any other key of the front matter is left alone when labels are set. A
-label is 1 to 40 characters with no control character and none of `, [ ] { } " ' \ # : | > * & ! % @` and the backtick
-(`422` otherwise). Search finds a page by its labels as by the words of its text (and not by its other front matter).
+front matter at the very top, between two `---` lines: `---\nlabels: [Runbook, On call]\n---\n# Deploy`. The lines between
+the fences count as front matter only when they read as YAML (a `key:` line, a `- ` item, a comment, an indented line
+or a blank one, with at least one that says something); a page that opens with a horizontal rule, a paragraph and
+another rule has no front matter, and neither has one whose closing `---` is missing, so such a page has no labels and
+its text is as written. `labels` is read as a flow list (`[a, "b, c"]`, quotes and a trailing comment allowed, on one
+line or several), a block list (`- a` lines) or one word; `null` and `~` mean none. Each label is trimmed, and an empty
+one and a repeat are left out. Setting labels replaces the whole old value of the key, continuation lines included,
+keeps every other line of the front matter byte for byte and the file's line ending (`\n` or `\r\n`), and reads and
+rewrites the page in the turn of the write, after the clone followed `origin`, so a concurrent edit is kept. A label
+is 1 to 40 characters with no control character and none of `, [ ] { } " ' \ # : | > * & ! % @` and the backtick
+(`422` otherwise). The web app's editor shows the body only and writes the front matter back unchanged. Search finds a page by its labels as by the words of its text (and not by its other front matter).
 
 ### `GET /v1/wiki/pages/{*path}`
 
