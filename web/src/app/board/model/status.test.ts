@@ -78,6 +78,10 @@ describe("the changes of a card over several repositories", () => {
     expect(inboxOf([outside, spent], card(1))?.kind).toBe("review_rounds_spent");
     expect(inboxOf([spent, outside], card(1))?.kind).toBe("review_rounds_spent");
     expect(inboxOf([spent, outside], card(1))?.data.change).toBe(9);
+    // So is the item that says the pull request could not be read whole.
+    const unread = { ...item("review_not_possible", 1), id: 5, data: { change: 9 } };
+    expect(inboxOf([outside, unread], card(1))?.kind).toBe("review_not_possible");
+    expect(inboxOf([unread, outside], card(1))?.kind).toBe("review_not_possible");
   });
 
   it("leaves a stopped merge out of the card's turn, and finds it for what it says", () => {

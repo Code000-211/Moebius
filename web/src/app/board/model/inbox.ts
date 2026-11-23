@@ -15,6 +15,8 @@ export const OUTSIDE_CHANGE = "outside_change";
 export const DONE_ASKED = "done_asked";
 /** The Reviewer read a followed pull request three times and its author asked again: the owner looks, with the same choices as for the request itself. */
 export const REVIEW_ROUNDS_SPENT = "review_rounds_spent";
+/** A followed pull request could not be given to the Reviewer (too large, a binary file, or git failed): the owner reads it, with the same choices as for the request itself. */
+export const REVIEW_NOT_POSSIBLE = "review_not_possible";
 /** What an outside issue that waits for a person's approval is called, on every row, card and button of the app. */
 export const WAITING_FOR_APPROVAL = "Waiting for approval";
 
@@ -33,6 +35,8 @@ export function waitingWords(kind: string | undefined): string {
       return "Says it is done";
     case REVIEW_ROUNDS_SPENT:
       return "Reviewed three times";
+    case REVIEW_NOT_POSSIBLE:
+      return "Could not be reviewed";
     default:
       return "Your turn";
   }
@@ -60,7 +64,11 @@ export function inboxOf(inbox: readonly InboxItem[], card: Card): InboxItem | un
       // several changes to merge, the first in the order they are merged comes first, since a later one is refused.
       if (item.kind === MERGE_STOPPED && held !== undefined) continue;
       // The request's own item comes first; this one is about it, and neither hides the other's choices.
-      if (item.kind === OUTSIDE_CHANGE && held?.kind === REVIEW_ROUNDS_SPENT) continue;
+      if (
+        item.kind === OUTSIDE_CHANGE &&
+        (held?.kind === REVIEW_ROUNDS_SPENT || held?.kind === REVIEW_NOT_POSSIBLE)
+      )
+        continue;
       if (item.kind === READY_TO_MERGE && held?.kind === READY_TO_MERGE && held.id < item.id)
         continue;
       byCard.set(item.card_id, item);

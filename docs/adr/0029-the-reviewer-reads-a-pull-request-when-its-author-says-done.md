@@ -51,11 +51,22 @@ server merge what the Reviewer approves. A pull request is somebody else's code,
   branch (the default branch's tip against the tree `git merge-tree --write-tree` makes, since `git merge-base` names one
   of several best ancestors of a criss-crossed history and hides what the forge's merge would revert) and each changed
   file whole as the pull request has it, with `git diff` and `git cat-file`, no textconv, no external diff, no attributes
-  file, and no worktree, so no filter or hook of the pull request ever runs. Git's output is read through a cap and a
-  time limit, and a pull request over a size is refused with the reason. It is built once per round and cut to a size,
-  and says where; binary files, symlinks and submodules are named only. The commit is recorded before anything is read and every
-  read is of that commit, never of a branch name that may move, so the Reviewer reads the tree that is merged, whatever
-  earlier work the card has.
+  file, and no worktree, so no filter or hook of the pull request ever runs. The files are those of the merged tree
+  (what lands), with a note on a file the default branch changed too, whose lines are then not the pull request's. The
+  commit is recorded before anything is read and every read is of that commit, never of a branch name that may move, so the
+  Reviewer reads the tree that is merged, whatever earlier work the card has.
+- **The Reviewer reads all of it or nothing.** An approval of what was not read could be merged by the server, so nothing
+  is cut: the whole diff (60,000 bytes) and every changed file whole (40,000 bytes each, 150,000 together, 60 files) fit,
+  or the pull request is refused with the reason, and so is one that changes a binary file, which no text shows. A refused
+  pull request is answered on the forge and the owner gets a `review_not_possible` inbox item; it is the owner's to read.
+  The sizes are asked of the object headers (`git diff --raw`, `git ls-tree -l`) before any command loads a blob, every
+  command runs with `core.bigFileThreshold=1m`, a limit on its address space (Unix) and a time limit, and a command that
+  does not succeed is an error, never an empty change: a killed git cannot read as "it changes no file". Files that run on
+  the forge (`.github/`, `.forgejo/`, `.gitea/`, `.gitlab-ci.yml`) come first.
+- **The merge is of what was read.** Besides the pinned head, the server reads the pull request's base from the forge right
+  before it merges, brings the clone up to date and merges only if the merge of the head into the default branch's tip
+  now does what the merge into the tip that was read did (the same paths become the same files). Otherwise the round is
+  `stale`, nothing is merged and the author is asked to write `/done` again.
 - **The run is started restricted, once.** It is recorded as restricted on its row before anything else (`runs.restricted`),
   and nothing that happens later lifts it: closing the pull request, or the card moving, changes nothing. It has an empty
   directory as its working directory and no clone, a *checked token* on either harness (so the router decides every call

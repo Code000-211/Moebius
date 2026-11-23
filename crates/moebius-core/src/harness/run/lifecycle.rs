@@ -55,11 +55,19 @@ pub(in crate::harness) fn restricted_run(
         .set_run_restricted(run.id)
         .map_err(|e| StartError::Store(fail(app, run.id, e.to_string())))?;
     // A directory of its own under the system's temporary directory, which has no `AGENTS.md` or `CLAUDE.md` above it
-    // for a harness to find, as the data directory may (a person's home directory, say). Removed with the run.
-    let empty =
-        std::env::temp_dir().join(format!("moebius-review-{}-{}", run.id, std::process::id()));
-    std::fs::create_dir(&empty)
-        .map_err(|e| StartError::WorktreeFailed(fail(app, run.id, e.to_string())))?;
+    // for a harness to find, as the data directory may (a person's home directory, say). Its name is random and only its
+    // owner may enter it, so that no one else on the machine can have made it first. Removed with the run.
+    let mut own = tempfile::Builder::new();
+    own.prefix("moebius-review-");
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        own.permissions(std::fs::Permissions::from_mode(0o700));
+    }
+    let empty = own
+        .tempdir()
+        .map_err(|e| StartError::WorktreeFailed(fail(app, run.id, e.to_string())))?
+        .keep();
     app.store
         .set_run_worktree(run.id, &empty.to_string_lossy())
         .map_err(|e| StartError::Store(fail(app, run.id, e.to_string())))?;

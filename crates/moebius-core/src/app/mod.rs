@@ -53,7 +53,7 @@ mod snapshot;
 mod stopping;
 mod taking;
 pub use commands::{Command, DONE_ASKED, command_in};
-pub use reviews::{ROUND_LIMIT, ROUNDS_SPENT};
+pub use reviews::{REVIEW_NOT_POSSIBLE, ROUND_LIMIT, ROUNDS_SPENT};
 pub use taking::{
     OpenRequest, WorkingWithOthers, closing_references, followed_branch, forge_title,
 };

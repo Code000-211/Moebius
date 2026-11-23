@@ -519,6 +519,7 @@ same change failing again keeps it, another stop replaces it) and
 `project_label` (`data.label`, `data.repository`; its `title` says the label names no project of the repository, and the card it is about stays where it is: see [the project label](#the-project-label)) and
 `outside_change` (`data.change`, `data.pull_request`, `data.author`, `data.repository`: the card follows a pull request someone else opened; resolved when the request is merged or closed; see [Working with people on other servers](#working-with-people-on-other-servers)) and
 `review_rounds_spent` (`data.change`, `data.pull_request`, `data.author`, `data.repository`: the Reviewer read the pull request the card follows three times and its author wrote `/done` again; resolved when the request is merged or closed; see [Reviews of followed pull requests](#reviews-of-followed-pull-requests)) and
+`review_not_possible` (`data.change`, `data.pull_request`, `data.author`, `data.repository`, `data.reason`: the pull request the card follows could not be given to the Reviewer, because it is too large to be read whole, changes a binary file or git could not read it; resolved when the request is merged or closed; the same choices as for `outside_change`) and
 `done_asked` (`data.login`, `data.reason`, `data.repository`: the assignee of the issue, `login`, wrote `/done` in a comment and `reason` is the rest of that comment; resolved by the owner's answer, `POST /v1/cards/{id}/done`, or when the assignee is released; see [Commands in issue comments](#commands-in-issue-comments)) and
 `proposal` (`data.proposal`, `data.branch`, `data.trials`: an array of `{"card", "outcome", "reason"}` for the cards it
 addresses, and `data.regression`: the same for the cards of the regression set, empty when none was tried; its `title` is the
@@ -4637,14 +4638,18 @@ by the Reviewer when its author says so. The steps are in [the guide](../guide/w
   is merged into (`reviewed_base`, also kept with the round as `external_reviews.base`). The diff is the default branch's
   tip against the tree `git merge-tree --write-tree` makes of the two (what the forge's merge lands, which a criss-crossed
   history makes differ from the diff against `git merge-base`, which names only one of several best ancestors); a pull
-  request that does not merge cleanly is answered ("does not merge cleanly into the default branch") and not reviewed. The
-  changed files are listed from that diff and given whole as the pull request's head has them (the lines of the Reviewer's
-  comments are lines of those files). Git runs with no textconv, no external diff and `core.attributesFile=/dev/null`; its
-  output is read through a cap (2 MB at most; the diff 60,000 bytes, a file 40,000, all files 150,000 and 60 files) and
-  stopped when there is more, and a command is killed after 30 seconds. A pull request over 300 changed files or 20,000
-  changed lines is refused with a reply ("this pull request is too large to review automatically: N files, M lines").
-  Binary files, symlinks, submodules (decided from the entry's mode, so one whose commit is not in the clone is still a
-  submodule), deleted files and files over 160,000 bytes are named only; what is cut is said. Nothing is checked out and no
+  request that does not merge cleanly is answered ("does not merge cleanly into the default branch") and not reviewed. The changed files are listed from that diff and given whole as the merge leaves them (the merged tree); a file the default
+  branch changed too says that its lines are those of the merged file, not the pull request's own. All of it is given or the
+  review does not start: nothing is cut. The diff may be 60,000 bytes, a file 40,000 (before or after), all the files 150,000
+  (before and after) and there may be 60 changed files; a pull request over a limit is answered ("this pull request is too
+  large to review automatically: <why>"), as is one that changes a binary file ("cannot be read whole by the Reviewer"), and
+  both add a `review_not_possible` inbox item with the reason; so does a git command that failed or took too long, which is
+  an error and never read as an empty change. The sizes are read from the object headers (`git diff --raw`, `git ls-tree -l`)
+  before any command loads a blob. Git runs with no textconv, no external diff, `core.attributesFile=/dev/null` and
+  `core.bigFileThreshold=1m`, under a limit of 2 GiB of address space (Unix); its output is read through a cap (2 MB) and
+  stopped when there is more, and a command is killed after 30 seconds. The files that run on the forge (`.github/`,
+  `.forgejo/`, `.gitea/`, `.gitlab-ci.yml`) come first. Symlinks and submodules are named (the diff shows them), deleted
+  files too. Nothing is checked out and no
   git filter runs, and no read is of a branch name or of an earlier `code` run's branch. The context of a round is built
   once and kept for its run. A review does not start when it cannot be made. Decided in the engine's tick of the card and
   after each poll of the request.
@@ -4671,6 +4676,12 @@ by the Reviewer when its author says so. The steps are in [the guide](../guide/w
   wait, with the round `approved`; `failure` writes nothing but a comment on the pull request. With `merge_reviewed` off: the
   approving review is written, the card moves to `Ready to merge`, a `ready_to_merge` inbox item is added, and the issue is
   told that the owner will merge it.
+- **The merge is of what was read.** Right before the merge the server reads the request's branch from the forge again
+  (`Forge::request_base`; a request against another branch is not merged), brings the clone up to date and compares what the
+  merge of the head into the default branch's tip does with what the merge into the tip that was read did (the paths that
+  change and the files they become). A default branch that moved elsewhere changes nothing; one that touched what the request
+  touches, or makes it conflict, drops the round (`stale`, nothing is merged, the request is told "the default branch
+  changed what merging this pull request does... write /done again").
 - **Never merged.** A verdict counts for the head it read only. When the poll has read a push before the verdict is used,
   the round is `stale` and nothing is written. When it has not, the forge refuses the merge pinned to the old head, the pull
   request is told "...it could not be merged", and the card goes to `Ready to merge` with an inbox item that says why (see
@@ -4687,8 +4698,8 @@ by the Reviewer when its author says so. The steps are in [the guide](../guide/w
   summary, each comment in a box "path line N" and "Open on GitHub".
 - **The restricted mode.** A run of a review of a pull request someone else opened is started restricted: `runs.restricted`
   is set before anything else and never changes, so closing the pull request or moving the card does not lift it. It has an
-  empty directory of its own under the system's temporary directory (`moebius-review-<run>-<pid>`, created and removed per
-  run, so that no `AGENTS.md` or `CLAUDE.md` of the data directory or a home directory is above it) as its working directory
+  empty directory of its own under the system's temporary directory (`moebius-review-` and a random name, created with
+  mode `0700` and removed per run, so that no `AGENTS.md` or `CLAUDE.md` of the data directory or a home directory is above it) as its working directory
   and no clone, no MCP servers, no runner (a runner
   named by the agent or the variant is dropped), and **no tools**: Pi-Bolt is started with `--no-tools` and Claude Code with
   `--tools ""` and the built-in tools in `--disallowedTools`, with `CLAUDE_CODE_DISABLE_CLAUDE_MDS=1` in its environment. (Neither

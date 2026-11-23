@@ -37,15 +37,8 @@ pub const ROUND_LIMIT: i64 = 3;
 
 /// The kind of the inbox item that asks the owner to look at a pull request the Reviewer read [`ROUND_LIMIT`] times.
 pub const ROUNDS_SPENT: &str = "review_rounds_spent";
-
-/// `text` with its first letter in upper case.
-fn capitalise(text: &str) -> String {
-    let mut chars = text.chars();
-    chars
-        .next()
-        .map(|c| c.to_uppercase().collect::<String>() + chars.as_str())
-        .unwrap_or_default()
-}
+/// The kind of the inbox item that says a followed pull request could not be given to the Reviewer.
+pub const REVIEW_NOT_POSSIBLE: &str = "review_not_possible";
 
 fn reviewer() -> Actor {
     Actor::Script {
@@ -252,6 +245,36 @@ impl App {
         Ok("Thanks, the pull request will be reviewed once its checks have passed.".into())
     }
 
+    /// Puts an item in the owner's inbox that says the pull request could not be given to the Reviewer, and why: it is
+    /// too large, changes a binary file, or git could not read it. The owner reads it and merges it, or does not.
+    fn ask_owner_unreviewed(&self, card: &Card, change: &Change, reason: &str) -> Result<()> {
+        if self
+            .store
+            .has_open_inbox_item(card.id, REVIEW_NOT_POSSIBLE)?
+        {
+            return Ok(());
+        }
+        self.store.add_inbox_item(
+            REVIEW_NOT_POSSIBLE,
+            Some(card.id),
+            &format!(
+                "Pull request #{} could not be reviewed automatically: {}",
+                change.pull_request.unwrap_or_default(),
+                card.title
+            ),
+            &serde_json::json!({
+                "change": change.id,
+                "pull_request": change.pull_request,
+                "author": change.outside_author,
+                "repository": self.repository(card.repository_id)?.name,
+                "reason": reason,
+            }),
+        )?;
+        self.bus
+            .publish(crate::bus::Event::CardUpdated(self.card(card.id)?));
+        Ok(())
+    }
+
     /// Puts an item in the owner's inbox that says the Reviewer read the pull request often enough.
     fn ask_owner_to_look(&self, card: &Card, change: &Change) -> Result<()> {
         if self.store.has_open_inbox_item(card.id, ROUNDS_SPENT)? {
@@ -428,21 +451,28 @@ impl App {
         self.store.set_change_reviewed_base(change.id, &base)?;
         // What the Reviewer is given is made now, once, so that a pull request that is too big or does not merge is
         // answered and not started.
+        let not_possible = |reason: &str| -> Result<()> {
+            end(
+                "not reviewed automatically",
+                &format!(
+                    "This pull request could not be reviewed automatically, so nothing was reviewed: {reason}. The owner has been asked to look at it."
+                ),
+            )?;
+            self.ask_owner_unreviewed(card, change, reason)
+        };
         match self.review_context(card) {
             Ok(_) => {}
-            Err(e @ ContextError::TooLarge { .. }) => {
-                return end(
-                    "too large",
-                    &format!("{}, so nothing was reviewed.", capitalise(&e.to_string())),
-                );
-            }
             Err(ContextError::Conflicts) => {
                 return end(
                     "conflicts",
                     "This pull request does not merge cleanly into the default branch, so nothing was reviewed. Resolve the conflicts, push, then write /done again.",
                 );
             }
-            Err(e) => return Err(AppError::Conflict(e.to_string())),
+            Err(
+                ContextError::TooLarge(why)
+                | ContextError::Unreadable(why)
+                | ContextError::Other(why),
+            ) => return not_possible(&why),
         }
         // Only one thread starts the run: the poll and the engine both come here.
         if !self
@@ -762,6 +792,53 @@ impl App {
         }
         if !self.against_default_branch(repository, &self.change(change.id)?)? {
             return Ok(Err("the pull request is against another branch".into()));
+        }
+        // The forge merges into whatever the branch is now: what the review was of is the merge into the tip it read, so
+        // the base is read from the forge again, the clone brought up to date, and what the merge does now compared with
+        // what it did then.
+        if let Some(number) = change.pull_request {
+            let forge = self.forge(repository)?;
+            match forge.request_base(repository, number) {
+                Ok(branch) if branch == repository.default_branch => {}
+                Ok(_) => return Ok(Err("the pull request is against another branch".into())),
+                Err(e) => {
+                    return Ok(Err(format!(
+                        "the pull request's branch could not be read: {e}"
+                    )));
+                }
+            }
+            if let Err(e) = forge.refresh(repository) {
+                return Ok(Err(format!("the default branch could not be read: {e}")));
+            }
+            let tip = git(
+                Path::new(&repository.path),
+                &["rev-parse", &repository.base_ref()],
+            )?;
+            let reviewed = self
+                .store
+                .change_reviewed_base(change.id)?
+                .unwrap_or_default();
+            match super::review_context::effect_unchanged(repository, &reviewed, &tip, &round.head)
+            {
+                Ok(true) => {}
+                Ok(false) => {
+                    if self
+                        .store
+                        .move_external_review(round.id, "approved", "stale")?
+                        || self
+                            .store
+                            .move_external_review(round.id, "posted", "stale")?
+                    {
+                        self.answer_on_request(
+                            repository,
+                            change,
+                            "The default branch changed what merging this pull request does after it was reviewed, so it is not merged. Write /done again and it will be read again.",
+                        );
+                    }
+                    return Ok(Err("the default branch changed after the review".into()));
+                }
+                Err(e) => return Ok(Err(format!("the merge could not be checked: {e}"))),
+            }
         }
         let merged = self.merge_one(
             &by,

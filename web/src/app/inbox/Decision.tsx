@@ -55,6 +55,7 @@ import {
   proposalOf,
   proposedOf,
   READY_TO_MERGE,
+  REVIEW_NOT_POSSIBLE,
   REVIEW_ROUNDS_SPENT,
   removeIssue,
   STUCK,
@@ -241,7 +242,10 @@ export function Decision({
       // What stopped is the forge's or a person's to fix; the card goes on when its last change is merged.
       const board = about.board;
       buttons.push(plain("Open the card", board ? () => openCard(item.card_id as number) : null));
-    } else if (item.kind === REVIEW_ROUNDS_SPENT && item.card_id !== null) {
+    } else if (
+      (item.kind === REVIEW_ROUNDS_SPENT || item.kind === REVIEW_NOT_POSSIBLE) &&
+      item.card_id !== null
+    ) {
       // Its choices (review again, merge) are the card's, as for the pull request itself.
       const board = about.board;
       buttons.push(plain("Open the card", board ? () => openCard(item.card_id as number) : null));

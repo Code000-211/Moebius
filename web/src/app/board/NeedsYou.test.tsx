@@ -121,6 +121,27 @@ describe("the Moebius needs you block", () => {
     expect(onDecide).toHaveBeenCalledWith({ kind: "merge", change: 8, number: 5 });
   });
 
+  it("offers the choices of the pull request when it could not be read whole", () => {
+    const change = {
+      id: 8,
+      state: "open",
+      checks: "success" as const,
+      review_verdict: null,
+      outside_author: "alice",
+    };
+    const { onDecide } = show(
+      item("review_not_possible", {
+        change: 8,
+        author: "alice",
+        reason: "it changes a binary file",
+      }),
+      null,
+      { change },
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Merge" }));
+    expect(onDecide).toHaveBeenCalledWith({ kind: "merge", change: 8, number: 5 });
+  });
+
   it("says it waits for the author's changes after a review that asked for them, and offers no merge", () => {
     const review = {
       round: 1,

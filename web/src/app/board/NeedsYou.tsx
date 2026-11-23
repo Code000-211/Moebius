@@ -10,7 +10,12 @@ import { Button } from "../../ui/components/Button";
 import { ago } from "../../ui/lib/format";
 import { useNow } from "../../ui/lib/useNow";
 import type { Decision } from "./decisions";
-import { DONE_ASKED, OUTSIDE_CHANGE, REVIEW_ROUNDS_SPENT } from "./model/inbox";
+import {
+  DONE_ASKED,
+  OUTSIDE_CHANGE,
+  REVIEW_NOT_POSSIBLE,
+  REVIEW_ROUNDS_SPENT,
+} from "./model/inbox";
 
 /** The mark of Moebius in the thread: a dark square with its initial. */
 export function MoebiusMark() {
@@ -59,7 +64,10 @@ export function NeedsYouBlock({
   }, [askFor, card.id]);
   const change = typeof item.data.change === "number" ? item.data.change : null;
   // The pull request of someone else: both items offer its choices.
-  const outside = item.kind === OUTSIDE_CHANGE || item.kind === REVIEW_ROUNDS_SPENT;
+  const outside =
+    item.kind === OUTSIDE_CHANGE ||
+    item.kind === REVIEW_ROUNDS_SPENT ||
+    item.kind === REVIEW_NOT_POSSIBLE;
   // A review that asked for changes is the author's turn until they push: there is nothing to merge yet.
   const review = card.change?.external_review;
   const waitingForAuthor =

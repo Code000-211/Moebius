@@ -309,6 +309,11 @@ pub trait Forge: Send + Sync {
     ) -> Result<(), ForgeError> {
         Err(not_on_a_forge(repository))
     }
+    /// The branch the pull or merge request `number` is against now, as the forge says it: read right before a merge,
+    /// since an author may retarget the request.
+    fn request_base(&self, repository: &Repository, _number: i64) -> Result<String, ForgeError> {
+        Err(not_on_a_forge(repository))
+    }
     /// Writes a review of the pull or merge request `number`: approving it or asking for changes, with the summary and
     /// the comments on lines of its diff. Answers with where the review is on the forge. A forge that cannot hold a
     /// review writes it as one comment (see [`ReviewPost::as_comment`]).
@@ -515,6 +520,16 @@ impl Forge for GitHubForge {
             message,
             pinned_head(change),
         ))?)
+    }
+
+    fn request_base(&self, repository: &Repository, number: i64) -> Result<String, ForgeError> {
+        let name = Self::github_name(repository)?;
+        let pull = self
+            .runtime
+            .block_on(self.github.pull_request(name, number))?;
+        pull.base
+            .map(|base| base.branch)
+            .ok_or_else(|| ForgeError::Invalid("the forge did not say the branch".into()))
     }
 
     fn review_request(
@@ -784,6 +799,16 @@ impl Forge for GitLabForge {
         ))?)
     }
 
+    fn request_base(&self, repository: &Repository, number: i64) -> Result<String, ForgeError> {
+        let project = Self::project(repository)?;
+        let request = self
+            .runtime
+            .block_on(self.gitlab.merge_request(project, number))?;
+        request
+            .target_branch
+            .ok_or_else(|| ForgeError::Invalid("the forge did not say the branch".into()))
+    }
+
     fn review_request(
         &self,
         repository: &Repository,
@@ -1030,6 +1055,16 @@ impl Forge for ForgejoForge {
             self.forgejo
                 .merge(repo, number, message, pinned_head(change)),
         )?)
+    }
+
+    fn request_base(&self, repository: &Repository, number: i64) -> Result<String, ForgeError> {
+        let repo = Self::repo(repository)?;
+        let pull = self
+            .runtime
+            .block_on(self.forgejo.pull_request(repo, number))?;
+        pull.base
+            .map(|base| base.branch)
+            .ok_or_else(|| ForgeError::Invalid("the forge did not say the branch".into()))
     }
 
     fn review_request(

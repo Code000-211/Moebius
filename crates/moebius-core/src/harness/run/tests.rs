@@ -586,6 +586,19 @@ fn a_decider_that_fails_leaves_the_run_without_a_hint() {
 /// What a review run of a pull request someone else opened is started with, on either harness: recorded restricted on
 /// its row, a checked token, no MCP servers, no runner, and no checkout: its working directory is an empty directory
 /// and it has no clone. The same review of a card that follows no such request is none of that.
+/// Whether the directory is one only its owner may enter (anything but Unix has no such mode to read).
+fn private_to_its_owner(dir: &std::path::Path) -> bool {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::metadata(dir).is_ok_and(|m| m.permissions().mode() & 0o077 == 0)
+    }
+    #[cfg(not(unix))]
+    {
+        dir.is_dir()
+    }
+}
+
 #[test]
 fn a_review_of_a_pull_request_someone_else_opened_is_started_restricted_on_either_harness() {
     use crate::config::HarnessKind;
@@ -712,14 +725,27 @@ fn a_review_of_a_pull_request_someone_else_opened_is_started_restricted_on_eithe
                         launching.run.worktree.clone(),
                         setup.app.store.run_restricted(launching.run.id).unwrap(),
                         prompt,
+                        launching.run.id,
+                        private_to_its_owner(&launching.run.worktree),
                     ));
                     Err("not started: the test only looks".into())
                 },
             );
             let name = format!("{harness:?}, restricted {restricted}");
             assert!(started.is_err(), "{name}");
-            let (marked, checked, servers, runner, has_clone, files, worktree, stored, prompt) =
-                seen.into_inner().expect("the run was launched");
+            let (
+                marked,
+                checked,
+                servers,
+                runner,
+                has_clone,
+                files,
+                worktree,
+                stored,
+                prompt,
+                id,
+                private,
+            ) = seen.into_inner().expect("the run was launched");
             if !restricted {
                 // Moebius's own change is reviewed as before: a worktree of its clone, its servers, and its token as
                 // its harness has it (Claude Code's calls are checked, Pi-Bolt's are not).
@@ -731,6 +757,13 @@ fn a_review_of_a_pull_request_someone_else_opened_is_started_restricted_on_eithe
                 continue;
             }
             assert!(marked && stored, "{name}");
+            // Its name is not one another person on the machine can guess and make first, and only its owner enters it.
+            assert!(
+                worktree.file_name().unwrap().to_string_lossy()
+                    != format!("moebius-review-{id}-{}", std::process::id()),
+                "{name}: {worktree:?}"
+            );
+            assert!(private, "{name}: only its owner may enter {worktree:?}");
             assert!(checked, "{name}: a checked token on either harness");
             assert_eq!(servers, 0, "{name}");
             assert_eq!(runner, None, "{name}: never on a runner");

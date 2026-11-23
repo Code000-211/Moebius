@@ -8,7 +8,7 @@ use serde_json::{Value, json};
 
 use super::fake_github::{Fixture, check};
 use super::taking_tests::{ReviewerRuns, following, push_to_the_pull_request};
-use crate::app::{ROUNDS_SPENT, columns};
+use crate::app::{REVIEW_NOT_POSSIBLE, ROUNDS_SPENT, columns};
 use crate::decide::check::{CheckRequest, decide_call};
 use crate::repos::git;
 use crate::router::Grant;
@@ -63,6 +63,41 @@ impl Fixture {
         self.fake.set_head(&head);
         self.fake.listed_pulls.lock().unwrap()[0]["head"]["sha"] = json!(head);
         head
+    }
+
+    /// The default branch of the remote moves on: it gets a commit that writes `path`.
+    fn main_moves(&self, path: &str, text: &str) {
+        let work = self._dir.path().join("main-work");
+        if !work.exists() {
+            git(
+                self._dir.path(),
+                &[
+                    "clone",
+                    "--quiet",
+                    self.remote.to_str().unwrap(),
+                    "main-work",
+                ],
+            )
+            .unwrap();
+        }
+        std::fs::create_dir_all(work.join(path).parent().unwrap()).unwrap();
+        std::fs::write(work.join(path), text).unwrap();
+        git(&work, &["add", "."]).unwrap();
+        git(
+            &work,
+            &[
+                "-c",
+                "user.name=owner",
+                "-c",
+                "user.email=owner@example.com",
+                "commit",
+                "--quiet",
+                "-m",
+                "Main moves",
+            ],
+        )
+        .unwrap();
+        git(&work, &["push", "--quiet", "origin", "HEAD:main"]).unwrap();
     }
 
     /// Says what the checks of the pull request's head are.
@@ -812,4 +847,93 @@ async fn what_a_stranger_made_the_reviewer_say_is_redacted_before_it_is_posted()
     let all = posts[0].to_string();
     assert!(!all.contains(secret), "{all}");
     assert!(all.contains("[redacted:anthropic-key]"), "{all}");
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_default_branch_that_changed_what_the_merge_does_after_the_review_is_not_merged_into() {
+    // Main takes a file the pull request adds, in another form: the merge now conflicts, which was never read.
+    let (f, card, _) = ready().await;
+    f.author_says_done().await;
+    let run = f.reviews_of(&card).remove(0);
+    f.main_moves("src/lib.rs", "main wrote this first\n");
+    f.reviewer_ends(&card, &run, &said("approve", "Fine.", json!([])))
+        .await;
+    assert!(f.merged_requests().is_empty(), "nothing is merged");
+    let change = f.server.app.followed_change(&card).unwrap().unwrap();
+    assert_eq!(
+        f.server.app.store.external_reviews(change.id).unwrap()[0].state,
+        "stale"
+    );
+    assert!(
+        f.on_the_pull_request()
+            .iter()
+            .any(|t| t.contains("default branch changed") && t.contains("/done")),
+        "{:?}",
+        f.on_the_pull_request()
+    );
+
+    // Main moved on in a file the pull request does not touch: what is merged is what was read.
+    let (g, card, _) = ready().await;
+    g.author_says_done().await;
+    let run = g.reviews_of(&card).remove(0);
+    g.main_moves("docs/other.md", "elsewhere\n");
+    g.reviewer_ends(&card, &run, &said("approve", "Fine.", json!([])))
+        .await;
+    assert_eq!(g.merged_requests().len(), 1);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_pull_request_that_cannot_be_read_whole_is_not_reviewed_and_the_owner_is_asked() {
+    let (f, card, _) = ready().await;
+    // The author adds a binary file, which no text shows.
+    let work = f._dir.path().join("pull-work");
+    std::fs::write(work.join("blob.bin"), b"\x00\x01\x02binary").unwrap();
+    git(&work, &["add", "."]).unwrap();
+    git(
+        &work,
+        &[
+            "-c",
+            "user.name=alice",
+            "-c",
+            "user.email=alice@example.com",
+            "commit",
+            "--quiet",
+            "-m",
+            "A binary",
+        ],
+    )
+    .unwrap();
+    git(
+        &work,
+        &["push", "--quiet", "origin", "HEAD:refs/pull/7/head"],
+    )
+    .unwrap();
+    let head = git(&work, &["rev-parse", "HEAD"]).unwrap();
+    f.fake.set_head(&head);
+    f.fake.listed_pulls.lock().unwrap()[0]["head"]["sha"] = json!(head);
+    f.checks_are("completed", "success");
+    f.server.poll_github().await;
+    f.author_says_done().await;
+    tick(&f, &card).await;
+    assert!(f.reviews_of(&card).is_empty(), "no run was started");
+    assert!(f.fake.review_posts.lock().unwrap().is_empty());
+    assert!(f.merged_requests().is_empty());
+    let told: Vec<String> = f
+        .on_the_issue()
+        .into_iter()
+        .chain(f.on_the_pull_request())
+        .collect();
+    assert!(
+        told.iter()
+            .any(|t| t.contains("could not be reviewed automatically") && t.contains("blob.bin")),
+        "{told:?}"
+    );
+    assert!(
+        f.server
+            .app
+            .store
+            .has_open_inbox_item(card.id, REVIEW_NOT_POSSIBLE)
+            .unwrap(),
+        "the owner is asked"
+    );
 }

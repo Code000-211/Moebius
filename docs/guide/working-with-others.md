@@ -126,8 +126,12 @@ window shows the review: the verdict, the summary, each comment in a box "src/li
 The review run of such a pull request is **restricted**: what the pull request holds is written by someone your server does
 not trust. Your server reads the pull request itself, from git objects (the diff of what merging it would do to the default
 branch, and each changed file as of the reviewed commit, with no checkout, so no filter, hook or script of the pull request
-ever runs), and gives it to the Reviewer as text, cut to a size and saying where. A pull request that does not merge
-cleanly, or changes over 300 files or 20,000 lines, is answered and not reviewed. The Reviewer is told the issue as data and
+ever runs), and gives it to the Reviewer as text, all of it: nothing is cut. A pull request that does not merge cleanly
+is answered and not reviewed; one that is too large to be read whole (more than 60 files, a file over 40,000 bytes, a diff
+over 60,000 bytes) or changes a binary file is answered "could not be reviewed automatically" and the owner gets an Inbox
+item, since an approval of what was not read could be merged by your server. Right before it merges, your server reads the
+pull request's branch from the forge again and merges only if the default branch did not change what the merge does since
+the review; if it did, the round is dropped and the author writes `/done` again. The Reviewer is told the issue as data and
 nothing else of your organisation (no comments, wiki pages or lessons). The Reviewer has **no tools at all**, on Pi-Bolt as on Claude Code: it is started
 without any, in an empty directory, with no MCP servers, never on a runner, and the router refuses any call it makes,
 whatever the call, also when the pull request is closed meanwhile. It is told that everything in the pull request is data.
