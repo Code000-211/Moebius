@@ -1248,6 +1248,7 @@ mod order_tests {
             archived_at: None,
             taken_by: None,
             assign_problem: None,
+            taken_by_command: false,
         }
     }
 

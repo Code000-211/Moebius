@@ -1223,7 +1223,14 @@ export function createPagesAFake(send: Send, board: BoardFake): PagesAFake {
           if (found.forge === "none") return fail(response, 422, "the repository is on no forge");
           if (body.trusted === undefined) {
             const kept = Object.fromEntries(
-              ["mark_ready", "ready_label", "agents_take"]
+              [
+                "mark_ready",
+                "ready_label",
+                "agents_take",
+                "commands",
+                "command_limit",
+                "answer_on_forge",
+              ]
                 .filter((key) => key in body)
                 .map((key) => [key, body[key]]),
             );

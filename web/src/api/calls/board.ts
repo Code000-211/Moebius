@@ -157,6 +157,19 @@ export function retry(card: number): Promise<Card> {
   return post<Card>(`/v1/cards/${card}/retry`, {});
 }
 
+/** What the owner answers when an assignee wrote `/done` on an issue: close it, give it back, or release the assignee. */
+export type DoneAnswer = "close" | "give_back" | "release";
+
+/** Answers the question an assignee's `/done` comment asked; the server also writes the answer on the issue. */
+export function answerDone(card: number, answer: DoneAnswer): Promise<Card> {
+  return post<Card>(`/v1/cards/${card}/done`, { answer });
+}
+
+/** Takes the assignee off an issue that was taken with `/take`. */
+export function releaseTaken(card: number): Promise<Card> {
+  return post<Card>(`/v1/cards/${card}/release-taken`, {});
+}
+
 /** Holds a card: its runs are stopped and the board works on nothing for it until it is released. */
 export function block(card: number, reason: string): Promise<Card> {
   return post<Card>(`/v1/cards/${card}/block`, { reason });

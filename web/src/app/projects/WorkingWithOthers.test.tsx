@@ -77,7 +77,60 @@ describe("the repository's working with others", () => {
     await waitFor(() => expect(fetcher).toHaveBeenCalled());
     const [url, init] = fetcher.mock.calls[0] as unknown as [string, RequestInit];
     expect([url, init.method]).toEqual(["/v1/repositories/4", "PUT"]);
-    expect(sent(fetcher)).toEqual({ mark_ready: true, ready_label: "Go", agents_take: "labelled" });
+    expect(sent(fetcher)).toEqual({
+      mark_ready: true,
+      ready_label: "Go",
+      agents_take: "labelled",
+      commands: false,
+      command_limit: 3,
+      answer_on_forge: true,
+    });
+  });
+
+  it("starts with the commands off, the limit 3 and the answers on, and says whose server turns them on", () => {
+    show();
+    const part = screen.getByTestId("issue-commands");
+    expect(part.textContent).toContain("Commands in issue comments");
+    expect(
+      screen
+        .getByLabelText("Take issues with /take, /release and /done")
+        .getAttribute("aria-checked"),
+    ).toBe("false");
+    expect((screen.getByLabelText("Issues one login may hold") as HTMLInputElement).value).toBe(
+      "3",
+    );
+    expect(screen.getByLabelText("Answer on GitHub").getAttribute("aria-checked")).toBe("true");
+    // The hint says it is for the owner's server, and who may use the commands.
+    expect(part.textContent).toContain("at the repository owner\u2019s server only");
+    expect(part.textContent).toContain("anyone who can comment on the issue");
+  });
+
+  it("saves the commands, the limit and the answers, and refuses a limit that is no number from 1 to 50", async () => {
+    const fetcher = show();
+    fireEvent.click(screen.getByLabelText("Take issues with /take, /release and /done"));
+    fireEvent.click(screen.getByLabelText("Answer on GitHub"));
+    const limit = screen.getByLabelText("Issues one login may hold");
+    fireEvent.change(limit, { target: { value: "0" } });
+    expect(screen.getByText("A number from 1 to 50.")).toBeTruthy();
+    expect(
+      (screen.getByRole("button", { name: "Save settings" }) as HTMLButtonElement).disabled,
+    ).toBe(true);
+    fireEvent.change(limit, { target: { value: "5" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save settings" }));
+    await waitFor(() => expect(fetcher).toHaveBeenCalled());
+    expect(sent(fetcher)).toEqual({
+      mark_ready: false,
+      ready_label: "Ready for agent",
+      agents_take: "all",
+      commands: true,
+      command_limit: 5,
+      answer_on_forge: false,
+    });
+  });
+
+  it("names the label in the hint while ready issues are marked", () => {
+    show({ mark_ready: true, ready_label: "Go" });
+    expect(screen.getByTestId("issue-commands").textContent).toContain('carries "Go"');
   });
 
   it("shows what the repository has, and says the server's reason when it refuses", async () => {

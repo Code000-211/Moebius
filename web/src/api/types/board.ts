@@ -24,6 +24,12 @@ export interface Repository {
   ready_label?: string;
   /** Which issues the repository's agents take: every approved one, or only those labelled and not taken. */
   agents_take?: AgentsTake;
+  /** Whether people may take, release and finish issues with `/take`, `/release` and `/done` in a comment on the issue. */
+  commands?: boolean;
+  /** How many open issues a login may hold that it took with `/take`; 3 until it is changed. */
+  command_limit?: number;
+  /** Whether the server writes the result of every command as a comment on the issue; on until it is turned off. */
+  answer_on_forge?: boolean;
 }
 
 /** `all` approved issues, or `labelled` only those that carry the ready label and nobody else took. */
@@ -111,6 +117,8 @@ export interface Card {
   taken_by?: string | null;
   /** Why this server could not assign its person on the forge when they took the issue. */
   assign_problem?: string | null;
+  /** `taken_by` took the issue with `/take` in a comment, so that this server assigned them; the owner may release it. */
+  taken_by_command?: boolean;
   /** How soon the card should be done: the card's `priority:` label, `none` without one. */
   priority: Priority;
   /** The day the card is due as `YYYY-MM-DD`: the card's `due:` label, null without one. */

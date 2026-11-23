@@ -28,6 +28,7 @@ mod changes;
 mod chat_access;
 mod chats;
 mod checks;
+mod commands;
 mod cycles;
 mod deletions;
 mod diffs;
@@ -49,7 +50,10 @@ mod runs;
 mod snapshot;
 mod stopping;
 mod taking;
-pub use taking::{OpenRequest, closing_references, followed_branch, forge_title};
+pub use commands::{Command, DONE_ASKED, command_in};
+pub use taking::{
+    OpenRequest, WorkingWithOthers, closing_references, followed_branch, forge_title,
+};
 mod templates;
 mod view_filters;
 mod views;

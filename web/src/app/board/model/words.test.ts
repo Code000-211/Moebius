@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest";
 import type { Card, Change } from "../../../api/types/board";
 import type { Run } from "../../../api/types/cards";
 import { board, card, held, run } from "./fixtures";
+import { waitingWords } from "./inbox";
 import {
   cardActivity,
   cardBadges,
@@ -279,6 +280,19 @@ describe("the line of a card that is someone else's work", () => {
     // What a person must do outranks it, and a card of this server's own has no such line.
     expect(cardActivity(taken, "needs-you", "Your turn")).toMatchObject({ text: "Your turn" });
     expect(cardActivity(card(1), "idle")).toBeNull();
+  });
+
+  it("says an issue was taken with /take, and that a card whose assignee says it is done waits for the owner", () => {
+    const taken = card(1, { taken_by: "alice", taken_by_command: true });
+    expect(cardActivity(taken, "idle")).toMatchObject({
+      text: "Taken by @alice with /take",
+      tone: "quiet",
+    });
+    expect(waitingWords("done_asked")).toBe("Says it is done");
+    expect(cardActivity(taken, "needs-you", waitingWords("done_asked"))).toMatchObject({
+      text: "Says it is done",
+      tone: "needs-you",
+    });
   });
 
   it("asks the owner to review a pull request someone else opened, and says whose it is after", () => {

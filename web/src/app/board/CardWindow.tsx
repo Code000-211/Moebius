@@ -255,7 +255,12 @@ export function CardContent({
           </div>
         </div>
 
-        <FollowedRequest board={board} card={card} />
+        <FollowedRequest
+          board={board}
+          card={card}
+          busy={busy}
+          onRelease={() => onDecide({ kind: "release", card: card.id, number: card.number })}
+        />
 
         <div className="px-6 pb-6">
           <CardThread

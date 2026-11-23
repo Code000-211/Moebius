@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 /** What the card window says of someone else's work: the pull request the card follows, or the issue they took. */
-import { cleanup, render, screen } from "@testing-library/react";
-import { afterEach, describe, expect, it } from "vitest";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Change } from "../../api/types/board";
 import { card, board as plainBoard } from "./cardPropertiesFixtures";
 
@@ -64,6 +64,23 @@ describe("what the window says of someone else's work", () => {
     render(<FollowedRequest board={board([taken])} card={taken} />);
     expect(screen.getByTestId("taken-note").textContent).toContain("Taken by @alice on GitHub");
     expect(screen.getByRole("alert").textContent).toContain("Settings > You > Profile");
+  });
+
+  it("says an issue was taken with /take, and lets the owner release it", () => {
+    const taken = card(5, { taken_by: "alice", taken_by_command: true });
+    const onRelease = vi.fn();
+    render(<FollowedRequest board={board([taken])} card={taken} onRelease={onRelease} />);
+    expect(screen.getByTestId("taken-note").textContent).toContain(
+      "Taken by @alice with /take on GitHub",
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Release from @alice" }));
+    expect(onRelease).toHaveBeenCalledOnce();
+  });
+
+  it("has no release button for an issue someone took on another server", () => {
+    const taken = card(5, { taken_by: "alice" });
+    render(<FollowedRequest board={board([taken])} card={taken} onRelease={() => {}} />);
+    expect(screen.queryByRole("button", { name: /Release/ })).toBeNull();
   });
 
   it("draws nothing for a card that is this server's own", () => {

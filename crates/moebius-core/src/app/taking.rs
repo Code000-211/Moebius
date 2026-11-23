@@ -39,6 +39,17 @@ pub struct OpenRequest {
     pub base: String,
 }
 
+/// An edit of how a repository works with others; what is none stays as it is.
+#[derive(Debug, Clone, Default)]
+pub struct WorkingWithOthers {
+    pub mark_ready: Option<bool>,
+    pub ready_label: Option<String>,
+    pub agents_take: Option<String>,
+    pub commands: Option<bool>,
+    pub command_limit: Option<i64>,
+    pub answer_on_forge: Option<bool>,
+}
+
 /// What taking an issue came to.
 enum Took {
     /// This server's person is an assignee and no other server's login came before theirs (or there is nothing to
@@ -282,17 +293,16 @@ impl App {
     }
 
     /// A person, or the Moebius agent, changes how the repository works with others: whether the server marks the issues
-    /// that are ready for agents with a label (`mark_ready`), which label (`ready_label`), and which issues its agents
-    /// take (`agents_take`, `all` or `labelled`); what is left out stays. Recorded as an `edit_repository` decision and
+    /// that are ready for agents with a label (`mark_ready`), which label (`ready_label`), which issues its agents
+    /// take (`agents_take`, `all` or `labelled`), and the commands in issue comments (`commands`, `command_limit`,
+    /// `answer_on_forge`; see `app::commands`); what is left out stays. Recorded as an `edit_repository` decision and
     /// announced as `repository_updated`; an edit that changes nothing does neither. A repository without a forge has
     /// no one to work with.
     pub fn edit_working_with_others(
         &self,
         by: &crate::decide::Actor,
         id: i64,
-        mark_ready: Option<bool>,
-        ready_label: Option<&str>,
-        agents_take: Option<&str>,
+        edit: &WorkingWithOthers,
         reason: &str,
     ) -> Result<Repository> {
         use std::collections::BTreeMap;
@@ -303,24 +313,41 @@ impl App {
                 repository.name
             )));
         }
-        let label = ready_label.map_or(repository.ready_label.clone(), |l| l.trim().to_string());
+        let label = edit
+            .ready_label
+            .as_deref()
+            .map_or(repository.ready_label.clone(), |l| l.trim().to_string());
         if label.is_empty() || label.len() > 50 || label.contains([',', '\n']) {
             return Err(AppError::Invalid(format!("{label:?} is not a label name")));
         }
-        let takes = agents_take.map_or(repository.agents_take.clone(), str::to_string);
+        let takes = edit
+            .agents_take
+            .clone()
+            .unwrap_or(repository.agents_take.clone());
         if !["all", "labelled"].contains(&takes.as_str()) {
             return Err(AppError::Invalid(format!(
                 "agents_take is \"all\" or \"labelled\", not {takes:?}"
             )));
         }
-        let mark = mark_ready.unwrap_or(repository.mark_ready);
-        if (mark, &label, &takes)
+        let limit = edit.command_limit.unwrap_or(repository.command_limit);
+        if !(1..=50).contains(&limit) {
+            return Err(AppError::Invalid(format!(
+                "command_limit is a number from 1 to 50, not {limit}"
+            )));
+        }
+        let mark = edit.mark_ready.unwrap_or(repository.mark_ready);
+        let commands = edit.commands.unwrap_or(repository.commands);
+        let answer = edit.answer_on_forge.unwrap_or(repository.answer_on_forge);
+        let unchanged = (mark, &label, &takes, commands, limit, answer)
             == (
                 repository.mark_ready,
                 &repository.ready_label,
                 &repository.agents_take,
-            )
-        {
+                repository.commands,
+                repository.command_limit,
+                repository.answer_on_forge,
+            );
+        if unchanged {
             return Ok(repository);
         }
         let context = BTreeMap::from([
@@ -328,10 +355,15 @@ impl App {
             ("mark_ready".into(), mark.to_string()),
             ("ready_label".into(), label.clone()),
             ("agents_take".into(), takes.clone()),
+            ("commands".into(), commands.to_string()),
+            ("command_limit".into(), limit.to_string()),
+            ("answer_on_forge".into(), answer.to_string()),
         ]);
         self.record_action(by, "edit_repository", None, None, context, reason)?;
         self.store
             .set_repository_working_with_others(id, mark, &label, &takes)?;
+        self.store
+            .set_repository_commands(id, commands, limit, answer)?;
         let repository = self.repository(id)?;
         self.bus
             .publish(Event::RepositoryUpdated(repository.clone()));

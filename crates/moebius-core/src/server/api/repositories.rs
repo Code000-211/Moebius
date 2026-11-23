@@ -5,7 +5,7 @@
 //!   "owner/repo"` and optionally `trusted: [logins]` it is a repository whose issues are polled from GitHub; with
 //!   `forge: "gitlab"` and `project: "group/project"`, one whose issues are polled from GitLab; with `forge: "forgejo"`
 //!   and `project: "owner/repo"`, one on Forgejo, such as Codeberg.
-//! - `PUT /v1/repositories/{id}` `{trusted, mark_ready, ready_label, agents_take}`: replaces the logins a repository on a
+//! - `PUT /v1/repositories/{id}` `{trusted, mark_ready, ready_label, agents_take, commands, command_limit, answer_on_forge}`: replaces the logins a repository on a
 //!   forge trusts and how it works with others (each key left out stays as it is).
 //! - `DELETE /v1/repositories/{id}`: removes the repository with its cards, changes, chats and the rest, and deletes
 //!   its clone. Refused with `409` while one of its runs is still going.
@@ -98,6 +98,15 @@ pub struct EditedRepository {
     /// Which issues the repository's agents take, `all` or `labelled`; left out, it stays.
     #[serde(default)]
     pub agents_take: Option<String>,
+    /// Whether comments on issues may give the commands `/take`, `/release` and `/done`; left out, it stays.
+    #[serde(default)]
+    pub commands: Option<bool>,
+    /// How many open issues a login may hold that it took with `/take` (1 to 50); left out, it stays.
+    #[serde(default)]
+    pub command_limit: Option<i64>,
+    /// Whether the server writes the answer to every command as a comment on the issue; left out, it stays.
+    #[serde(default)]
+    pub answer_on_forge: Option<bool>,
     #[serde(default)]
     pub reason: String,
 }
@@ -143,18 +152,22 @@ async fn edit_repository(
             Some(trusted) => app.edit_repository(&by, id, trusted, &edited.reason)?,
             None => app.repository(id)?,
         };
-        if edited.mark_ready.is_some()
-            || edited.ready_label.is_some()
-            || edited.agents_take.is_some()
+        let edit = crate::app::WorkingWithOthers {
+            mark_ready: edited.mark_ready,
+            ready_label: edited.ready_label,
+            agents_take: edited.agents_take,
+            commands: edited.commands,
+            command_limit: edited.command_limit,
+            answer_on_forge: edited.answer_on_forge,
+        };
+        if edit.mark_ready.is_some()
+            || edit.ready_label.is_some()
+            || edit.agents_take.is_some()
+            || edit.commands.is_some()
+            || edit.command_limit.is_some()
+            || edit.answer_on_forge.is_some()
         {
-            repository = app.edit_working_with_others(
-                &by,
-                id,
-                edited.mark_ready,
-                edited.ready_label.as_deref(),
-                edited.agents_take.as_deref(),
-                &edited.reason,
-            )?;
+            repository = app.edit_working_with_others(&by, id, &edit, &edited.reason)?;
         }
         Ok(repository)
     })

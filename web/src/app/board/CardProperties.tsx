@@ -386,7 +386,11 @@ export function CardProperties({
             )}
           </Property>
           {card.taken_by && !card.change?.outside_author && (
-            <Property name="Taken by">{`@${card.taken_by}, on another server`}</Property>
+            <Property name="Taken by">
+              {card.taken_by_command
+                ? `@${card.taken_by}, with /take`
+                : `@${card.taken_by}, on another server`}
+            </Property>
           )}
           {card.held && <Property name="Blocked">{heldLine(card.held)}</Property>}
           <Property name="Why it waits">

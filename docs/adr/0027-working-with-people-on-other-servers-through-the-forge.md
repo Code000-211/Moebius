@@ -41,6 +41,9 @@ record says how two servers keep out of each other's way without a link between 
   owner may have the Reviewer read it and merge it once its checks have passed (a request with no checks may be merged). A request closed without a merge
   gives the card back to the column it came from, still taken.
 
+A helper who may comment but not assign is served by [0028](0028-helpers-take-issues-with-commands-in-comments.md): the
+owner's server assigns them when they write `/take`.
+
 ## Consequences
 
 - An assignment can be refused (a token that may not assign, a login that is no collaborator or project member). The

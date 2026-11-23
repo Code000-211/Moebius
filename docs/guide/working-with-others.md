@@ -57,6 +57,46 @@ For the owner, on their server, once:
   without a merge, the change is closed, the Inbox item is resolved, and the card goes back to the column it was in
   (Not started if that was In review or Done). It is still taken until its assignee is removed.
 
+## Helpers without a role take issues with comments
+
+On GitHub only people with the Triage role or higher may assign an issue, and the built-in roles cannot be edited without
+Enterprise. A helper who only comments cannot take an issue with their own server's token. Anyone who commented on an
+issue may *be* assigned, though, so the owner's server can assign them
+([ADR 0028](../adr/0028-helpers-take-issues-with-commands-in-comments.md)).
+
+For the owner, on their server, once:
+
+1. Open Project settings, Repositories, the repository, **Working with others**, and in **Commands in issue comments**
+   turn on **Take issues with /take, /release and /done** (`commands`). Only the server of the repository's owner should do
+   this: two servers reading the same comments would both answer.
+2. Leave **Answer on GitHub** (`answer_on_forge`) on, so that the server says what it did on the issue, and set **Issues
+   one login may hold** (`command_limit`, default 3). Save.
+3. Optionally have GitHub send issue comment events to the server ([ADR 0012](../adr/0012-forge-webhooks-wake-the-poll.md)),
+   so that a command does not wait for the next poll.
+
+For a helper, in a comment on the issue, as the first word of a line (not in a quote or a code block):
+
+- `/take` assigns you. The server answers "Assigned to @alice." and the owner's card is greyed with "Taken by @alice with
+  /take", so the owner's agents leave the issue alone.
+- `/release` takes you off the issue. "Released."
+- `/done`, with what you want to tell the owner on the same line or below it, asks the owner to close the issue: a helper
+  can never close anything. If your pull request closes the issue and the owner's board follows it, the server only says
+  thanks.
+
+Who may use them: anyone who can comment on the issue, on a public repository everyone. What keeps that safe:
+
+- a login holds at most **Issues one login may hold** open issues it took by command ("You already have 3 issues; release one first.");
+- the issue must be open and nobody may be assigned to it ("Already taken by @bob."), and while **Mark ready issues** is on
+  only an issue that carries the ready label can be taken ("Only issues labelled Ready for agent can be taken.");
+- only the assignee may `/release` or `/done`;
+- the owner can always release from the card (**Release from @alice**), and answers a `/done` there: the card window shows
+  "Moebius needs you" with the helper's words and **Close the issue**, **Give it back to @alice** (keeps them as assignee) and
+  **Release it**. The server writes each answer on the issue as well.
+
+Commands are read from new comments only: each comment once, and none from before the setting was turned on. GitLab and
+Forgejo work the same through their own APIs, but they assign only project members and collaborators, so for anyone else
+the answer is "Could not assign @alice: ...".
+
 ## How to try it
 
 Run two servers against one test repository, each with a different person and login. On the first, take an issue; the
@@ -74,5 +114,8 @@ to In review.
 - **A pull request is not followed.** Its author is one of your server's people, or it is already a change of the
   repository, or it names no closing keyword for an issue that has a card that is not done, or the issue's card already
   has an open change. A failed fetch of its head is a `forge_error` event; the card is still followed.
+- **A command is not answered.** `commands` is off, the comment is older than the moment it was turned on, the command is
+  not the first word of a line or is in a quote or code block, or **Answer on GitHub** is off (the command still worked; see
+  the issue's assignees). A comment that could not be written is a `forge_error` event.
 - **No label appears.** `mark_ready` is off, the issue is not approved, something blocks it, or the forge refused the
   label (the server tries again later and reports it with the other forge errors).

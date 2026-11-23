@@ -103,4 +103,39 @@ describe("the Moebius needs you block", () => {
     // It is not Moebius's own change: there is nothing to send back to coding.
     expect(screen.queryByRole("button", { name: "Reject with a reason" })).toBeNull();
   });
+
+  it("asks what to do with an issue its assignee says is done: close it, give it back, or release it", () => {
+    const { onDecide } = show(
+      item("done_asked", { login: "alice", reason: "The assets are cached now." }),
+    );
+    expect(screen.getByTestId("done-reason").textContent).toBe("The assets are cached now.");
+    fireEvent.click(screen.getByRole("button", { name: "Close the issue" }));
+    expect(onDecide).toHaveBeenLastCalledWith({
+      kind: "done",
+      card: 5,
+      number: 5,
+      answer: "close",
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Give it back to @alice" }));
+    expect(onDecide).toHaveBeenLastCalledWith({
+      kind: "done",
+      card: 5,
+      number: 5,
+      answer: "give_back",
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Release it" }));
+    expect(onDecide).toHaveBeenLastCalledWith({
+      kind: "done",
+      card: 5,
+      number: 5,
+      answer: "release",
+    });
+    // Nothing of a pull request's: no merge, no review.
+    expect(screen.queryByRole("button", { name: "Merge" })).toBeNull();
+  });
+
+  it("draws no reason block when the assignee wrote nothing more", () => {
+    show(item("done_asked", { login: "alice", reason: "" }));
+    expect(screen.queryByTestId("done-reason")).toBeNull();
+  });
 });
