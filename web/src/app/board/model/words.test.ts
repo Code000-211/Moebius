@@ -289,6 +289,7 @@ describe("the line of a card that is someone else's work", () => {
       tone: "quiet",
     });
     expect(waitingWords("done_asked")).toBe("Says it is done");
+    expect(waitingWords("review_rounds_spent")).toBe("Reviewed three times");
     expect(cardActivity(taken, "needs-you", waitingWords("done_asked"))).toMatchObject({
       text: "Says it is done",
       tone: "needs-you",

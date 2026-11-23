@@ -892,3 +892,40 @@ fn killing_all_claude_code_runs_closes_their_tunnels_and_clears_the_runner() {
         std::thread::sleep(Duration::from_millis(20));
     }
 }
+
+#[test]
+fn a_restricted_run_is_left_only_the_tools_that_read_files() {
+    let s = setup();
+    let agent = s.claude.agents.read().unwrap().agents["Coder"].clone();
+    let disallowed = |restricted: bool| {
+        let dir = Path::new("/srv/wt");
+        let place = process::Place {
+            worktree: dir,
+            config_dir: dir,
+            mcp: None,
+            session: "s",
+            resumes: false,
+            token: "moebius-run-x",
+            operates: false,
+            run: 1,
+            repository: None,
+            scratch: None,
+            restricted,
+        };
+        let command = s.claude.command(&agent, &place);
+        let args: Vec<String> = command
+            .get_args()
+            .map(|a| a.to_string_lossy().into_owned())
+            .collect();
+        let at = args.iter().position(|a| a == "--disallowedTools").unwrap();
+        args[at + 1].clone()
+    };
+    assert_eq!(disallowed(false), "AskUserQuestion");
+    let list = disallowed(true);
+    for tool in ["Bash", "Edit", "Write", "WebFetch", "WebSearch", "Task"] {
+        assert!(list.split(',').any(|t| t == tool), "{tool} in {list}");
+    }
+    for tool in ["Read", "Grep", "Glob"] {
+        assert!(!list.split(',').any(|t| t == tool), "{tool} in {list}");
+    }
+}

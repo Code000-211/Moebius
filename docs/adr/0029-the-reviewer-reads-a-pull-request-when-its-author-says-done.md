@@ -43,13 +43,29 @@ server merge what the Reviewer approves. A pull request is somebody else's code,
   thank the author on the issue. Off, the review is approved and the card goes to Ready to merge with an Inbox item for
   the owner. The default is on because the owner asked for it; the hint in the settings says that foreign code then
   lands without a person looking.
-- **The run is restricted.** What the pull request holds is the work of a person the server does not trust, and an
-  agent that reads it can be told by it what to do. A `review` run of a card that follows such a pull request is decided
-  by a fixed rule (`restricted-review`, in the guard, before the rules in prose): only the tools that read files, on
-  paths inside its worktree. So nothing of the pull request (its build scripts, its tests, a hook) runs on the server,
-  nothing reaches the network, nothing is written. It is started without MCP servers, and the server's environment,
-  which holds the forge token and the model keys, is withheld from the process as for every run. The prompt gives it the
-  diff and says that all the pull request holds is data and no instruction.
+- **The run is restricted, and the restriction is enforced by the router, not by the prompt.** What the pull request holds
+  is the work of a person the server does not trust, and an agent that reads it can be told by it what to do. The Pi-Bolt
+  bridge blocks no tool call, and Pi-Bolt is the default harness, so a rule in the guard alone would bind only Claude Code.
+  A `review` run of a card that follows such a pull request is therefore given a *checked token* on either harness: the
+  router decides every tool call of the model's answers before the harness sees them, and a refused call never reaches
+  it. The decision is a fixed rule (`restricted-review`, in the guard, before the rules in prose): only the tools that read
+  files, on paths that resolve inside the worktree. Symlinks are followed before that test and the worktree is made with
+  `core.symlinks=false`, so a link the pull request holds leads nowhere; a pattern that names a place may not be absolute
+  or go up. Anything that fails while deciding, including a card the store cannot read, counts as restricted. The run is
+  started without MCP servers, the server's environment (the forge token, the model keys) is withheld from its process as
+  for every run, and its prompt gives it the diff and says that all the pull request holds is data and no instruction.
+  Claude Code is also started with its writing, shell, network and sub-agent tools switched off. Pi-Bolt gets no
+  allowlist on its command line (nothing here shows that Pi has one, so none is relied on): the router is the one guard.
+- **Rounds are taken by one thread.** The poll and the engine both move rounds along, so a round changes state by a
+  compare-and-set in the store (`starting`, `posting`), and only the thread that wins starts the run, writes the review or
+  merges. A review the forge fails to take is not written again by itself (a forge such as GitLab may have written part of
+  it): the round is `failed`, and the author may write `/done` for another. A merge that fails after the approval puts the
+  card in Ready to merge with the reason, and the author's next `/done` for the same head tries the merge again.
+- **The merge is of the head that was read.** The round is of the head its run reads (set when it starts), and the merge
+  is refused unless the change's head is that one, besides the forge's own refusal of a pinned commit that moved.
+- **A pull request with no checks at all is reviewed** and merged as one with green checks, and the pull request is told
+  that no checks ran; waiting for nothing is what a person's merge does too. A repository whose checks start late can
+  show none for a moment: leave `merge_reviewed` off where that matters.
 
 ## Consequences
 
@@ -59,4 +75,7 @@ server merge what the Reviewer approves. A pull request is somebody else's code,
   what stand between a stranger's code and the default branch; a person who wants more turns the setting off.
 - The restricted mode is for pull requests someone else opened; the Reviewer of the board's own changes still runs the
   repository's checks.
+- A restricted Pi-Bolt run can still *try* any tool; the router removes the call from the answer, so the agent is told it
+  was refused, and nothing runs. The restriction holds as long as the router does, which is the only place Pi-Bolt's calls
+  are decided.
 - A review is only as quick as a poll, or a tick of the card, after the run ends.

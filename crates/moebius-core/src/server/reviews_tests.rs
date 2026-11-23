@@ -367,7 +367,8 @@ async fn a_push_after_the_review_never_merges_the_old_verdict() {
     g.reviewer_ends(&card, &run, &said("approve", "Fine.", json!([])))
         .await;
     assert!(g.merged_requests().is_empty());
-    assert_eq!(g.card(1).unwrap().column, columns::IN_REVIEW);
+    // Nothing was merged, and the owner is asked: the approval is on the forge.
+    assert_eq!(g.card(1).unwrap().column, columns::READY_TO_MERGE);
     let told = g.on_the_pull_request();
     assert!(
         told.iter().any(|t| t.contains("could not be merged")),
@@ -477,6 +478,7 @@ async fn a_review_run_of_a_pull_request_is_refused_a_shell_or_the_network() {
         ("write", json!({ "path": "a.txt", "content": "x" })),
         ("search__query", json!({ "q": "x" })),
         ("read", json!({ "path": "/etc/passwd" })),
+        ("Glob", json!({ "pattern": "/etc/*" })),
     ] {
         let (decision, reason) = decision(&f, &run, card.id, tool, input);
         assert_eq!(decision, "refuse", "{tool}");
@@ -507,4 +509,171 @@ async fn a_review_run_of_a_pull_request_is_refused_a_shell_or_the_network() {
         .add_run(Some(other.id), "Reviewer", "idle", "review")
         .unwrap();
     assert!(!f.server.app.is_restricted_review(&ordinary));
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_round_asked_for_at_one_head_and_started_at_another_reads_the_new_one() {
+    let (f, card, _) = ready().await;
+    // The checks of the head the author wrote `/done` at are still running.
+    f.checks_are("in_progress", "");
+    f.server.poll_github().await;
+    f.author_says_done().await;
+    assert_eq!(f.reviews_of(&card).len(), 0);
+    // The author pushes, and the checks of the new head pass.
+    let pushed = push_to_the_pull_request(&f);
+    f.checks_are("completed", "success");
+    f.server.poll_github().await;
+    let runs = f.reviews_of(&card);
+    assert_eq!(runs.len(), 1);
+    let change = f.server.app.followed_change(&card).unwrap().unwrap();
+    assert_eq!(
+        f.server.app.store.external_reviews(change.id).unwrap()[0].head,
+        pushed,
+        "the round is of the head its run reads"
+    );
+    // Its verdict is not dropped as stale: the head it read is the head now.
+    f.reviewer_ends(&card, &runs[0], &said("approve", "Fine.", json!([])))
+        .await;
+    assert_eq!(f.merged_requests().len(), 1);
+    assert_eq!(f.merged_requests()[0]["sha"], json!(pushed));
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_pull_request_without_any_checks_is_reviewed_and_merged_and_says_so() {
+    let (f, card, _) = ready().await;
+    f.fake.pulls.lock().unwrap().check_runs = Vec::new();
+    f.server.poll_github().await;
+    f.author_says_done().await;
+    let runs = f.reviews_of(&card);
+    assert_eq!(runs.len(), 1, "no checks is nothing to wait for");
+    assert!(
+        f.on_the_pull_request()
+            .iter()
+            .any(|t| t.contains("No checks ran")),
+        "{:?}",
+        f.on_the_pull_request()
+    );
+    f.reviewer_ends(&card, &runs[0], &said("approve", "Fine.", json!([])))
+        .await;
+    assert_eq!(f.merged_requests().len(), 1);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn an_approval_that_cannot_be_merged_waits_for_the_owner_and_is_merged_by_the_next_done() {
+    let (f, card, head) = ready().await;
+    f.author_says_done().await;
+    let run = f.reviews_of(&card).remove(0);
+    f.fake
+        .fail_merges
+        .store(true, std::sync::atomic::Ordering::SeqCst);
+    f.reviewer_ends(&card, &run, &said("approve", "Fine.", json!([])))
+        .await;
+    // The approval is on the forge, the pull request says what happened, and the owner is asked with the reason.
+    assert_eq!(f.fake.review_posts.lock().unwrap().len(), 1);
+    assert!(f.merged_requests().is_empty());
+    assert_eq!(f.card(1).unwrap().column, columns::READY_TO_MERGE);
+    assert!(
+        f.on_the_pull_request()
+            .iter()
+            .any(|t| t.contains("could not be merged"))
+    );
+    let inbox = f.server.app.store.inbox_for_card(card.id).unwrap();
+    let item = inbox
+        .iter()
+        .find(|i| i.kind == "ready_to_merge" && i.resolved_at.is_none())
+        .unwrap_or_else(|| panic!("{inbox:?}"));
+    assert!(item.data["reason"].as_str().is_some_and(|r| !r.is_empty()));
+
+    // The forge is well again: the author's `/done` for the same head merges it, and writes no second review.
+    f.fake
+        .fail_merges
+        .store(false, std::sync::atomic::Ordering::SeqCst);
+    f.author_says_done().await;
+    assert_eq!(f.merged_requests().len(), 1);
+    assert_eq!(f.merged_requests()[0]["sha"], json!(head));
+    assert_eq!(f.fake.review_posts.lock().unwrap().len(), 1);
+    assert_eq!(f.reviews_of(&card).len(), 1, "it was not read again");
+    assert_eq!(f.card(1).unwrap().column, columns::DONE);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_review_the_forge_failed_to_take_is_not_written_again_by_itself() {
+    let (f, card, _) = ready().await;
+    f.author_says_done().await;
+    let run = f.reviews_of(&card).remove(0);
+    f.fake
+        .fail_reviews
+        .store(true, std::sync::atomic::Ordering::SeqCst);
+    f.reviewer_ends(&card, &run, &said("approve", "Fine.", json!([])))
+        .await;
+    let attempts = || {
+        f.fake
+            .review_attempts
+            .load(std::sync::atomic::Ordering::SeqCst)
+    };
+    // One attempt with the lines and one without are what a forge that refuses the lines gets; no more at later ticks.
+    let first = attempts();
+    for _ in 0..3 {
+        let (engine, id) = (f.engine.clone(), card.id);
+        tokio::task::spawn_blocking(move || engine.tick(id).unwrap())
+            .await
+            .unwrap();
+        f.server.poll_github().await;
+    }
+    assert_eq!(attempts(), first);
+    assert!(f.merged_requests().is_empty());
+    let change = f.server.app.followed_change(&card).unwrap().unwrap();
+    assert_eq!(
+        f.server.app.store.external_reviews(change.id).unwrap()[0].state,
+        "failed"
+    );
+    assert!(
+        f.on_the_pull_request()
+            .iter()
+            .any(|t| t.contains("could not be written"))
+    );
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn two_threads_advancing_the_same_round_write_and_merge_it_once() {
+    let (f, card, _) = ready().await;
+    f.author_says_done().await;
+    let run = f.reviews_of(&card).remove(0);
+    let text = said("approve", "Fine.", json!([]));
+    f.server.app.store.set_run_summary(run.id, &text).unwrap();
+    f.server
+        .app
+        .store
+        .set_run_status(run.id, "succeeded")
+        .unwrap();
+    let mut threads = Vec::new();
+    for _ in 0..6 {
+        let (app, id) = (f.server.app.clone(), card.id);
+        threads.push(tokio::task::spawn_blocking(move || {
+            app.advance_external_reviews(id)
+        }));
+    }
+    for thread in threads {
+        thread.await.unwrap();
+    }
+    assert_eq!(f.fake.review_posts.lock().unwrap().len(), 1);
+    assert_eq!(f.merged_requests().len(), 1);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_review_run_whose_card_cannot_be_read_is_restricted() {
+    let (f, card, _) = ready().await;
+    let mut run = f
+        .server
+        .app
+        .store
+        .add_run(Some(card.id), "Reviewer", "idle", "review")
+        .unwrap();
+    assert!(f.server.app.is_restricted_review(&run));
+    // A card that is gone cannot be told from one that follows a pull request: it fails closed.
+    run.card_id = Some(987_654);
+    assert!(f.server.app.is_restricted_review(&run));
+    // A run that is no review, or has no card, is not.
+    run.purpose = "code".into();
+    assert!(!f.server.app.is_restricted_review(&run));
 }

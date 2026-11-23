@@ -61,6 +61,11 @@ pub(super) struct FakeGitHub {
     pub(super) review_posts: Mutex<Vec<Value>>,
     /// Whether it refuses a review that has comments on lines, as GitHub does for a line the diff does not have.
     pub(super) refuse_line_comments: std::sync::atomic::AtomicBool,
+    /// Whether it answers a review, or a merge, with a server error, as a forge does for a moment.
+    pub(super) fail_reviews: std::sync::atomic::AtomicBool,
+    pub(super) fail_merges: std::sync::atomic::AtomicBool,
+    /// How many reviews it was asked to write, those it failed included.
+    pub(super) review_attempts: std::sync::atomic::AtomicUsize,
 }
 
 /// The access token the fake accepts at `GET /user`.
@@ -169,6 +174,9 @@ pub(super) async fn fake_github() -> (String, Arc<FakeGitHub>) {
         state_writes: Mutex::new(Vec::new()),
         review_posts: Mutex::new(Vec::new()),
         refuse_line_comments: std::sync::atomic::AtomicBool::new(false),
+        fail_reviews: std::sync::atomic::AtomicBool::new(false),
+        fail_merges: std::sync::atomic::AtomicBool::new(false),
+        review_attempts: std::sync::atomic::AtomicUsize::new(0),
         unassign_fails: std::sync::atomic::AtomicBool::new(false),
         next_comment: std::sync::atomic::AtomicI64::new(1000),
         pulls: Mutex::new(Pulls {
@@ -452,6 +460,11 @@ pub(super) async fn fake_github() -> (String, Arc<FakeGitHub>) {
             })
             .post(
                 |State(fake): State<Arc<FakeGitHub>>, axum::Json(body): axum::Json<Value>| async move {
+                    fake.review_attempts
+                        .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                    if fake.fail_reviews.load(std::sync::atomic::Ordering::SeqCst) {
+                        return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+                    }
                     let lines = body["comments"].as_array().is_some_and(|c| !c.is_empty());
                     if lines && fake.refuse_line_comments.load(std::sync::atomic::Ordering::SeqCst) {
                         return (
@@ -476,6 +489,9 @@ pub(super) async fn fake_github() -> (String, Arc<FakeGitHub>) {
             "/repos/acme/widgets/pulls/{number}/merge",
             axum::routing::put(
                 |State(fake): State<Arc<FakeGitHub>>, axum::Json(body): axum::Json<Value>| async move {
+                    if fake.fail_merges.load(std::sync::atomic::Ordering::SeqCst) {
+                        return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+                    }
                     let mut pulls = fake.pulls.lock().unwrap();
                     // As GitHub does, it refuses a merge pinned to a commit that is no longer the head.
                     if body.get("sha").is_some_and(|sha| *sha != pulls.pull["head"]["sha"])

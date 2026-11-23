@@ -37,7 +37,8 @@ pub struct ReviewComment {
 
 /// One round of the Reviewer reading a followed pull request at one head. Its `state` is `wanted` (the author said
 /// `/done` and the checks of the head are not known yet), `running`, `approved` (approved, waiting for the checks of the
-/// head to be green before it is merged), `posted` (the review is on the forge), `merged`, `stale` (the head moved
+/// head to be green before it is merged), `starting` and `posting` (a thread has taken the round to start its run or to
+/// write its review, which only one does: see [`Store::move_external_review`]), `posted` (the review is on the forge), `merged`, `stale` (the head moved
 /// before the verdict could be used: nothing was posted) or `failed` (the run ended without a verdict).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct ExternalReview {
@@ -57,7 +58,7 @@ pub struct ExternalReview {
 }
 
 /// The states in which a round counts: it started, and its head was read.
-const COUNTED: &str = "('running', 'approved', 'posted', 'merged')";
+const COUNTED: &str = "('starting', 'running', 'approved', 'posting', 'posted', 'merged')";
 
 const COLUMNS: &str =
     "id, change_id, head, round, run_id, state, verdict, summary, comments, url, at";
@@ -143,11 +144,28 @@ impl Store {
         )?)
     }
 
-    /// Records that the round `id` runs as `run_id`, as the `round`th of its change.
-    pub fn start_external_review(&self, id: i64, run_id: i64, round: i64) -> Result<()> {
+    /// Moves the round `id` from the state `from` to `to` and says whether it did: false when another thread moved it
+    /// first. The poll and the engine both move the rounds along; what only one may do (start the run, write the
+    /// review, merge) is done by the one that wins this move.
+    pub fn move_external_review(&self, id: i64, from: &str, to: &str) -> Result<bool> {
+        Ok(self.conn().execute(
+            "UPDATE external_reviews SET state = ?1 WHERE id = ?2 AND state = ?3",
+            params![to, id, from],
+        )? > 0)
+    }
+
+    /// Records that the round `id` runs as `run_id`, as the `round`th of its change, on the commit `head` that the run
+    /// reads, which is where the round counts from now on.
+    pub fn start_external_review(
+        &self,
+        id: i64,
+        run_id: i64,
+        round: i64,
+        head: &str,
+    ) -> Result<()> {
         self.conn().execute(
-            "UPDATE external_reviews SET state = 'running', run_id = ?1, round = ?2 WHERE id = ?3",
-            params![run_id, round, id],
+            "UPDATE external_reviews SET state = 'running', run_id = ?1, round = ?2, head = ?3 WHERE id = ?4",
+            params![run_id, round, head, id],
         )?;
         Ok(())
     }
@@ -193,9 +211,24 @@ mod tests {
         let first = store.add_external_review(change.id, "aaa").unwrap();
         assert_eq!(store.external_review_rounds(change.id).unwrap(), 0);
         assert!(!store.external_review_of_head(change.id, "aaa").unwrap());
-        store.start_external_review(first, 5, 1).unwrap();
+        assert!(
+            store
+                .move_external_review(first, "wanted", "starting")
+                .unwrap()
+        );
+        assert!(
+            !store
+                .move_external_review(first, "wanted", "starting")
+                .unwrap(),
+            "only one thread wins"
+        );
+        store.start_external_review(first, 5, 1, "bbb").unwrap();
+        assert!(
+            store.external_review_of_head(change.id, "bbb").unwrap(),
+            "the head the run reads"
+        );
+        assert!(!store.external_review_of_head(change.id, "aaa").unwrap());
         assert_eq!(store.external_review_rounds(change.id).unwrap(), 1);
-        assert!(store.external_review_of_head(change.id, "aaa").unwrap());
         store
             .set_external_review_verdict(
                 first,
@@ -216,6 +249,6 @@ mod tests {
             .set_external_review_state(first, "stale", None)
             .unwrap();
         assert_eq!(store.external_review_rounds(change.id).unwrap(), 0);
-        assert!(!store.external_review_of_head(change.id, "aaa").unwrap());
+        assert!(!store.external_review_of_head(change.id, "bbb").unwrap());
     }
 }

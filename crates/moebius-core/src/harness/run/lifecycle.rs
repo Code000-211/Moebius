@@ -22,15 +22,17 @@ use crate::store::{Card, Repository, Run};
 use super::scratch;
 
 /// The run's token, which the router knows the run by. The router checks the tool calls of the answers to a harness
-/// without a bridge, Claude Code.
+/// without a bridge, Claude Code, and of every restricted run (a review of a pull request someone else opened, ADR
+/// 0029), whatever its harness: Pi-Bolt's bridge blocks no call, so the router is where its restriction is enforced.
 pub(in crate::harness) fn issue_token(
     router: &Router,
     config: &AgentConfig,
     grant: Grant,
+    restricted: bool,
 ) -> String {
-    match config.harness {
-        HarnessKind::PiBolt => router.issue_token(grant),
-        HarnessKind::ClaudeCode => router.issue_checked_token(grant),
+    match (config.harness, restricted) {
+        (HarnessKind::PiBolt, false) => router.issue_token(grant),
+        _ => router.issue_checked_token(grant),
     }
 }
 
@@ -78,7 +80,8 @@ pub(in crate::harness) fn detached_run(
         clone: Some(clone.to_path_buf()),
         start,
         worktree,
-        token: issue_token(router, config, grant),
+        token: issue_token(router, config, grant, false),
+        restricted: false,
         purpose: purpose.into(),
         commit_message: String::new(),
         remote: None,
@@ -121,7 +124,8 @@ pub(in crate::harness) fn in_worktree_run(
         clone: Some(clone.to_path_buf()),
         start,
         worktree: worktree.to_path_buf(),
-        token: issue_token(router, config, grant),
+        token: issue_token(router, config, grant, false),
+        restricted: false,
         purpose: "workflow".into(),
         commit_message: format!("Workflow run {workflow_run}\n\nCommitted by Moebius for its run."),
         remote: None,
@@ -199,12 +203,14 @@ pub(in crate::harness) fn card_run(
         card_id: Some(card.id),
         budget: config.token_budget,
     };
+    let restricted = app.restricts_review(card, purpose);
     Ok(RunningRun {
         id: run.id,
         clone: Some(clone),
         start,
         worktree: worktree.path,
-        token: issue_token(router, config, grant),
+        token: issue_token(router, config, grant, restricted),
+        restricted,
         purpose: purpose.to_string(),
         commit_message: format!(
             "#{}: {}\n\nCommitted by Moebius for its run.",
@@ -278,6 +284,9 @@ pub(in crate::harness) struct RunningRun {
     pub(in crate::harness) worktree: PathBuf,
     pub(in crate::harness) token: String,
     pub(in crate::harness) purpose: String,
+    /// Whether the run reads a pull request someone else opened: its token is checked and it may only read files (see
+    /// `decide::guard::restricted`).
+    pub(in crate::harness) restricted: bool,
     /// The message of the commit of what the agent leaves in the worktree.
     pub(in crate::harness) commit_message: String,
     /// The runner the harness goes on, if the run is not on the server.
@@ -474,7 +483,8 @@ pub(in crate::harness) fn chat_run(
         clone,
         start,
         worktree,
-        token: issue_token(router, config, grant),
+        token: issue_token(router, config, grant, false),
+        restricted: false,
         purpose: "chat".into(),
         commit_message: format!(
             "Chat {}\n\nCommitted by Moebius when the chat ended.",
@@ -535,7 +545,8 @@ pub(in crate::harness) fn woken_chat(
         clone,
         start,
         worktree,
-        token: issue_token(router, config, grant),
+        token: issue_token(router, config, grant, false),
+        restricted: false,
         purpose: "chat".into(),
         commit_message: format!("Chat {id}\n\nCommitted by Moebius when the chat ended."),
         remote: None,

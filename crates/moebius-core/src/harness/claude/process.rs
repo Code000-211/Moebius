@@ -38,6 +38,14 @@ pub(super) fn new_session() -> String {
     )
 }
 
+/// The tools of Claude Code a run may never use: its question tool, which has nobody to answer it headless.
+const DISALLOWED: &str = "AskUserQuestion";
+
+/// The tools a restricted run (a review of a pull request someone else opened) may not use besides: everything that
+/// writes, runs a command, reaches the network or starts a sub-agent. What is left reads files of the worktree, and the
+/// router still checks each call (see `decide::guard::restricted`).
+const DISALLOWED_RESTRICTED: &str = "AskUserQuestion,Bash,BashOutput,KillShell,Edit,MultiEdit,Write,NotebookEdit,WebFetch,WebSearch,Task,Agent,SlashCommand,TodoWrite";
+
 /// Where a Claude Code starts and what it is given.
 pub(super) struct Place<'a> {
     pub(super) worktree: &'a Path,
@@ -57,6 +65,8 @@ pub(super) struct Place<'a> {
     /// The directory the run puts what it does not need again in, as its own temporary directory, which the run may
     /// delete (see `crate::harness::run::scratch`). None for a run on a runner, which has directories of its own.
     pub(super) scratch: Option<&'a Path>,
+    /// Whether it reads a pull request someone else opened: only the tools that read files are left to it.
+    pub(super) restricted: bool,
 }
 
 impl ClaudeCode {
@@ -100,7 +110,14 @@ impl ClaudeCode {
             .args(["--permission-mode", "bypassPermissions"])
             // Its question tool is a picker for a terminal; headless it has nobody to answer it, so it is switched
             // off and the agent asks in words, as the person answers in a message either way.
-            .args(["--disallowedTools", "AskUserQuestion"])
+            .args([
+                "--disallowedTools",
+                if place.restricted {
+                    DISALLOWED_RESTRICTED
+                } else {
+                    DISALLOWED
+                },
+            ])
             .args(["--setting-sources", "user", "--strict-mcp-config"])
             .arg(if place.resumes {
                 "--resume"
@@ -218,6 +235,7 @@ impl ClaudeCode {
             run: run.id,
             repository,
             scratch: scratch.as_deref(),
+            restricted: run.restricted,
         };
         let mut command = self.command(agent, &place);
         if let Some(remote) = &remote {

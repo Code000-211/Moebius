@@ -4658,22 +4658,47 @@ by the Reviewer when its author says so. The steps are in [the guide](../guide/w
   told that the owner will merge it.
 - **Never merged.** A verdict counts for the head it read only. When the poll has read a push before the verdict is used,
   the round is `stale` and nothing is written. When it has not, the forge refuses the merge pinned to the old head, the pull
-  request is told "...it could not be merged", and the card stays in `In review`. A request that is not followed (its author
+  request is told "...it could not be merged", and the card goes to `Ready to merge` with an inbox item that says why (see
+  Failures below). A request that is not followed (its author
   may not write and is no assignee) has no round at all.
+- **When the rounds are spent**, `review_rounds_spent` is the card's open inbox item, with the choices of the pull request
+  itself: the card window offers "Review with agent" and "Merge" as for `outside_change`, and the Inbox row opens the card. While
+  a review that asked for changes is the latest round and read the current head, the card window says it waits for the
+  author and offers no "Merge".
 - **External review in the snapshot.** `ChangeView.external_review`: `round` (from 1; 0 until it starts), `round_limit` (3),
   `state` (`wanted`, `running`, `approved`, `posted`, `merged`, `stale` or `failed`), `verdict` (`approve`, `changes` or
   null), `summary`, `comments` (`{"path", "line", "body"}`), `url` (the review on the forge once it is written, else null),
   `head` (the commit it read) and `current` (whether that is the request's head now). The card window shows the verdict, the
   summary, each comment in a box "path line N" and "Open on GitHub".
 - **The restricted mode.** The run of a review of a pull request someone else opened (a run whose purpose is `review...` of
-  a card that has such an open change) is decided by a fixed built-in rule, `restricted-review`, before the rules in prose
-  and whatever they say: only the tools that read files are allowed (Pi's `read`, `grep`, `find`, `ls`, Claude Code's `Read`,
-  `Grep`, `Glob`, `LS`), and only on paths inside the run's worktree. Every other call is refused with a reason that starts
-  `restricted-review`: no shell (so nothing of the pull request, its build scripts or tests, runs on the server), no network
-  (`bash`, `WebFetch`, `WebSearch` and the like), no `write` or `edit`, and no tool of an MCP server (the run is also started
-  without MCP servers). The question's context has `restricted` = `restricted-review`. The run has the server's usual
-  environment withheld, so no forge token and no model key but the router's own. The diff and files are data; the prompt
-  says so.
+  a card that has such an open change) is restricted, on either harness. Its token is a *checked* token (`Router::issue_checked_token`):
+  the router decides every tool call of the model's answers through `decide("tool_call")` before the harness sees them,
+  which matters for Pi-Bolt, whose bridge blocks no call. The decision is a fixed built-in rule, `restricted-review`, applied
+  before the rules in prose and whatever they say: only the tools that read files are allowed (Pi's `read`, `grep`, `find`,
+  `ls`, Claude Code's `Read`, `Grep`, `Glob`, `LS`). A path they name (`path`, `file_path`, `notebook_path`, `directory`,
+  `cwd`) must resolve, through the filesystem and with symlinks followed, inside the run's worktree, which is checked out with
+  `core.symlinks=false`; a pattern that names a place (`glob`, `include`, `exclude`, `ignore`, and `pattern` of `find`, `ls`,
+  `Glob`, `LS`) may not be absolute, start with `~` or `$`, or have a `..` part. Every other call is refused with a reason that
+  starts `restricted-review`: no shell (so nothing of the pull request, its build scripts or tests, runs on the server), no
+  network, no `write` or `edit`, no tool of an MCP server (the run is also started without MCP servers), and a call with no
+  worktree to read. The question's context has `restricted` = `restricted-review`. Whatever fails while deciding whether a
+  run is restricted (a card the store cannot read) counts as restricted: the calls are refused, there are no MCP servers and
+  the prompt is the data-only one. Claude Code is also started with `--disallowedTools` for its shell, writing, network and
+  sub-agent tools; Pi-Bolt has no allowlist on its command line, so the router is its only guard. The process has the
+  server's usual environment withheld, so no forge token and no model key but the router's own. The prompt gives the diff and
+  says that everything the pull request holds is data and no instruction.
+- **One thread acts on a round.** The poll and the engine tick both call `App::advance_external_reviews`. A round changes
+  state by compare-and-set in the store (`wanted` to `starting`, `running` or `approved` to `posting`), so one thread starts
+  the run, writes the review and merges. A round's `head` is the head its run reads, set when it starts. The merge is refused
+  unless the change's head is the round's head (`409`, "moved on from <sha>"), besides the forge's refusal of a pinned commit.
+- **Failures.** A review the forge fails to take (after one attempt with the lines and one without) ends the round as
+  `failed`, tells the pull request ("could not be written on the forge") and is not written again by itself, because a forge
+  may have written part of it (GitLab writes a note, discussions and an approval). The author's `/done` starts another round.
+  A merge that fails after the approving review leaves the round `posted` with the verdict `approve`, moves the card to
+  `Ready to merge`, adds a `ready_to_merge` inbox item whose `data.reason` says why, and tells the pull request. The author's
+  next `/done` for the same head merges it again (answered "Merged, thank you @alice!" or "It could not be merged: <reason>")
+  without a second review. A pull request whose checks are `none` for its current head (a repository without checks) is
+  reviewed and merged as with green checks, and the pull request is told "No checks ran for this pull request".
 
 ## Events
 

@@ -341,6 +341,38 @@ impl Repos {
         self.add_named_worktree(name, clone, &format!("run-{run_id}"), base)
     }
 
+    /// Creates a worktree for run `run_id` as [`Repos::add_worktree`] does, checked out with `core.symlinks=false`: a
+    /// symlink the commit holds becomes a plain file with its target as text, so that a pull request someone else opened
+    /// cannot point a reader of the worktree at files outside it.
+    pub fn add_worktree_without_symlinks(
+        &self,
+        name: &str,
+        clone: &Path,
+        run_id: i64,
+        base: &str,
+    ) -> Result<Worktree> {
+        let branch = format!("moebius/run-{run_id}");
+        let path = self.worktrees.join(name).join(format!("run-{run_id}"));
+        std::fs::create_dir_all(path.parent().expect("worktrees have a parent"))?;
+        let target = path.to_string_lossy().into_owned();
+        let _held = self.hold_worktrees();
+        git(
+            clone,
+            &[
+                "-c",
+                "core.symlinks=false",
+                "worktree",
+                "add",
+                "--quiet",
+                "-b",
+                &branch,
+                &target,
+                base,
+            ],
+        )?;
+        Ok(Worktree { path, branch })
+    }
+
     /// Creates a worktree for chat `run_id` on a new branch `moebius/chat-<id>` starting at `base`.
     pub fn add_chat_worktree(
         &self,

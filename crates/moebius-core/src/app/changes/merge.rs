@@ -33,7 +33,7 @@ impl App {
         }
         let mut merged = Vec::new();
         for change in changes {
-            match self.merge_one(by, change.id, reason) {
+            match self.merge_one(by, change.id, reason, None) {
                 Ok(commit) => merged.push((change, commit)),
                 Err(e) => {
                     let why = e.to_string();

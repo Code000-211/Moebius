@@ -124,8 +124,15 @@ off, the Reviewer's approval is written on the forge and the card waits in **Rea
 window shows the review: the verdict, the summary, each comment in a box "src/lib.rs line 12" and **Open on GitHub**.
 
 The review run of such a pull request is **restricted**: what the pull request holds is written by someone your server does
-not trust. The Reviewer may only read files of its worktree, it has no shell, no network, no way to write and no MCP servers,
-and it is told that everything in the pull request is data. Nothing of the pull request runs on your server.
+not trust. The server's router decides every tool call of the run before the agent sees it, on Pi-Bolt as on Claude Code:
+the Reviewer may only read files of its worktree (a link the pull request holds does not lead out of it, and the worktree
+is made without symlinks), it has no shell, no network, no way to write and no MCP servers, and it is told that everything
+in the pull request is data. Nothing of the pull request runs on your server. If the router cannot decide a call, the call
+is refused. A pull request with no checks at all is reviewed without waiting, and says so.
+
+If the forge refuses the review, nothing is posted twice: the round fails and the author writes `/done` again. If the
+approval cannot be merged, the card goes to **Ready to merge** with the reason in the Inbox, and the author's next `/done`
+for the same version tries the merge again. After a review that asked for changes the card says it waits for the author.
 
 ## How to try it
 

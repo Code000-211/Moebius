@@ -78,6 +78,15 @@ impl Router {
         token
     }
 
+    /// Whether the answers to `token` have their tool calls checked.
+    #[cfg(test)]
+    pub(crate) fn is_checked(&self, token: &str) -> bool {
+        self.checked
+            .read()
+            .unwrap_or_else(|p| p.into_inner())
+            .contains(token)
+    }
+
     /// Withdraws a run's token when the run ends, and with it the run's MCP servers.
     pub fn revoke_token(&self, token: &str) {
         self.grants

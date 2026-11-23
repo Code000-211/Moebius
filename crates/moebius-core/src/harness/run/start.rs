@@ -49,7 +49,8 @@ pub(in crate::harness) fn start_card(
     }
     // A review of a pull request someone else opened gets no MCP servers: they hold credentials, and what the pull
     // request holds is not trusted (see `decide::guard::restricted`).
-    if purpose.starts_with("review") && matches!(app.followed_change(card), Ok(Some(_))) {
+    let restricted = app.restricts_review(card, purpose);
+    if restricted {
         config.mcp.clear();
     }
     let prompt = run_prompt(app, card, purpose, note);
@@ -59,8 +60,14 @@ pub(in crate::harness) fn start_card(
         .map_err(|e| StartError::Store(e.to_string()))?;
     let worktree = |repository: &Repository, clone: &Path, run_id: i64| {
         let base = code_branch.unwrap_or_else(|| repository.base_ref());
-        app.repos
-            .add_worktree(&repository.name, clone, run_id, &base)
+        // A pull request someone else opened is checked out without its symlinks, which could point out of the worktree.
+        if restricted {
+            app.repos
+                .add_worktree_without_symlinks(&repository.name, clone, run_id, &base)
+        } else {
+            app.repos
+                .add_worktree(&repository.name, clone, run_id, &base)
+        }
     };
     // The card's other repositories start from where its work in each stands, or from their default branch.
     let mut others = Vec::new();

@@ -5,6 +5,7 @@
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 use serde_json::Value;
 
@@ -580,4 +581,128 @@ fn a_decider_that_fails_leaves_the_run_without_a_hint() {
         "{}",
         hints[0].reason
     );
+}
+
+/// What a review run of a pull request someone else opened is started with, on either harness: a checked token (Pi-Bolt's
+/// bridge blocks no call, so the router is where the restriction is enforced), no MCP servers, and a worktree whose
+/// symlinks are plain files. The same review of a card that follows no such request is none of that.
+#[cfg(unix)] // The pull request's branch holds a symlink, which needs Unix.
+#[test]
+fn a_review_of_a_pull_request_someone_else_opened_is_started_restricted_on_either_harness() {
+    use crate::config::HarnessKind;
+    use crate::harness::remote::Runners;
+    use crate::harness::run::start_card;
+    use crate::router::Router;
+
+    let setup = setup();
+    let router = Router::new(setup.app.store.clone(), vec![]);
+    let runners = Arc::new(Runners::default());
+    let repository = setup.app.store.repository(setup.repo).unwrap().unwrap();
+    let clone = PathBuf::from(&repository.path);
+    // The pull request's branch has a link that leads out of any worktree.
+    git(&clone, &["checkout", "--quiet", "-b", "moebius/pr-7"]).unwrap();
+    std::os::unix::fs::symlink("/etc", clone.join("link")).unwrap();
+    git(&clone, &["add", "."]).unwrap();
+    git(
+        &clone,
+        &[
+            "-c",
+            "user.name=alice",
+            "-c",
+            "user.email=alice@example.com",
+            "commit",
+            "--quiet",
+            "-m",
+            "a link",
+        ],
+    )
+    .unwrap();
+    git(&clone, &["checkout", "--quiet", "main"]).unwrap();
+    let followed = setup
+        .app
+        .create_issue(setup.repo, "Followed", "", "person")
+        .unwrap();
+    let change = setup
+        .app
+        .store
+        .add_change(
+            setup.repo,
+            Some(followed.id),
+            "moebius/pr-7",
+            Some(7),
+            "abc",
+        )
+        .unwrap();
+    setup
+        .app
+        .store
+        .set_change_outside(change.id, "alice", "In progress")
+        .unwrap();
+    let own = setup
+        .app
+        .create_issue(setup.repo, "Own", "", "person")
+        .unwrap();
+
+    for harness in [HarnessKind::PiBolt, HarnessKind::ClaudeCode] {
+        for (card, restricted) in [(&followed, true), (&own, false)] {
+            let mut mcp = BTreeMap::new();
+            mcp.insert(
+                "search".to_string(),
+                crate::harness::mcp::McpServer {
+                    command: None,
+                    args: vec![],
+                    env: BTreeMap::new(),
+                    url: Some("https://search.test/mcp".into()),
+                    headers: BTreeMap::new(),
+                },
+            );
+            let config = crate::config::AgentConfig {
+                model: "qwen-local".into(),
+                protocol: crate::router::Protocol::Anthropic,
+                thinking: None,
+                instructions: None,
+                skills: vec![],
+                extensions: vec![],
+                mcp,
+                token_budget: None,
+                harness,
+                tool_output: Default::default(),
+                engineering_skills: Default::default(),
+                runner: None,
+            };
+            let seen = std::cell::RefCell::new(None);
+            let _ = start_card(
+                &setup.app,
+                (&router, &runners),
+                card,
+                ("Reviewer", config),
+                ("review", None),
+                Variant::default(),
+                &|launching| {
+                    let link = launching.run.worktree.join("link");
+                    *seen.borrow_mut() = Some((
+                        launching.run.restricted,
+                        router.is_checked(&launching.run.token),
+                        launching.config.mcp.len(),
+                        std::fs::symlink_metadata(&link).map(|m| m.file_type().is_symlink()),
+                    ));
+                    Err("not started: the test only looks".into())
+                },
+            );
+            let (marked, checked, servers, link) = seen.into_inner().expect("the run was launched");
+            let name = format!("{harness:?}, restricted {restricted}");
+            assert_eq!(marked, restricted, "{name}");
+            // Claude Code's calls are always checked; Pi-Bolt's only when the run is restricted.
+            assert_eq!(
+                checked,
+                restricted || harness == HarnessKind::ClaudeCode,
+                "{name}"
+            );
+            assert_eq!(servers, usize::from(!restricted), "{name}");
+            // Only a card of the pull request's branch has the link, and it is a plain file there.
+            if restricted {
+                assert_eq!(link.ok(), Some(false), "{name}");
+            }
+        }
+    }
 }

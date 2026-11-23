@@ -71,6 +71,15 @@ describe("the changes of a card over several repositories", () => {
     expect(inboxOf([ready(8, 2), ready(7, 1)], card(1))?.id).toBe(7);
   });
 
+  it("lets the rounds spent be the card's item without hiding the choices of its pull request", () => {
+    const outside = { ...item("outside_change", 1), id: 3, data: { change: 9 } };
+    const spent = { ...item("review_rounds_spent", 1), id: 4, data: { change: 9 } };
+    // Whatever order the inbox lists them in, the card has one item, which carries the change to review and merge.
+    expect(inboxOf([outside, spent], card(1))?.kind).toBe("review_rounds_spent");
+    expect(inboxOf([spent, outside], card(1))?.kind).toBe("review_rounds_spent");
+    expect(inboxOf([spent, outside], card(1))?.data.change).toBe(9);
+  });
+
   it("leaves a stopped merge out of the card's turn, and finds it for what it says", () => {
     const stopped = {
       ...item("merge_stopped", 1),

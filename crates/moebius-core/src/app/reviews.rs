@@ -106,14 +106,22 @@ impl App {
             .find(|change| change.outside_author.is_some()))
     }
 
-    /// Whether `run` reads a pull request someone else opened: such a run is restricted to reading files.
+    /// Whether a run of `purpose` for `card` is restricted: a review of a card that follows a pull request someone else
+    /// opened. Fails closed: when the store cannot say, the run is restricted.
+    pub(crate) fn restricts_review(&self, card: &Card, purpose: &str) -> bool {
+        purpose.starts_with("review") && !matches!(self.followed_change(card), Ok(None))
+    }
+
+    /// Whether `run` reads a pull request someone else opened: such a run is restricted to reading files. Fails closed:
+    /// a review run whose card cannot be read is restricted.
     pub fn is_restricted_review(&self, run: &Run) -> bool {
         run.purpose.starts_with("review")
-            && run
-                .card_id
-                .and_then(|id| self.card(id).ok())
-                .and_then(|card| self.followed_change(&card).ok().flatten())
-                .is_some()
+            && match run.card_id {
+                None => false,
+                Some(id) => self
+                    .card(id)
+                    .map_or(true, |card| self.restricts_review(&card, &run.purpose)),
+            }
     }
 
     /// The diff of the pull request the card follows against the repository's default branch, for the prompt of the
@@ -211,13 +219,36 @@ impl App {
             );
         };
         if self.store.external_review_of_head(change.id, head)? {
+            // An approval that could not be merged is merged again when its author asks, not read again.
+            let unmerged = self
+                .store
+                .external_reviews(change.id)?
+                .into_iter()
+                .find(|r| {
+                    r.head == head && r.state == "posted" && r.verdict.as_deref() == Some("approve")
+                });
+            if let (Some(round), true) = (unmerged, repository.merge_reviewed) {
+                if !matches!(change.checks.as_deref(), Some("success") | None)
+                    || change.checks_head.as_deref() != Some(head)
+                {
+                    return Ok("The checks have not passed, so it is not merged.".into());
+                }
+                let author = change.outside_author.clone().unwrap_or_default();
+                return Ok(
+                    match self.merge_reviewed(repository, card, change, &round)? {
+                        Ok(()) => format!("Merged, thank you @{author}!"),
+                        Err(why) => {
+                            format!("It could not be merged: {why}. The owner has been asked.")
+                        }
+                    },
+                );
+            }
             return Ok(
                 "This version of the pull request was reviewed already; push your changes, then write /done again."
                     .into(),
             );
         }
         self.store.add_external_review(change.id, head)?;
-        let _ = repository;
         Ok("Thanks, the pull request will be reviewed once its checks have passed.".into())
     }
 
@@ -286,6 +317,13 @@ impl App {
                 "wanted" => self.advance_wanted(&repository, card, change, &round)?,
                 "running" => self.advance_running(&repository, card, change, &round)?,
                 "approved" => {
+                    // The checks of the head may be green now; one thread takes the round to write it.
+                    if !self
+                        .store
+                        .move_external_review(round.id, "approved", "posting")?
+                    {
+                        continue;
+                    }
                     let said = structured::Structured {
                         verdict: "approve",
                         summary: round.summary.clone(),
@@ -309,9 +347,15 @@ impl App {
         round: &ExternalReview,
     ) -> Result<()> {
         let end = |why: &str, text: &str| -> Result<()> {
-            self.store
-                .set_external_review_verdict(round.id, "failed", "", why, &[])?;
-            self.answer_on_request(repository, change, text);
+            // Only the thread that ends the round answers for it.
+            if self
+                .store
+                .move_external_review(round.id, "wanted", "failed")?
+            {
+                self.store
+                    .set_external_review_verdict(round.id, "failed", "", why, &[])?;
+                self.answer_on_request(repository, change, text);
+            }
             Ok(())
         };
         let Some(head) = change.head.as_deref() else {
@@ -332,15 +376,17 @@ impl App {
         if change.checks_head.as_deref() != Some(head) {
             return Ok(());
         }
+        let no_checks = change.checks.is_none();
         match change.checks.as_deref() {
-            Some("success") => {}
+            // A repository without checks has none to wait for.
+            Some("success") | None => {}
             Some("failure") => {
                 return end(
                     "checks failed",
                     "The checks of this pull request fail, so nothing was reviewed. Fix them, push, then write /done again.",
                 );
             }
-            // Pending, or none: the review waits for them.
+            // Pending: the review waits for them.
             _ => return Ok(()),
         }
         let runs = self.review_runs()?;
@@ -359,6 +405,13 @@ impl App {
                 return Ok(());
             }
         }
+        // Only one thread starts the run: the poll and the engine both come here.
+        if !self
+            .store
+            .move_external_review(round.id, "wanted", "starting")?
+        {
+            return Ok(());
+        }
         self.store.set_change_reviewed_head(change.id, head)?;
         let context = BTreeMap::from([
             ("repository".into(), repository.name.clone()),
@@ -375,11 +428,26 @@ impl App {
             context,
             "the author said the pull request is done",
         )?;
-        let rounds = self.store.external_review_rounds(change.id)? + 1;
-        let run = runs
-            .start(self, card, "Reviewer", ("review", None), Variant::default())
-            .map_err(|e| AppError::Conflict(e.to_string()))?;
-        self.store.start_external_review(round.id, run.id, rounds)?;
+        let rounds = self.store.external_review_rounds(change.id)?;
+        let run = match runs.start(self, card, "Reviewer", ("review", None), Variant::default()) {
+            Ok(run) => run,
+            Err(e) => {
+                // It is asked for again at the next call.
+                self.store
+                    .move_external_review(round.id, "starting", "wanted")?;
+                return Err(AppError::Conflict(e.to_string()));
+            }
+        };
+        // The round is of the head the run reads, which is the one that was fetched just now.
+        self.store
+            .start_external_review(round.id, run.id, rounds, head)?;
+        if no_checks {
+            self.answer_on_request(
+                repository,
+                change,
+                "No checks ran for this pull request, so the review did not wait for any.",
+            );
+        }
         self.bus
             .publish(crate::bus::Event::CardUpdated(self.card(card.id)?));
         Ok(())
@@ -396,8 +464,17 @@ impl App {
         let Some(run) = round.run_id.map(|id| self.run(id)).transpose()? else {
             return Ok(());
         };
+        if !matches!(run.status.as_str(), "succeeded" | "failed" | "stopped") {
+            return Ok(());
+        }
+        // One thread reads the answer of the run; the other finds the round moved.
+        if !self
+            .store
+            .move_external_review(round.id, "running", "posting")?
+        {
+            return Ok(());
+        }
         match run.status.as_str() {
-            "starting" | "running" => return Ok(()),
             "succeeded" => {}
             _ => {
                 self.store.set_external_review_verdict(
@@ -449,8 +526,40 @@ impl App {
         self.act_on_verdict(repository, card, change, round, &said)
     }
 
-    /// Writes the verdict of `round` on the forge, and merges or hands on an approved pull request.
+    /// Writes the verdict of `round`, which this thread holds in the state `posting`, as `write_verdict` does. A failure
+    /// ends the round as `failed`, and it is not tried again by itself: a review written twice would be two reviews, and
+    /// a forge that failed half way (GitLab writes a note, discussions and an approval) has written part of it. The
+    /// author may write `/done` for another.
     fn act_on_verdict(
+        &self,
+        repository: &Repository,
+        card: &Card,
+        change: &Change,
+        round: &ExternalReview,
+        said: &structured::Structured,
+    ) -> Result<()> {
+        let outcome = self.write_verdict(repository, card, change, round, said);
+        if let Err(e) = &outcome {
+            let reason = e.to_string();
+            let reason = reason.lines().next().unwrap_or_default();
+            self.store.set_external_review_verdict(
+                round.id,
+                "failed",
+                "",
+                &format!("the review could not be written: {reason}"),
+                &[],
+            )?;
+            self.answer_on_request(
+                repository,
+                change,
+                &format!("The review could not be written on the forge: {reason}. Write /done to try again."),
+            );
+        }
+        outcome
+    }
+
+    /// Writes the verdict of `round` on the forge, and merges or hands on an approved pull request.
+    fn write_verdict(
         &self,
         repository: &Repository,
         card: &Card,
@@ -470,7 +579,8 @@ impl App {
             match (change.checks_head.as_deref() == Some(&round.head))
                 .then_some(change.checks.as_deref())
             {
-                Some(Some("success")) => {}
+                // No checks at all is nothing to wait for, as for a merge by a person.
+                Some(Some("success") | None) => {}
                 Some(Some("failure")) => {
                     self.store.set_external_review_verdict(
                         round.id,
@@ -549,17 +659,12 @@ impl App {
             return Ok(());
         }
         if repository.merge_reviewed {
-            return self.merge_reviewed(repository, card, change, round);
+            // Whether it was merged or is left to the owner is told by `merge_reviewed` itself.
+            self.merge_reviewed(repository, card, change, round)?.ok();
+            return Ok(());
         }
         // The owner merges: the card waits in Ready to merge.
-        self.store.resolve_inbox_for_card(card.id)?;
-        self.move_card(card.id, columns::READY_TO_MERGE, Some(&reviewer()))?;
-        self.store.add_inbox_item(
-            "ready_to_merge",
-            Some(card.id),
-            &card.title,
-            &serde_json::json!({ "change": change.id, "branch": change.branch }),
-        )?;
+        self.hand_to_owner(card, change, "")?;
         self.answer(
             repository,
             card.id,
@@ -568,17 +673,25 @@ impl App {
         Ok(())
     }
 
-    /// Merges the approved pull request, pinned to the head that was read, and thanks its author.
+    /// Merges the approved pull request, pinned to the head that was read, and thanks its author. The inner error says why
+    /// it was not merged: then the card waits in Ready to merge with an Inbox item that gives the reason, and the pull
+    /// request says so; the author's next `/done` for the same head tries the merge again.
     fn merge_reviewed(
         &self,
         repository: &Repository,
         card: &Card,
         change: &Change,
         round: &ExternalReview,
-    ) -> Result<()> {
+    ) -> Result<std::result::Result<(), String>> {
         let by = reviewer();
         let author = change.outside_author.clone().unwrap_or_default();
-        match self.merge_one(&by, change.id, "the Reviewer approved the pull request") {
+        let merged = self.merge_one(
+            &by,
+            change.id,
+            "the Reviewer approved the pull request",
+            Some(&round.head),
+        );
+        match merged {
             Ok(_) => {
                 self.store
                     .set_external_review_state(round.id, "merged", None)?;
@@ -587,11 +700,11 @@ impl App {
                     card.id,
                     &format!("Merged, thank you @{author}!"),
                 );
-                Ok(())
+                Ok(Ok(()))
             }
             Err(e) => {
                 let reason = e.to_string();
-                let reason = reason.lines().next().unwrap_or_default();
+                let reason = reason.lines().next().unwrap_or_default().to_string();
                 self.answer_on_request(
                     repository,
                     change,
@@ -599,9 +712,26 @@ impl App {
                         "The reviewer approved this version, but it could not be merged: {reason}"
                     ),
                 );
-                Err(e)
+                self.hand_to_owner(card, change, &reason)?;
+                Ok(Err(reason))
             }
         }
+    }
+
+    /// The approved pull request waits for the owner: the card goes to Ready to merge, with an Inbox item that says why
+    /// when it could not be merged.
+    fn hand_to_owner(&self, card: &Card, change: &Change, why: &str) -> Result<()> {
+        self.store.resolve_inbox_for_card(card.id)?;
+        if self.card(card.id)?.column != columns::READY_TO_MERGE {
+            self.move_card(card.id, columns::READY_TO_MERGE, Some(&reviewer()))?;
+        }
+        let mut data = serde_json::json!({ "change": change.id, "branch": change.branch });
+        if !why.is_empty() {
+            data["reason"] = serde_json::json!(why);
+        }
+        self.store
+            .add_inbox_item("ready_to_merge", Some(card.id), &card.title, &data)?;
+        Ok(())
     }
 }
 
@@ -617,5 +747,28 @@ mod tests {
         assert_eq!(lines["a.rs"], BTreeSet::from([10, 11, 12, 13]));
         assert_eq!(lines["b.rs"], BTreeSet::from([1, 2]));
         assert!(!lines.contains_key("c.rs"));
+    }
+
+    #[test]
+    fn a_merge_of_a_verdict_is_refused_unless_the_head_is_the_one_that_was_read() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = Arc::new(crate::store::Store::in_memory(dir.path()).unwrap());
+        let host = Arc::new(moebius_plugin_api::Host::new(
+            std::time::Duration::from_secs(1),
+        ));
+        let app = App::new(store.clone(), host, dir.path());
+        let repo = store.add_repository("r", "/r", "none", "main").unwrap();
+        let change = store
+            .add_change(repo.id, None, "moebius/pr-7", Some(7), "bbb")
+            .unwrap();
+        store
+            .set_change_outside(change.id, "alice", "In progress")
+            .unwrap();
+        let error = app
+            .merge_one(&reviewer(), change.id, "approved", Some("aaa"))
+            .unwrap_err();
+        assert!(error.to_string().contains("moved on from aaa"), "{error}");
+        // The state is untouched: nothing was merged.
+        assert_eq!(store.change(change.id).unwrap().unwrap().state, "open");
     }
 }

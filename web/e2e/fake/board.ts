@@ -896,7 +896,8 @@ export function createBoardFake(send: (event: ServerEvent) => void): BoardFake {
               ],
               url: "https://github.test/acme/demo/pull/7#pullrequestreview-91",
               head: "abc",
-              current: true,
+              // The author pushed since: the review is of an earlier version, so the owner may merge.
+              current: false,
             },
           },
         }),
