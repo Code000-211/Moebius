@@ -32,6 +32,7 @@ export const projectsRoutes = [
   { path: "projects/:projectId/cycles", element: <ProjectTabRoute tab="cycles" /> },
   { path: "projects/:projectId/cycles/:cycleId", element: <ProjectTabRoute tab="cycles" /> },
   { path: "projects/:projectId/milestones", element: <ProjectTabRoute tab="milestones" /> },
+  { path: "projects/:projectId/wiki", element: <ProjectTabRoute tab="wiki" /> },
   { path: "projects/:projectId/intake", element: <ProjectTabRoute tab="intake" /> },
   { path: "projects/:projectId/list", element: <ProjectBoardRoute list /> },
   { path: "projects/:projectId/repositories/:repoId", element: <ProjectPage /> },

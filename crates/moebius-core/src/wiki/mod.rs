@@ -8,13 +8,14 @@
 //! page someone pushed there is read. Refreshing, reading and editing take turns.
 //!
 //! This module holds the clone and the names of pages; `pages` reads the pages and their history, `edits` writes,
-//! moves and deletes them, `proposals` keeps an agent's edit on a branch that waits in the inbox for a person to merge
+//! moves and deletes them, `labels` keeps a page's labels in its front matter, `proposals` keeps an agent's edit on a branch that waits in the inbox for a person to merge
 //! it, `prompt` gives a run the pages its card links to, `search` finds pages by their words, `sight` says which
 //! pages a person or run sees (a private project's pages are its members'), and `links` holds the links between pages
 //! and cards, which are made again from the files whenever the clone changes, and `repository` opens the clone and
 //! connects a wiki kept on this server to a git repository.
 
 mod edits;
+mod labels;
 mod links;
 mod pages;
 mod prompt;

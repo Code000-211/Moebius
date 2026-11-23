@@ -51,6 +51,18 @@ export function staleWrite(error: unknown): { current: WikiPageView | null } | u
   return { current: (error.body.current as WikiPageView | null) ?? null };
 }
 
+/** Sets the labels of a page: a commit that changes its front matter only. `base` is as for `writeWikiPage`. */
+export function setWikiLabels(
+  path: string,
+  labels: string[],
+  base?: string,
+): Promise<WikiPageView> {
+  return put<WikiPageView>(`/v1/wiki/labels/${pageUrl(path)}`, {
+    labels,
+    ...(base !== undefined ? { base } : {}),
+  });
+}
+
 /** Moves or renames a page; its history follows it. */
 export function moveWikiPage(from: string, to: string): Promise<WikiPageView> {
   return post<WikiPageView>("/v1/wiki/moves", { from, to });

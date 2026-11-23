@@ -11,7 +11,7 @@ export const PROJECTS = "projects";
 
 /** A row of the tree: a folder with what is in it, or a page. */
 export type TreeNode =
-  | { kind: "folder"; name: string; path: string; children: TreeNode[] }
+  | { kind: "folder"; name: string; path: string; count: number; children: TreeNode[] }
   | { kind: "page"; name: string; path: string };
 
 /** The tree of the wiki: the organisation's pages, then one folder per project, a project without pages too. */
@@ -66,9 +66,10 @@ function insert(nodes: TreeNode[], parts: string[], base: string): void {
       node.kind === "folder" && node.name === first,
   );
   if (!folder) {
-    folder = { kind: "folder", name: first, path, children: [] };
+    folder = { kind: "folder", name: first, path, count: 0, children: [] };
     nodes.push(folder);
   }
+  folder.count += 1;
   insert(folder.children, rest, path);
 }
 
@@ -141,4 +142,96 @@ export function pathProblem(path: string, keys: readonly string[]): string | nul
     }
   }
   return null;
+}
+
+/** A group of pages: the organisation's (empty) or one project's, `projects/<KEY>`. */
+export function groupOf(path: string): string {
+  const parts = path.split("/");
+  return parts[0] === PROJECTS && parts.length > 2 ? `${PROJECTS}/${parts[1]}` : "";
+}
+
+/** The pages under `group`, as `groupOf` says it; with `""` the organisation's own. */
+export function pagesOfGroup<T extends { path: string }>(pages: readonly T[], group: string): T[] {
+  return pages.filter((page) => groupOf(page.path) === group);
+}
+
+/** Joins the parts of a path, leaving out the empty ones. */
+export function joinPath(...parts: string[]): string {
+  return parts.filter((part) => part !== "").join("/");
+}
+
+/** The category of a page in its group: the folder it is in, below the group's own folder; empty at the top. */
+export function categoryOf(path: string): string {
+  const group = groupOf(path);
+  const folder = folderOf(path);
+  return group === "" ? folder : folder.slice(group.length + 1);
+}
+
+/** The categories of a group's pages: every folder of them below the group, sorted, a folder's own folders too. */
+export function categoriesOf(pages: readonly { path: string }[], group: string): string[] {
+  const found = new Set<string>();
+  for (const page of pagesOfGroup(pages, group)) {
+    const parts = categoryOf(page.path)
+      .split("/")
+      .filter((part) => part !== "");
+    parts.forEach((_, index) => {
+      found.add(parts.slice(0, index + 1).join("/"));
+    });
+  }
+  return [...found].sort((a, b) => a.localeCompare(b));
+}
+
+/** Where a new page goes: the group and the category inside it, from a folder path as the address names it. */
+export function splitFolder(folder: string): { group: string; category: string } {
+  const parts = folder.split("/");
+  if (parts[0] === PROJECTS && parts.length > 1) {
+    return {
+      group: `${PROJECTS}/${parts[1]}`,
+      category: parts.slice(2).join("/"),
+    };
+  }
+  return { group: "", category: folder };
+}
+
+/** The labels in use among `pages`, each with how many pages carry it, sorted by name. */
+export function labelsInUse(
+  pages: readonly { labels: readonly string[] }[],
+): Array<{ label: string; count: number }> {
+  const counts = new Map<string, number>();
+  for (const page of pages) {
+    for (const label of new Set(page.labels)) counts.set(label, (counts.get(label) ?? 0) + 1);
+  }
+  return [...counts.entries()]
+    .map(([label, count]) => ({ label, count }))
+    .sort((a, b) => a.label.localeCompare(b.label));
+}
+
+/** The pages that carry every one of `chosen`; all of them when none is chosen. */
+export function withLabels<T extends { labels: readonly string[] }>(
+  pages: readonly T[],
+  chosen: readonly string[],
+): T[] {
+  return pages.filter((page) => chosen.every((label) => page.labels.includes(label)));
+}
+
+/** Why `label` is not a label, or null when it is: the server's rules ("The wiki" in the desktop API reference). */
+export function labelProblem(label: string): string | null {
+  const text = label.trim();
+  if (text === "") return "Give the label a name.";
+  if ([...text].length > 40) return "A label is at most 40 characters.";
+  // biome-ignore lint/suspicious/noControlCharactersInRegex: control characters are what is refused here
+  if (/[\u0000-\u001f\u007f,[\]{}"'\\#:|>*&!%@`]/.test(text)) {
+    return "A label cannot hold control characters or any of , [ ] { } \" ' \\ # : | > * & ! % @ `.";
+  }
+  return null;
+}
+
+/**
+ * The front matter of a page as its file has it (`---` lines, keys and all), which the editor does not show: the text
+ * before the body, which is the end of the text. Empty for a page without front matter.
+ */
+export function frontMatterOf(page: { text: string; body: string }): string {
+  return page.text.endsWith(page.body)
+    ? page.text.slice(0, page.text.length - page.body.length)
+    : "";
 }

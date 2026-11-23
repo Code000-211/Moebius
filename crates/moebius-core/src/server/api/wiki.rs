@@ -8,10 +8,11 @@
 //! - `PUT /v1/wiki/repository` `{url}`: an owner connects a git repository to a wiki kept on this server only, with no
 //!   restart: it must be reachable and either empty (the wiki's history is pushed to it) or hold pages while the wiki
 //!   has none; `409` when both have pages. Writes `[wiki] url`. Answers the status.
-//! - `GET /v1/wiki/pages`: every page, `[{path, name}]`, sorted by path.
+//! - `GET /v1/wiki/pages`: every page, `[{path, name, labels}]`, sorted by path.
 //! - `GET /v1/wiki/pages/{*path}`: a page, `?at=<commit>` for an older version of it.
 //! - `PUT /v1/wiki/pages/{*path}` `{text, message?, base?}`: writes a page, making it if it is not there; with `base`
 //!   (the commit the writer loaded), `409` and the page as it now is when it has changed since.
+//! - `PUT /v1/wiki/labels/{*path}` `{labels, base?}`: sets a page's labels, kept in its front matter, as a commit.
 //! - `DELETE /v1/wiki/pages/{*path}`: deletes a page; its history stays.
 //! - `POST /v1/wiki/moves` `{from, to}`: moves or renames a page.
 //! - `GET /v1/wiki/history/{*path}`: the commits that changed a page, newest first.
@@ -51,6 +52,7 @@ pub(super) fn routes() -> Router<ApiState> {
             "/v1/wiki/pages/{*path}",
             get(page).put(write_page).delete(delete_page),
         )
+        .route("/v1/wiki/labels/{*path}", put(set_labels))
         .route("/v1/wiki/moves", post(move_page))
         .route("/v1/wiki/history/{*path}", get(history))
         .route("/v1/wiki/search", get(search))
@@ -209,9 +211,14 @@ async fn write_page(
     })
     .await
     .map_err(|e| ApiError::from(AppError::Io(std::io::Error::other(e))))?;
+    saved(written)
+}
+
+/// The answer to a save: the page as it now is, or for a stale save `409` and the page as it is, so the editor can
+/// show it without another read.
+fn saved(written: crate::app::Result<PageView>) -> Result<Response, ApiError> {
     match written {
         Ok(page) => Ok(Json(page).into_response()),
-        // A stale save names the page as it is now, so the editor can show it without another read.
         Err(error) => match &error {
             AppError::Stale { current, .. } => {
                 let body = serde_json::json!({ "error": error.to_string(), "current": current });
@@ -220,6 +227,33 @@ async fn write_page(
             _ => Err(ApiError::from(error)),
         },
     }
+}
+
+/// What `PUT /v1/wiki/labels/{*path}` takes.
+#[derive(Debug, Deserialize)]
+pub struct PageLabels {
+    pub labels: Vec<String>,
+    /// As for `PUT /v1/wiki/pages/{*path}`.
+    #[serde(default)]
+    pub base: Option<String>,
+}
+
+async fn set_labels(
+    State(state): State<ApiState>,
+    Extension(by): Extension<Actor>,
+    UrlPath(path): UrlPath<String>,
+    Json(new): Json<PageLabels>,
+) -> Result<Response, ApiError> {
+    let app = state.app.clone();
+    let written = tokio::task::spawn_blocking(move || {
+        let wiki = app.wiki()?;
+        visible(&app, &by, &path)?;
+        let author = Author::of(&app, &by)?;
+        wiki.set_labels(&app, &author, &path, &new.labels, new.base.as_deref())
+    })
+    .await
+    .map_err(|e| ApiError::from(AppError::Io(std::io::Error::other(e))))?;
+    saved(written)
 }
 
 async fn delete_page(
@@ -475,7 +509,7 @@ mod tests {
         assert_eq!(
             links["backlinks"],
             json!({
-                "pages": [{"path": "Index", "name": "Index"}],
+                "pages": [{"path": "Index", "name": "Index", "labels": []}],
                 "cards": [{"key": "WEB-1", "title": "Fix it"}]
             })
         );
@@ -489,7 +523,10 @@ mod tests {
         );
         let (status, pages) = call("GET", &addr, &token, "/v1/wiki/cards/WEB-1", None).await;
         assert_eq!(status, Status::OK);
-        assert_eq!(pages, json!([{"path": "Index", "name": "Index"}]));
+        assert_eq!(
+            pages,
+            json!([{"path": "Index", "name": "Index", "labels": []}])
+        );
         let (status, _) = call("GET", &addr, &token, "/v1/wiki/cards/WEB-9", None).await;
         assert_eq!(status, Status::NOT_FOUND);
         let (status, _) = call("GET", &addr, &token, "/v1/wiki/cards/web", None).await;
@@ -509,7 +546,7 @@ mod tests {
         let (_, links) = call("GET", &addr, &token, "/v1/wiki/links/Ops/Handbook", None).await;
         assert_eq!(
             links["backlinks"]["pages"],
-            json!([{"path": "Index", "name": "Index"}])
+            json!([{"path": "Index", "name": "Index", "labels": []}])
         );
     }
 
@@ -577,6 +614,114 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn labels_are_set_listed_read_and_found_by_search() {
+        let (dir, state, addr) = start().await;
+        let origin = bare_origin(dir.path());
+        let wiki = Wiki::open(
+            &state.app,
+            Some(&origin.to_string_lossy()),
+            &dir.path().join("data/wiki"),
+        )
+        .unwrap();
+        state.app.set_wiki(Arc::new(wiki));
+        let lea = state
+            .app
+            .store
+            .add_person("lea", "Lea Roth", Role::Member)
+            .unwrap();
+        let token = format!("{}{:064}", super::super::TOKEN_PREFIX, 3);
+        state
+            .app
+            .store
+            .add_access_token(lea.id, "test", &token)
+            .unwrap();
+        let text = "---\nowner: ada\n---\n# Deploy\n\nShip it.\n";
+        let (status, made) = call(
+            "PUT",
+            &addr,
+            &token,
+            "/v1/wiki/pages/Runbooks/Deploy",
+            Some(json!({ "text": text })),
+        )
+        .await;
+        assert_eq!(status, Status::OK, "{made}");
+        assert_eq!(made["labels"], json!([]));
+        assert_eq!(made["body"], "# Deploy\n\nShip it.\n");
+        let base = made["version"]["commit"].as_str().unwrap().to_string();
+
+        let (status, labelled) = call(
+            "PUT",
+            &addr,
+            &token,
+            "/v1/wiki/labels/Runbooks/Deploy",
+            Some(json!({ "labels": ["Runbook", " On call "], "base": base })),
+        )
+        .await;
+        assert_eq!(status, Status::OK, "{labelled}");
+        assert_eq!(labelled["labels"], json!(["Runbook", "On call"]));
+        assert_eq!(
+            labelled["text"],
+            "---\nowner: ada\nlabels: [Runbook, On call]\n---\n# Deploy\n\nShip it.\n"
+        );
+        assert_eq!(labelled["body"], "# Deploy\n\nShip it.\n");
+        assert_eq!(
+            labelled["version"]["message"],
+            "Label Runbooks/Deploy: Runbook, On call"
+        );
+
+        let (_, listed) = call("GET", &addr, &token, "/v1/wiki/pages", None).await;
+        assert_eq!(listed[0]["labels"], json!(["Runbook", "On call"]));
+        let (_, hits) = call("GET", &addr, &token, "/v1/wiki/search?q=runbook", None).await;
+        assert_eq!(hits[0]["path"], "Runbooks/Deploy", "{hits}");
+        assert!(!hits[0]["snippet"].as_str().unwrap().contains("---"));
+
+        // A save built on the page before the labels were set is refused, and says what the page is now.
+        let (status, stale) = call(
+            "PUT",
+            &addr,
+            &token,
+            "/v1/wiki/labels/Runbooks/Deploy",
+            Some(json!({ "labels": [], "base": base })),
+        )
+        .await;
+        assert_eq!(status, Status::CONFLICT, "{stale}");
+        assert_eq!(stale["current"]["labels"], json!(["Runbook", "On call"]));
+
+        let (status, bad) = call(
+            "PUT",
+            &addr,
+            &token,
+            "/v1/wiki/labels/Runbooks/Deploy",
+            Some(json!({ "labels": ["a,b"] })),
+        )
+        .await;
+        assert_eq!(status, Status::UNPROCESSABLE_ENTITY, "{bad}");
+        let (status, _) = call(
+            "PUT",
+            &addr,
+            &token,
+            "/v1/wiki/labels/Nothing",
+            Some(json!({ "labels": ["A"] })),
+        )
+        .await;
+        assert_eq!(status, Status::NOT_FOUND);
+
+        let (status, cleared) = call(
+            "PUT",
+            &addr,
+            &token,
+            "/v1/wiki/labels/Runbooks/Deploy",
+            Some(json!({ "labels": [] })),
+        )
+        .await;
+        assert_eq!(status, Status::OK, "{cleared}");
+        assert_eq!(
+            cleared["text"],
+            "---\nowner: ada\n---\n# Deploy\n\nShip it.\n"
+        );
+    }
+
+    #[tokio::test]
     async fn a_page_is_made_edited_moved_read_with_its_history_and_deleted() {
         let (dir, state, addr) = start().await;
         let origin = bare_origin(dir.path());
@@ -624,7 +769,10 @@ mod tests {
         .await;
         assert_eq!(status, Status::OK);
         let (_, listed) = call("GET", &addr, &token, "/v1/wiki/pages", None).await;
-        assert_eq!(listed, json!([{"path": "Team/On call", "name": "On call"}]));
+        assert_eq!(
+            listed,
+            json!([{"path": "Team/On call", "name": "On call", "labels": []}])
+        );
 
         let (status, moved) = call(
             "POST",
@@ -999,7 +1147,10 @@ mod tests {
             .await;
             assert_eq!(status, Status::NOT_FOUND);
             let (_, listed) = call("GET", &addr, token, "/v1/wiki/pages", None).await;
-            assert_eq!(listed, json!([{"path": "Home", "name": "Home"}]));
+            assert_eq!(
+                listed,
+                json!([{"path": "Home", "name": "Home", "labels": []}])
+            );
             for query in ["q=secret", "q=secret&project=".to_string().as_str()] {
                 let (status, found) = call(
                     "GET",
@@ -1037,7 +1188,10 @@ mod tests {
         let (status, _) = call("GET", &addr, &agent, &url, None).await;
         assert_eq!(status, Status::NOT_FOUND);
         let (_, listed) = call("GET", &addr, &agent, "/v1/wiki/pages", None).await;
-        assert_eq!(listed, json!([{"path": "Home", "name": "Home"}]));
+        assert_eq!(
+            listed,
+            json!([{"path": "Home", "name": "Home", "labels": []}])
+        );
     }
 }
 

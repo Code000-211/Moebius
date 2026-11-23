@@ -14,7 +14,7 @@ export function boardPath(projectId: number, repositoryId?: number): string {
 }
 
 /** The tabs of a project after its Board, in the order the header shows them. */
-export const PROJECT_TABS = ["workflows", "cycles", "milestones", "intake"] as const;
+export const PROJECT_TABS = ["workflows", "cycles", "milestones", "wiki", "intake"] as const;
 export type ProjectTab = (typeof PROJECT_TABS)[number];
 
 /** The path of a tab of a project: its board for `board`, else `/projects/:id/<tab>`. */

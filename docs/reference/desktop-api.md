@@ -111,6 +111,7 @@ keep their rows: the role is checked before the `410`.
 | `GET /v1/wiki/pages` | viewer | yes |
 | `GET /v1/wiki/pages/{*path}` | viewer | yes |
 | `PUT /v1/wiki/pages/{*path}` | member | no |
+| `PUT /v1/wiki/labels/{*path}` | member | no |
 | `DELETE /v1/wiki/pages/{*path}` | member | no |
 | `POST /v1/wiki/moves` | member | no |
 | `GET /v1/wiki/history/{*path}` | viewer | yes |
@@ -1074,15 +1075,34 @@ inbox. The Moebius agent sees what the person of its chat sees; an agent without
 the pages its issue links to with `[[...]]`, but a private project's page only for a card of that project. The
 organisation's pages, those of a public project and a folder of a key no project has are seen by everyone.
 
-A `PageView` is `{"path": string, "name": string, "text": string, "version": Version}`: `name` the last part of the
-path, `text` the Markdown, `version` the last commit that changed the page. A `Version` is `{"commit": string, "author":
+A `PageView` is `{"path": string, "name": string, "text": string, "body": string, "labels": string[], "version":
+Version}`: `name` the last part of the path, `text` the page's file as it is (front matter included, what an editor shows
+and saves), `body` the text without its front matter (what is drawn), `labels` the page's [labels](#page-labels),
+`version` the last commit that changed the page. A `Version` is `{"commit": string, "author":
 string, "handle": string | null, "at": number, "message": string, "path": string}`: the full commit id, the author's
 name, their handle when a person of Moebius made the commit (`null` for one pushed from elsewhere), the time in seconds,
 the first line of the message, and the page's path in that commit, which differs from today's before a rename or move.
 
 ### `GET /v1/wiki/pages`
 
-Every page, sorted by path: `[{"path": string, "name": string}]`; `[]` while the repository has no commit.
+Every page, sorted by path: `[{"path": string, "name": string, "labels": string[]}]`; `[]` while the repository has no
+commit. The pages a card or another page links to (`/v1/wiki/cards/{key}`, the backlinks of `/v1/wiki/links/...`) have
+the same shape.
+
+#### Page labels
+
+A page has any number of **labels**, short words that sort pages across folders. They are kept in the page file as YAML
+front matter at the very top, between two `---` lines: `---\nlabels: [Runbook, On call]\n---\n# Deploy`. The lines between
+the fences count as front matter only when they read as YAML (a `key:` line, a `- ` item, a comment, an indented line
+or a blank one, with at least one that says something); a page that opens with a horizontal rule, a paragraph and
+another rule has no front matter, and neither has one whose closing `---` is missing, so such a page has no labels and
+its text is as written. `labels` is read as a flow list (`[a, "b, c"]`, quotes and a trailing comment allowed, on one
+line or several), a block list (`- a` lines) or one word; `null` and `~` mean none. Each label is trimmed, and an empty
+one and a repeat are left out. Setting labels replaces the whole old value of the key, continuation lines included,
+keeps every other line of the front matter byte for byte and the file's line ending (`\n` or `\r\n`), and reads and
+rewrites the page in the turn of the write, after the clone followed `origin`, so a concurrent edit is kept. A label
+is 1 to 40 characters with no control character and none of `, [ ] { } " ' \ # : | > * & ! % @` and the backtick
+(`422` otherwise). The web app's editor shows the body only and writes the front matter back unchanged. Search finds a page by its labels as by the words of its text (and not by its other front matter).
 
 ### `GET /v1/wiki/pages/{*path}`
 
@@ -1111,6 +1131,15 @@ curl -s -X PUT -H "Authorization: Bearer $TOKEN" -H 'content-type: application/j
   http://127.0.0.1:7171/v1/wiki/pages/Team/On%20call
 ```
 
+### `PUT /v1/wiki/labels/{*path}`
+
+A member sets the [labels](#page-labels) of a page: a commit `Label <path>: <labels>` (`Remove the labels of <path>` for
+none) that changes the page's front matter and nothing else. Request body: `{"labels": string[], "base"?: string}`; the
+list replaces the page's labels, in that order, and `base` is as for `PUT /v1/wiki/pages/{*path}`. The last label taken
+away takes the front matter with it when no other key is left in it. Response: the `PageView` as it now is, or `409` with
+`{"error", "current"}` for a stale `base` or a failed push. Errors: `404` for no such page, `422` for a label that is not
+one.
+
 ### `DELETE /v1/wiki/pages/{*path}`
 
 A member deletes a page, a commit `Delete <path>`; folders left empty go with it. Its history stays and its versions can
@@ -1130,7 +1159,7 @@ page keeps its history, its deletion first. Errors: `404` for a page that never 
 
 ### `GET /v1/wiki/search`
 
-Finds pages by the words of their title and text: `?q=<words>`, optionally `&project=<key>` for only the pages under
+Finds pages by the words of their title, labels and text: `?q=<words>`, optionally `&project=<key>` for only the pages under
 `projects/<key>/` (without it, the organisation's pages and every project's), and `&limit=<n>` (1 to 100; 20 without
 one). Every word of `q` must be in the page, in any order, the last one may be only its beginning (`refu` finds
 `refunds`), and a word matches its other forms (`refund` finds `refunds`). A word of the title counts far more than one

@@ -64,6 +64,41 @@ function refuse(response: ServerResponse, status: number, message: string): true
 
 const nameOf = (path: string) => path.split("/").at(-1) ?? path;
 
+/** The front matter of a text: its lines and the body after it; null when the text has none, or it is not closed. */
+function frontMatter(text: string): { front: string[]; body: string } | null {
+  const lines = text.split("\n");
+  if (lines[0]?.trimEnd() !== "---") return null;
+  const end = lines.findIndex(
+    (line, index) => index > 0 && ["---", "..."].includes(line.trimEnd()),
+  );
+  if (end < 0) return null;
+  return { front: lines.slice(1, end), body: lines.slice(end + 1).join("\n") };
+}
+
+/** The labels of a text, as the server reads them (a flow list on one `labels:` line). */
+function labelsOf(text: string): string[] {
+  const found = frontMatter(text)?.front.find((line) => line.startsWith("labels:"));
+  const list = /^labels:\s*\[(.*)\]\s*$/.exec(found ?? "")?.[1];
+  return [
+    ...new Set(
+      (list ?? "")
+        .split(",")
+        .map((item) => item.trim())
+        .filter(Boolean),
+    ),
+  ];
+}
+
+/** A text with its labels set: only the `labels` line changes, and front matter left empty goes. */
+function withLabels(text: string, labels: string[]): string {
+  const line = labels.length > 0 ? `labels: [${labels.join(", ")}]` : null;
+  const split = frontMatter(text);
+  if (!split) return line ? `---\n${line}\n---\n${text}` : text;
+  const front = split.front.filter((each) => !each.startsWith("labels:"));
+  if (line) front.push(line);
+  return front.length === 0 ? split.body : `---\n${front.join("\n")}\n---\n${split.body}`;
+}
+
 /** The pages a text links to by `[[name]]` or `[[path|label]]`, as the server resolves them: by path, else by name. */
 function pageLinks(text: string, all: string[]): Array<{ link: string; path: string | null }> {
   return [...text.matchAll(/\[\[([^[\]|\n]+)(?:\|[^[\]\n]*)?\]\]/g)].map((found) => {
@@ -101,6 +136,8 @@ export function createWikiFake(send: Send, pagesA: PagesAFake, templates: Templa
     path,
     name: nameOf(path),
     text: version.text ?? "",
+    body: frontMatter(version.text ?? "")?.body ?? version.text ?? "",
+    labels: labelsOf(version.text ?? ""),
     version: { ...version, text: undefined },
   });
   const record = (path: string, version: Version) => {
@@ -188,7 +225,11 @@ export function createWikiFake(send: Send, pagesA: PagesAFake, templates: Templa
         const listed = [...pages.keys()]
           .filter((each) => current(each))
           .sort()
-          .map((each) => ({ path: each, name: nameOf(each) }));
+          .map((each) => ({
+            path: each,
+            name: nameOf(each),
+            labels: labelsOf(current(each)?.text ?? ""),
+          }));
         answer(response, 200, listed);
         return true;
       }
@@ -206,11 +247,15 @@ export function createWikiFake(send: Send, pagesA: PagesAFake, templates: Templa
                 Number(words.every((w) => nameOf(a.each).toLowerCase().includes(w))) ||
               a.each.localeCompare(b.each),
           )
+          .filter(({ each }) => {
+            const project = query.get("project");
+            return !project || each.startsWith(`projects/${project}/`);
+          })
           .map(({ each, text }) => ({
             path: each,
             name: nameOf(each),
             project: each.startsWith("projects/") ? (each.split("/")[1] ?? null) : null,
-            snippet: text.trim().slice(0, 80),
+            snippet: (frontMatter(text)?.body ?? text).trim().slice(0, 80),
           }));
         answer(response, 200, hits);
         return true;
@@ -268,7 +313,11 @@ export function createWikiFake(send: Send, pagesA: PagesAFake, templates: Templa
         answer(response, 200, {
           links: { pages: links, cards: [] },
           backlinks: {
-            pages: from.map((each) => ({ path: each, name: nameOf(each) })),
+            pages: from.map((each) => ({
+              path: each,
+              name: nameOf(each),
+              labels: labelsOf(current(each)?.text ?? ""),
+            })),
             cards: [],
           },
         });
@@ -276,6 +325,40 @@ export function createWikiFake(send: Send, pagesA: PagesAFake, templates: Templa
       }
       if (path === "/v1/wiki/refresh" && method === "POST") {
         answer(response, 200, null);
+        return true;
+      }
+      const labelsRoute = /^\/v1\/wiki\/labels\/(.+)$/.exec(path);
+      if (labelsRoute && method === "PUT") {
+        const page = decoded(labelsRoute[1] ?? "");
+        const body = JSON.parse(await readBody(request)) as { labels: string[]; base?: string };
+        const before = current(page);
+        if (!before) return refuse(response, 404, `page ${page} not found`);
+        if (
+          body.base !== undefined &&
+          before.commit !== body.base &&
+          !(body.base.length >= 7 && before.commit.startsWith(body.base))
+        ) {
+          answer(response, 409, {
+            error: `someone saved a newer version of ${page} since you opened it`,
+            current: view(page, before),
+          });
+          return true;
+        }
+        const labels = [...new Set(body.labels.map((label) => label.trim()).filter(Boolean))];
+        const made: Version = {
+          commit: commit(),
+          author: author.name,
+          handle: author.handle,
+          at: clock,
+          message:
+            labels.length > 0
+              ? `Label ${page}: ${labels.join(", ")}`
+              : `Remove the labels of ${page}`,
+          path: page,
+          text: withLabels(before.text ?? "", labels),
+        };
+        record(page, made);
+        answer(response, 200, view(page, made));
         return true;
       }
       if (path === "/v1/wiki/moves" && method === "POST") {

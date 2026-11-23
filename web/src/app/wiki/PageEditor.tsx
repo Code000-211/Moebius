@@ -33,12 +33,13 @@ import {
   linkText,
   pageChoices,
 } from "./links";
-import { pathProblem } from "./model";
+import { frontMatterOf, pathProblem } from "./model";
 
 export function PageEditor({
   path,
   folder,
   text,
+  front = "",
   version,
   latest,
   keys,
@@ -49,7 +50,10 @@ export function PageEditor({
   path: string | null;
   /** Where a new page goes, empty at the top. */
   folder: string;
+  /** The page's body: its text without the front matter, which is not edited here (labels are the chips'). */
   text: string;
+  /** The front matter of the page as it was loaded, written back unchanged ahead of the text. */
+  front?: string;
   /** The commit of the page as `text` is of it; null for a new page. */
   version: string | null;
   /** The page as it is now, which moves on while the editor is open; undefined for a new page. */
@@ -62,6 +66,8 @@ export function PageEditor({
   const [name, setName] = useState("");
   const [draft, setDraft] = useState(text);
   const [loaded] = useState(text);
+  // The front matter the save carries: the page's as loaded, or as the person chose to keep their text over.
+  const [kept, setKept] = useState(front);
   // What the save is built on: the page as it was loaded, or as the person chose to keep their text over.
   const [base, setBase] = useState(version ?? "");
   const [refused, setRefused] = useState<{ current: WikiPageView | null } | null>(null);
@@ -111,7 +117,7 @@ export function PageEditor({
   const target = path ?? (folder === "" ? name.trim() : `${folder}/${name.trim()}`);
   const problem = path === null ? pathProblem(target, keys) : null;
   const save = useMutation({
-    mutationFn: () => writeWikiPage(target, draft, message.trim() || undefined, base),
+    mutationFn: () => writeWikiPage(target, kept + draft, message.trim() || undefined, base),
     onSuccess: (page) => {
       saved.current = true;
       onSaved(page);
@@ -255,6 +261,8 @@ export function PageEditor({
                 type="button"
                 onClick={() => {
                   setBase(newer?.version.commit ?? "");
+                  // Their labels and other keys stay: only the text under them is the person's.
+                  if (newer) setKept(frontMatterOf(newer));
                   setRefused(null);
                   setTheirs(false);
                   save.reset();
@@ -283,7 +291,7 @@ export function PageEditor({
         <section aria-label="Their version" className="flex min-w-0 flex-col gap-1.5">
           <span className="text-sm font-semibold text-secondary">Their version</span>
           <pre className="m-0 max-h-96 overflow-auto whitespace-pre-wrap break-words rounded-card border border-hairline p-4 font-mono text-sm text-text">
-            {newer.text}
+            {newer.body}
           </pre>
         </section>
       )}

@@ -73,11 +73,11 @@ async function openMenu() {
 }
 
 describe("the project header", () => {
-  it("names the project and its four tabs, and links the gear to the settings", () => {
+  it("names the project and its five tabs, and links the gear to the settings", () => {
     show("member", false);
     expect(screen.getByRole("heading", { name: "Platform" })).toBeTruthy();
     const names = screen.getAllByRole("tab").map((each) => each.textContent);
-    expect(names).toEqual(["Board", "Workflows", "Cycles", "Milestones"]);
+    expect(names).toEqual(["Board", "Workflows", "Cycles", "Milestones", "Wiki"]);
     expect(screen.getByRole("link", { name: "Project settings" }).getAttribute("href")).toBe(
       "/projects/7/settings",
     );

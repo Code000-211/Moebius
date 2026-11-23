@@ -1,5 +1,5 @@
 /**
- * The header every page of a project shares: the project's name, its tabs (Board, Workflows, Cycles, Milestones, and
+ * The header every page of a project shares: the project's name, its tabs (Board, Workflows, Cycles, Milestones, Wiki, and
  * Intake with the number of requests waiting only while the project takes requests), and at the right a gear to the
  * project's settings and a `...` menu with Import from Jira (an owner's) and Terminal, then the Moebius button and the
  * page's primary button. The tab is in the address
@@ -29,6 +29,7 @@ const LABELS: Record<ProjectTab, string> = {
   workflows: "Workflows",
   cycles: "Cycles",
   milestones: "Milestones",
+  wiki: "Wiki",
   intake: "Intake",
 };
 
@@ -72,6 +73,7 @@ export function ProjectHeader({
     { value: "workflows", label: LABELS.workflows },
     { value: "cycles", label: LABELS.cycles },
     { value: "milestones", label: LABELS.milestones },
+    { value: "wiki", label: LABELS.wiki },
     ...(project.intake ? [{ value: "intake" as const, label: LABELS.intake, count: waiting }] : []),
   ];
   return (

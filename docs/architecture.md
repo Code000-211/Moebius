@@ -1009,6 +1009,7 @@ At the top:
 | `wiki/prompt.rs` | The pages a card's issue links to with `[[Page name]]`, as the section of a run's prompt that holds them. |
 | `wiki/search.rs` | Searching the wiki: the index made again from the pages when the head moved, matches ranked with the title first, and the pages of a project the asker may not see left out. |
 | `wiki/sight.rs` | Which pages a person or a run sees: a private project's pages are its members', and a run's prompt holds them only for a card of that project. |
+| `wiki/labels.rs` | A page's labels: read from the YAML front matter of its file, set by rewriting only the `labels` key (other keys stay), and the text without its front matter. |
 | `wiki/links.rs` | The links of the wiki: `[[Page name]]`, card names and `#12` found in a text, resolved to pages, the links between pages made again from the files on every change, backlinks, and the links of a moved page rewritten. |
 | `wiki/edits.rs` | A person's edits: a page written, moved or deleted, each a commit by the person after following `origin`, pushed or undone. |
 
