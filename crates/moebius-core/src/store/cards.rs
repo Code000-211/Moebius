@@ -44,6 +44,24 @@ pub struct Repository {
     /// that nobody else took.
     #[serde(default = "default_agents_take")]
     pub agents_take: String,
+    /// Whether people may take, release and finish issues with `/take`, `/release` and `/done` in a comment on the
+    /// issue (see `app::commands`). Only the server of the repository's owner should turn it on.
+    #[serde(default)]
+    pub commands: bool,
+    /// How many open issues a login may hold that it took with `/take`.
+    #[serde(default = "default_command_limit")]
+    pub command_limit: i64,
+    /// Whether the server writes the result of every command, and of the owner's answers, as a comment on the issue.
+    #[serde(default = "default_answer_on_forge")]
+    pub answer_on_forge: bool,
+}
+
+fn default_command_limit() -> i64 {
+    super::commands::DEFAULT_COMMAND_LIMIT
+}
+
+fn default_answer_on_forge() -> bool {
+    true
 }
 
 fn default_ready_label() -> String {
@@ -155,6 +173,10 @@ pub struct Card {
     /// nobody took it here.
     #[serde(default)]
     pub assign_problem: Option<String>,
+    /// Whether `taken_by` took the issue with `/take` in a comment, so that this server assigned them (see
+    /// `app::commands`); the owner may release it from the card.
+    #[serde(default)]
+    pub taken_by_command: bool,
 }
 
 /// Why and by whom a card is held (blocked), and since when.
@@ -218,7 +240,7 @@ fn card_records_last(runs: &str, changes: &str, cards: &str) -> Vec<String> {
     ]
 }
 
-const REPOSITORY_COLUMNS: &str = "id, name, path, forge, default_branch, github, trusted, project, home_project_id, files_of, mark_ready, ready_label, agents_take";
+const REPOSITORY_COLUMNS: &str = "id, name, path, forge, default_branch, github, trusted, project, home_project_id, files_of, mark_ready, ready_label, agents_take, commands, command_limit, answer_on_forge";
 
 fn repository_from_row(r: &rusqlite::Row) -> rusqlite::Result<Repository> {
     let trusted: String = r.get(6)?;
@@ -238,6 +260,9 @@ fn repository_from_row(r: &rusqlite::Row) -> rusqlite::Result<Repository> {
         mark_ready: r.get(10)?,
         ready_label: r.get(11)?,
         agents_take: r.get(12)?,
+        commands: r.get(13)?,
+        command_limit: r.get(14)?,
+        answer_on_forge: r.get(15)?,
     })
 }
 
@@ -330,6 +355,9 @@ impl Store {
             mark_ready: false,
             ready_label: default_ready_label(),
             agents_take: default_agents_take(),
+            commands: false,
+            command_limit: default_command_limit(),
+            answer_on_forge: default_answer_on_forge(),
         })
     }
 
@@ -647,6 +675,7 @@ impl Store {
             repositories: vec![repository_name],
             taken_by: None,
             assign_problem: None,
+            taken_by_command: false,
         })
     }
 
@@ -656,7 +685,7 @@ impl Store {
         params: impl rusqlite::Params,
     ) -> Result<Vec<Card>> {
         self.rows(&format!(
-            "SELECT id, repository_id, number, title, body, author, column_name, created_at, note, retried_after, confirmed, held_by, held_reason, held_at, parent, (closed OR column_name = 'Done'), claimed_by, (SELECT json_group_array(label) FROM (SELECT label FROM card_labels WHERE card_id = cards.id ORDER BY label)), {}, project_id, project_number, COALESCE((SELECT key FROM projects WHERE id = cards.project_id), ''), moved_at, archived_at, {}, {}, {}, {}, assign_problem FROM cards WHERE {clause} ORDER BY id", super::assignees::CARD_ASSIGNEES, super::kinds::CARD_KIND, super::kinds::CARD_FIELDS, super::card_repositories::CARD_REPOSITORIES, super::taking::CARD_TAKEN_BY
+            "SELECT id, repository_id, number, title, body, author, column_name, created_at, note, retried_after, confirmed, held_by, held_reason, held_at, parent, (closed OR column_name = 'Done'), claimed_by, (SELECT json_group_array(label) FROM (SELECT label FROM card_labels WHERE card_id = cards.id ORDER BY label)), {}, project_id, project_number, COALESCE((SELECT key FROM projects WHERE id = cards.project_id), ''), moved_at, archived_at, {}, {}, {}, {}, assign_problem, command_taker FROM cards WHERE {clause} ORDER BY id", super::assignees::CARD_ASSIGNEES, super::kinds::CARD_KIND, super::kinds::CARD_FIELDS, super::card_repositories::CARD_REPOSITORIES, super::taking::CARD_TAKEN_BY
         ), params, |r| {
             let labels: Vec<String> = serde_json::from_str(&r.get::<_, String>(17)?).map_err(|e| {
                 rusqlite::Error::FromSqlConversionFailure(
@@ -666,7 +695,13 @@ impl Store {
                 )
             })?;
             let kind_and_fields = super::kinds::card_kind(r, 24, 25)?;
+            let taken_by: Option<String> = r.get(28)?;
+            let command_taker: Option<String> = r.get(30)?;
             Ok(Card {
+                taken_by_command: taken_by
+                    .as_deref()
+                    .zip(command_taker.as_deref())
+                    .is_some_and(|(by, taker)| by.eq_ignore_ascii_case(taker)),
                 priority: super::planning::priority_of(&labels),
                 due: super::planning::due_of(&labels),
                 estimate: super::planning::estimate_of(&labels),
@@ -701,7 +736,7 @@ impl Store {
                 moved_at: r.get(22)?,
                 archived_at: r.get(23)?,
                 repositories: super::card_repositories::names(r, 26)?,
-                taken_by: r.get(28)?,
+                taken_by,
                 assign_problem: r.get(29)?,
             })
         })

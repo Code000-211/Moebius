@@ -6,7 +6,17 @@
  */
 import { type QueryClient, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useCallback } from "react";
-import { approve, merge, reject, retry, reviewChange, unblock } from "../../api/calls/board";
+import {
+  answerDone,
+  approve,
+  type DoneAnswer,
+  merge,
+  reject,
+  releaseTaken,
+  retry,
+  reviewChange,
+  unblock,
+} from "../../api/calls/board";
 import { stopRun } from "../../api/calls/chat";
 import { isApiError } from "../../api/http";
 import { keys } from "../../api/keys";
@@ -20,7 +30,9 @@ export type Decision =
   | { kind: "stop"; run: number; number: number }
   | { kind: "merge"; change: number; number: number }
   | { kind: "review"; change: number; number: number }
-  | { kind: "reject"; change: number; number: number; reason: string };
+  | { kind: "reject"; change: number; number: number; reason: string }
+  | { kind: "done"; card: number; number: number; answer: DoneAnswer }
+  | { kind: "release"; card: number; number: number };
 
 /** What the page tells after a decision or a refused drop: a toast, with Undo when it can be taken back. */
 export interface Notice {
@@ -47,6 +59,8 @@ const VERB: Record<Decision["kind"], string> = {
   merge: "merge",
   review: "review",
   reject: "send back",
+  done: "answer",
+  release: "release",
 };
 
 async function send(decision: Decision, queryClient: QueryClient): Promise<string> {
@@ -74,6 +88,17 @@ async function send(decision: Decision, queryClient: QueryClient): Promise<strin
     case "reject":
       putCards(queryClient, [await reject(decision.change, decision.reason)]);
       return `Sent ${n} back to coding.`;
+    case "done": {
+      putCards(queryClient, [await answerDone(decision.card, decision.answer)]);
+      return {
+        close: `Closed ${n}. The answer is on the issue.`,
+        give_back: `Gave ${n} back to its assignee. The answer is on the issue.`,
+        release: `Released ${n}. The answer is on the issue.`,
+      }[decision.answer];
+    }
+    case "release":
+      putCards(queryClient, [await releaseTaken(decision.card)]);
+      return `Released ${n}. The issue is nobody's again.`;
   }
 }
 

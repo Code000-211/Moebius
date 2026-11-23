@@ -330,6 +330,13 @@ impl App {
         )?;
         self.store
             .set_forge_seen(repository, number, "comments_at", &issue.updated)?;
+        // What the comments ask for is done after they are stored, and never fails the sync.
+        if let Err(e) = self.read_commands(card, comments) {
+            self.bus.publish(Event::ForgeError {
+                repository: self.repository(repository)?.name,
+                message: format!("#{number}: commands: {e}"),
+            });
+        }
         Ok(())
     }
 

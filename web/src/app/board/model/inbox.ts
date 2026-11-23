@@ -11,6 +11,8 @@ export const READY_TO_MERGE = "ready_to_merge";
 export const APPROVE_ISSUE = "approve_issue";
 /** A pull request someone on another server opened for an issue they took: the card follows it and the owner may review and merge it. */
 export const OUTSIDE_CHANGE = "outside_change";
+/** The assignee of an issue that was taken with `/take` wrote `/done`: the owner closes the issue, gives it back or releases it. */
+export const DONE_ASKED = "done_asked";
 /** What an outside issue that waits for a person's approval is called, on every row, card and button of the app. */
 export const WAITING_FOR_APPROVAL = "Waiting for approval";
 
@@ -25,6 +27,8 @@ export function waitingWords(kind: string | undefined): string {
       return "Pull request to review";
     case CHANGE_CLOSED:
       return "Closed without a merge";
+    case DONE_ASKED:
+      return "Says it is done";
     default:
       return "Your turn";
   }

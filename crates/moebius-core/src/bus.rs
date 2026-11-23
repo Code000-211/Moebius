@@ -493,6 +493,7 @@ mod tests {
             repositories: Vec::new(),
             taken_by: None,
             assign_problem: None,
+            taken_by_command: false,
         }
     }
 
@@ -534,6 +535,9 @@ mod tests {
             mark_ready: false,
             ready_label: "Ready for agent".into(),
             agents_take: "all".into(),
+            commands: false,
+            command_limit: 3,
+            answer_on_forge: true,
         }
     }
 

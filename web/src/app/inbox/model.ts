@@ -14,6 +14,8 @@ import { mergeStopped, tokens, WAITING_FOR_APPROVAL } from "../board/model";
 export const READY_TO_MERGE = "ready_to_merge";
 export const APPROVE_ISSUE = "approve_issue";
 export const STUCK = "stuck";
+/** The assignee of an issue taken with `/take` wrote `/done`: the owner closes the issue, gives it back or releases it. */
+export const DONE_ASKED = "done_asked";
 export const CHANGE_CLOSED = "change_closed";
 export const MERGE_STOPPED = "merge_stopped";
 export const PROPOSAL = "proposal";
@@ -104,6 +106,11 @@ export function found(snapshot: Snapshot, item: InboxItem): Found {
   };
 }
 
+/** The login that wrote `/done`, as a done question keeps it. */
+export function doneLogin(item: InboxItem): string {
+  return text(item.data.login) || "the assignee";
+}
+
 /** A kind of a column script, such as `needs_design`, as a label: `Needs design`. */
 export function sentence(kind: string): string {
   const words = kind.replaceAll("_", " ");
@@ -128,6 +135,8 @@ export function kindTag(item: InboxItem): { label: string; mark: StateMark } {
       return { label: "Closed without a merge", mark: "none" };
     case MERGE_STOPPED:
       return { label: "Merge stopped", mark: "blocked" };
+    case DONE_ASKED:
+      return { label: "Says it is done", mark: "none" };
     case PROPOSAL:
       return { label: "Retro proposal", mark: "none" };
     case TAKEOVER:
@@ -164,6 +173,12 @@ export function why(item: InboxItem, about: Found, changes?: string): string | n
     }
     case READY_TO_MERGE:
       return null;
+    case DONE_ASKED: {
+      const login = doneLogin(item);
+      return reason !== ""
+        ? `@${login} took this issue with /take and says it is done: ${reason}`
+        : `@${login} took this issue with /take and says it is done.`;
+    }
     case MERGE_STOPPED: {
       const { repository, reason, merged, open } = mergeStopped(item);
       const stopped = `The merge in ${repository || "a repository"} stopped${reason !== "" ? `: ${reason}` : ""}.`;

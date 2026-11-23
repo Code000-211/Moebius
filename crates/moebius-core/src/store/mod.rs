@@ -27,6 +27,7 @@ mod card_repositories;
 mod cards;
 mod changes;
 mod chats;
+mod commands;
 mod cycles;
 mod deletions;
 mod events;
@@ -79,6 +80,7 @@ pub use automations::{Automation, Firing, NewAutomation};
 pub use card_repositories::RunWorktree;
 pub use cards::{Card, CardMove, Held, Repository};
 pub use changes::Change;
+pub use commands::DEFAULT_COMMAND_LIMIT;
 pub use cycles::{Cycle, CycleCard};
 pub use deletions::{ChatRemoved, ResearchRemoved};
 pub use events::Event;
@@ -527,6 +529,7 @@ UPDATE cards SET moved_at = COALESCE((SELECT MAX(at) FROM card_moves WHERE card_
     workflows::MOVES,
     "ALTER TABLE person_preferences ADD COLUMN wrap_long_lines INTEGER NOT NULL DEFAULT 0;",
     taking::SCHEMA,
+    commands::SCHEMA,
 ];
 
 #[cfg(test)]

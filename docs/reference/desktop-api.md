@@ -234,6 +234,8 @@ keep their rows: the role is checked before the `410`.
 | `POST /v1/changes/{id}/merge` | member | yes |
 | `POST /v1/changes/{id}/reject` | member | yes |
 | `POST /v1/changes/{id}/review` | member | no |
+| `POST /v1/cards/{id}/done` | member | no |
+| `POST /v1/cards/{id}/release-taken` | member | no |
 | `GET /v1/changes/{id}/diff` | viewer | yes |
 | `POST /v1/runs/pause` | member | no |
 | `POST /v1/runs/resume` | member | no |
@@ -425,7 +427,7 @@ These objects appear in the responses. All ids are numbers; times are Unix secon
 GitLab, such as `group/project`, or the repository on Forgejo as `owner/repo`, or null) and `home_project_id` (the
 [project](#projects) its new issues land in, which was made with it) and `files_of` (the id of the project whose own
 files the repository holds, see [a project's own files](#a-projects-own-files), or null for every repository a person
-added), `mark_ready` (true when the server keeps the ready label on the repository's issues, default false), `ready_label` (the label, default `Ready for agent`) and `agents_take` (`all`, the default, or `labelled`); see [`PUT /v1/repositories/{id}`](#put-v1repositoriesid).
+added), `mark_ready` (true when the server keeps the ready label on the repository's issues, default false), `ready_label` (the label, default `Ready for agent`) `agents_take` (`all`, the default, or `labelled`), `commands` (true when comments on the repository's issues may give the commands `/take`, `/release` and `/done`, default false), `command_limit` (how many open issues a login may hold that it took with `/take`, default 3) and `answer_on_forge` (true when the server writes the result of every command as a comment on the issue, default true); see [`PUT /v1/repositories/{id}`](#put-v1repositoriesid) and [Commands in issue comments](#commands-in-issue-comments).
 
 `Card`: `id`, `repository_id`, `project_id` (the [project](#projects) whose board it is on), `number` (the number of its issue in its repository: the forge's number for an issue of a forge), `project_number` (its number in its project) and `project_key` (the key of its project), which together name it, `WEB-24`; `title`, `body`, `author`, `column`, `created_at`, `note` (why the card was sent
 back to coding, or null), `retried_after` (the id of the card's latest run when a person last retried it, or null) and
@@ -439,7 +441,7 @@ the people it is given to, without the `@`, in the order the people were added; 
 `YYYY-MM-DD`, or null) and `estimate` (points, or null); see [Priority and due date](#priority-and-due-date) and
 [Estimates](#estimates). `repositories` names the repositories the card works in, its own issue's first (see
 [`PUT /v1/cards/{id}/repositories`](#put-v1cardsidrepositories)). It also has `moved_at` (when the card last moved, was edited or was released from a hold, Unix seconds;
-scripts read it as `card.moved_at`) and `taken_by` (null, or the forge login the issue is assigned to when that is none of this server's people's logins on that forge, compared without regard to case, without the `@`: someone on another server took the issue, see [Working with people on other servers](#working-with-people-on-other-servers)), `assign_problem` (null, or a sentence saying why this server could not assign the person who took the card on the forge) and `archived_at` (null, or when a column script archived the card with
+scripts read it as `card.moved_at`) and `taken_by` (null, or the forge login the issue is assigned to when that is none of this server's people's logins on that forge, compared without regard to case, without the `@`: someone on another server took the issue, see [Working with people on other servers](#working-with-people-on-other-servers)), `assign_problem` (null, or a sentence saying why this server could not assign the person who took the card on the forge) and `taken_by_command` (true when `taken_by` took the issue with `/take` in a comment, see [Commands in issue comments](#commands-in-issue-comments); false otherwise) and `archived_at` (null, or when a column script archived the card with
 `moebius.archive`). An archived card is not on the board: the snapshot (`GET /v1/snapshot`) leaves it out, and a
 move (a person's, or the forge reopening its issue) brings it back. It stays in the store, in the issue list and in the
 analytics.
@@ -516,6 +518,7 @@ of the card is merged, and the card stays where it is until its last change is m
 same change failing again keeps it, another stop replaces it) and
 `project_label` (`data.label`, `data.repository`; its `title` says the label names no project of the repository, and the card it is about stays where it is: see [the project label](#the-project-label)) and
 `outside_change` (`data.change`, `data.pull_request`, `data.author`, `data.repository`: the card follows a pull request someone else opened; resolved when the request is merged or closed; see [Working with people on other servers](#working-with-people-on-other-servers)) and
+`done_asked` (`data.login`, `data.reason`, `data.repository`: the assignee of the issue, `login`, wrote `/done` in a comment and `reason` is the rest of that comment; resolved by the owner's answer, `POST /v1/cards/{id}/done`, or when the assignee is released; see [Commands in issue comments](#commands-in-issue-comments)) and
 `proposal` (`data.proposal`, `data.branch`, `data.trials`: an array of `{"card", "outcome", "reason"}` for the cards it
 addresses, and `data.regression`: the same for the cards of the regression set, empty when none was tried; its `title` is the
 proposal's and it has no card; a proposal for Moebius's own configuration has `data.kind` (`settings` or
@@ -1647,7 +1650,7 @@ For Forgejo, such as Codeberg, with `[forgejo]` set up, the clone sends the acce
 
 A person, or the Moebius agent, changes a repository on a forge: the logins whose issues need no approval and how it
 works with people on other servers (see [Working with people on other servers](#working-with-people-on-other-servers)).
-Request: `{"trusted": [string], "mark_ready": bool, "ready_label": string, "agents_take": string, "reason": string}`;
+Request: `{"trusted": [string], "mark_ready": bool, "ready_label": string, "agents_take": string, "commands": bool, "command_limit": number, "answer_on_forge": bool, "reason": string}`;
 every key is optional, and a key left out stays as it is. `reason` is kept with the decision.
 
 - `trusted` replaces the logins whose issues on a repository on a forge need no approval. Each login is trimmed and
@@ -1661,12 +1664,20 @@ every key is optional, and a key left out stays as it is. `reason` is kept with 
   only a card whose issue carries the label (in any case), or that someone of this server took (its issue is assigned
   to a login of one of this server's people), or that has a run already. Any other card waits with `waiting for the
   label "<label>" (this repository's agents take only labelled issues nobody took)`.
+- `commands` (default `false`): while it is true the server reads `/take`, `/release` and `/done` in new comments on the
+  repository's issues (see [Commands in issue comments](#commands-in-issue-comments)). Turning it on from off records the
+  time; comments from before it are never commands. Only the server of the repository's owner should turn it on.
+- `command_limit` (default `3`): a whole number from 1 to 50, how many open issues one login may hold that it took with
+  `/take`.
+- `answer_on_forge` (default `true`): whether the server writes the result of every command, and of the owner's answers,
+  as a comment on the issue.
 
 The decision is recorded (kind `edit_repository`, decider `person` or `agent:Moebius`; its context has `repository`,
 and for `trusted` also `trusted` and `previous_trusted`, the logins joined with `, `, and for the other keys
-`mark_ready`, `ready_label` and `agents_take`) and the event `repository_updated` is sent. An edit that changes nothing
+`mark_ready`, `ready_label`, `agents_take`, `commands`, `command_limit` and `answer_on_forge`) and the event `repository_updated` is sent. An edit that changes nothing
 records nothing. Response: the `Repository`. Errors: `404` no such repository; `422` the repository is on no forge, a
-login is blank or has other characters, the label is not allowed, or `agents_take` is neither `all` nor `labelled`.
+login is blank or has other characters, the label is not allowed, `agents_take` is neither `all` nor `labelled`, or
+`command_limit` is not a number from 1 to 50.
 
 ### `DELETE /v1/repositories/{id}`
 
@@ -2392,6 +2403,31 @@ without a merge.`; the closed change stays closed and the next publish opens a n
 Request: `{"reason": "..."}`; `reason` is optional, but send `{}` without one.
 
 Response: the `Card`. Errors: `404` no such card; `422` the card has neither an open `stuck` nor an open `change_closed` inbox item.
+
+### `POST /v1/cards/{id}/done`
+
+A person answers the question an assignee's `/done` comment asked (see [Commands in issue comments](#commands-in-issue-comments)).
+Request: `{"answer": "close" | "give_back" | "release", "reason": "..."}`; `reason` is optional.
+
+- `close` closes the issue as `POST /v1/cards/{id}/close` does (refused with `409` while a run of the card is going) and
+  the card moves to `Done`.
+- `give_back` keeps the assignee and clears the question.
+- `release` takes the assignee off the issue on the forge, as `POST /v1/cards/{id}/release-taken` does.
+
+The question, the card's open `done_asked` inbox item, is resolved, the decision is recorded (kind `answer_done`,
+decider `person`, context `answer`), and when the repository's `answer_on_forge` is on a comment says what was done:
+`Closed, thanks @alice.`, `Back to @alice: it is not done yet.` or `Released by the owner.`, each followed by the
+`reason` when there is one. Response: the `Card`. Errors: `404` no such card; `409` nobody asked, or the issue cannot be
+closed now; `422` another answer; `403` for an agent's token or a column script.
+
+### `POST /v1/cards/{id}/release-taken`
+
+A person takes the assignee off an issue that was taken with `/take` (`taken_by_command` is true), whatever the commands
+setting is now. The server removes the login from the issue on the forge, resolves the card's `done_asked` item, records
+the decision (kind `release_taken`, decider `person`, context `login`) and, when `answer_on_forge` is on, comments
+`Released by the owner.` followed by the `reason`. Request: `{"reason": "..."}`, optional. Response: the `Card`. Errors:
+`404` no such card; `409` the issue was not taken with `/take`, or the forge refused; `403` for an agent's token or a
+column script.
 
 ### `GET /v1/runs/finished`
 
@@ -4527,6 +4563,47 @@ forge, and what it wants to know it reads there at each poll of the repository.
   item is resolved (no `change_closed` item is added), and the card goes back to `taken_from` (`Not started` when that was `In
   review` or `Done`); it is still taken until the assignee is removed.
 
+## Commands in issue comments
+
+On GitHub only people with the Triage role or higher may assign an issue, but anyone who commented on it may be
+assigned. So the owner's server assigns on behalf of helpers who only comment ([ADR 0028](../adr/0028-helpers-take-issues-with-commands-in-comments.md);
+the steps are in [the guide](../guide/working-with-others.md#helpers-without-a-role-take-issues-with-comments)). It is off until a repository's `commands` is set
+([`PUT /v1/repositories/{id}`](#put-v1repositoriesid)), and only the server of the repository's owner should turn it on.
+
+- **What is read.** At each poll, the comments the poll read on an open card's issue: GitHub, GitLab and Forgejo alike,
+  and sooner when a webhook for issue comments wakes the poll (any delivery does; see [`POST /v1/webhooks/{forge}`](#post-v1webhooksforge)). A command
+  is the first word of a line, in any case: `/take`, `/release` or `/done`. A line quoted with `>`, a line indented by
+  four spaces or a tab, and everything between fences of three backticks or three tildes is not read. The first command of
+  a comment counts and the rest of it is ignored. Each comment is read once: the newest comment id read per issue is kept
+  in the store (`command_seen`) before the command is acted on, so a restart, a second poll, or comments read again do not
+  repeat a command. A comment from before `commands` was turned on is never a command. The server's own comments, which
+  the store knows as written through Moebius, are never read, and its answers contain no command, so there is no loop.
+- **Who may use them.** Anyone who can comment on the issue, so on a public repository everyone. There is no setting for
+  this. What limits it: a login holds at most `command_limit` open issues that it took with `/take`; `/take` is for an issue
+  that is open, that nobody is assigned to (a login of this server's people counts), that no card of this server has
+  claimed, and, while the repository's `mark_ready` is on, that carries `ready_label`; `/release` and `/done` are for an
+  assignee of the issue, and anybody else is told who is; and nobody but a person of this server closes anything.
+- **`/take`** assigns the commenter's login on the forge with the server's own token (`Forge::assign_issue`) and records
+  that the card was taken with a command: the next poll reads the assignee, the `Card` is `taken_by` the login as for any
+  issue someone else took, with `taken_by_command` true, and the board greys it. Where the forge will not assign the
+  login (GitLab: not a project member, Forgejo: not a collaborator, or a token that cannot assign), the answer says so and
+  nothing changes.
+- **`/release`** takes the commenter off the issue (`Forge::unassign_issue`) and resolves a `done_asked` item. The card is
+  the server's own again unless someone else is assigned.
+- **`/done`** asks the owner, unless a pull request the card follows is already its change (the card has an open
+  `outside_change`), which is only thanked. Otherwise a `done_asked` inbox item is added for the card, with the login and the
+  rest of the comment (up to 500 characters) as `data.login` and `data.reason`, and the card window draws the "Moebius needs
+  you" block with the reason and three buttons, which call [`POST /v1/cards/{id}/done`](#post-v1cardsiddone) with `close`,
+  `give_back` and `release`. A second `/done` while one waits is only answered.
+- **Answers.** While `answer_on_forge` is true the server writes one comment per command, in the words: `Assigned to
+  @alice.`, `Released.`, `Already taken by @bob.`, `Already assigned to you.`, `Already taken.`, `This issue is closed.`,
+  `Only issues labelled <label> can be taken.`, `You already have 3 issues; release one first.`, `Only @alice can do that.`,
+  `Nobody has this issue.`, `Thanks, the pull request is followed.`, `The owner has been asked already.`, `Thanks, the
+  owner will take a look.` and `Could not assign @alice: <the forge's reason>`. The owner's actions on the card
+  (`/v1/cards/{id}/done` and `/v1/cards/{id}/release-taken`) are answered on the issue in the same way. A comment that cannot
+  be written is a `forge_error` event; the command has been done.
+- **The owner can always release** an issue taken with `/take` from the card, whatever `commands` is now
+  (`POST /v1/cards/{id}/release-taken`).
 
 ## Events
 

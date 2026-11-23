@@ -10,6 +10,8 @@
 
 pub mod api;
 #[cfg(test)]
+mod commands_tests;
+#[cfg(test)]
 mod fake_forgejo;
 #[cfg(test)]
 mod fake_github;

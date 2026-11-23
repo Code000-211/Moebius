@@ -109,3 +109,38 @@ describe("the way to the card", () => {
     expect(screen.queryByTestId("open-card")).toBeNull();
   });
 });
+
+describe("the decision about an issue its assignee says is done", () => {
+  const asked: InboxItem = {
+    id: 31,
+    kind: "done_asked",
+    card_id: 5,
+    title: "@alice says #5 is done: Cache the assets",
+    data: { login: "alice", reason: "It works now.", repository: "demo" },
+    resolved_at: null,
+    at: 100,
+    assignees: [],
+  };
+
+  it("names the login, and gives the three answers of the card window", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string, init?: RequestInit) => {
+        calls.push({ method: init?.method ?? "GET", url: `${url} ${init?.body ?? ""}` });
+        return new Response("{}", { status: 200 });
+      }),
+    );
+    show("member", asked);
+    expect(
+      screen.getByText(/@alice took this issue with \/take and says it is done: It works now\./),
+    ).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Give it back to @alice" }));
+    await waitFor(() =>
+      expect(calls.map((c) => `${c.method} ${c.url}`)).toContain(
+        'POST /v1/cards/5/done {"answer":"give_back"}',
+      ),
+    );
+    expect(screen.getByRole("button", { name: "Close the issue" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Release it" })).toBeTruthy();
+  });
+});

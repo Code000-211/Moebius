@@ -65,6 +65,9 @@ export interface WorkingWithOthers {
   mark_ready: boolean;
   ready_label: string;
   agents_take: AgentsTake;
+  commands: boolean;
+  command_limit: number;
+  answer_on_forge: boolean;
 }
 
 /** Sets how the repository works with people on other servers: the ready label and which issues its agents take. */

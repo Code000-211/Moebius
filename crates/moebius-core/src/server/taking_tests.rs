@@ -15,7 +15,7 @@ use crate::repos::git;
 use crate::store::Card;
 
 /// An issue of the fake that says nothing blocks it, so that the server may mark it ready.
-fn open_issue(number: u64, body: &str) -> Value {
+pub(super) fn open_issue(number: u64, body: &str) -> Value {
     let mut issue = issue(number, "open", "leon", body);
     issue["issue_dependencies_summary"] = json!({ "total_blocked_by": 0 });
     issue
@@ -23,7 +23,7 @@ fn open_issue(number: u64, body: &str) -> Value {
 
 impl Fixture {
     /// Says the owner's login on GitHub.
-    fn owner_logs_in_as(&self, login: &str) {
+    pub(super) fn owner_logs_in_as(&self, login: &str) {
         let owner = self
             .server
             .app
@@ -44,7 +44,7 @@ impl Fixture {
     }
 
     /// Sets how the repository works with others.
-    fn works_with_others(&self, mark_ready: bool, agents_take: &str) {
+    pub(super) fn works_with_others(&self, mark_ready: bool, agents_take: &str) {
         self.server
             .app
             .store
@@ -66,7 +66,7 @@ impl Fixture {
     }
 
     /// The card of issue `number`, in `column`, as the board would have moved it there.
-    fn put_in(&self, number: i64, column: &str) -> Card {
+    pub(super) fn put_in(&self, number: i64, column: &str) -> Card {
         let card = self.card(number).unwrap();
         self.server.app.store.move_card(card.id, column).unwrap();
         self.card(number).unwrap()
@@ -299,7 +299,7 @@ fn give_the_remote_a_pull_head(f: &Fixture) {
 }
 
 /// Polls issue 1, taken by alice, into a card in progress that follows her open pull request 7.
-async fn following(f: &Fixture) -> Card {
+pub(super) async fn following(f: &Fixture) -> Card {
     give_the_remote_a_pull_head(f);
     let mut taken = open_issue(1, "One.");
     taken["assignees"] = json!([{ "login": "alice" }]);

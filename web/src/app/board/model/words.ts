@@ -301,9 +301,13 @@ export function cardActivity(
   if (author) return { text: `Pull request by @${author}`, tone: "quiet" };
   if (card.taken_by) {
     return {
-      text: `Taken by @${card.taken_by}`,
+      text: card.taken_by_command
+        ? `Taken by @${card.taken_by} with /take`
+        : `Taken by @${card.taken_by}`,
       tone: "quiet",
-      hint: "Someone on another server took this issue; this server leaves it alone",
+      hint: card.taken_by_command
+        ? "Someone took this issue with /take in a comment; this server leaves it alone"
+        : "Someone on another server took this issue; this server leaves it alone",
     };
   }
   if (status === "blocked") {

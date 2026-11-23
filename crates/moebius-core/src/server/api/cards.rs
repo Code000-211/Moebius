@@ -19,6 +19,9 @@
 //! - `GET /v1/changes/{id}/diff`: what a change changes, as a unified diff.
 //! - `POST /v1/cards/{id}/retry` `{reason}`: a person retries a stuck card or one whose pull request was closed, which
 //!   gets a fresh start.
+//! - `POST /v1/cards/{id}/done` `{answer, reason}`: a person answers the question an assignee's `/done` comment asked
+//!   (`close`, `give_back` or `release`); `POST /v1/cards/{id}/release-taken` `{reason}`: a person takes the assignee
+//!   off an issue that was taken with `/take` (see `app::commands`).
 //! - `GET /v1/cards/{id}/runs`: the runs of a card. `GET /v1/cards/{id}/history`: its timeline.
 
 use std::collections::BTreeMap;
@@ -57,6 +60,8 @@ pub(super) fn routes() -> Router<ApiState> {
         .route("/v1/cards/{id}/block", post(block_card))
         .route("/v1/cards/{id}/unblock", post(unblock_card))
         .route("/v1/cards/{id}/retry", post(retry_card))
+        .route("/v1/cards/{id}/done", post(answer_done))
+        .route("/v1/cards/{id}/release-taken", post(release_taken))
         .route("/v1/changes/{id}/merge", post(merge_change))
         .route("/v1/changes/{id}/reject", post(reject_change))
         .route("/v1/changes/{id}/review", post(review_change))
@@ -494,6 +499,37 @@ async fn review_change(
         app.review_outside_change(&by, &*runs, id, &reason)
     })
     .await
+}
+
+/// The body of `POST /v1/cards/{id}/done`.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+struct DoneAnswer {
+    /// `close`, `give_back` or `release`.
+    answer: String,
+    #[serde(default)]
+    reason: String,
+}
+
+async fn answer_done(
+    State(state): State<ApiState>,
+    Extension(by): Extension<Actor>,
+    UrlPath(id): UrlPath<i64>,
+    axum::Json(done): axum::Json<DoneAnswer>,
+) -> Result<axum::Json<Card>, ApiError> {
+    blocking(&state.app, move |app| {
+        app.answer_done(&by, id, &done.answer, &done.reason)
+    })
+    .await
+}
+
+async fn release_taken(
+    State(state): State<ApiState>,
+    Extension(by): Extension<Actor>,
+    UrlPath(id): UrlPath<i64>,
+    body: Option<axum::Json<Reason>>,
+) -> Result<axum::Json<Card>, ApiError> {
+    let reason = body.map(|body| body.0.reason).unwrap_or_default();
+    blocking(&state.app, move |app| app.release_taken(&by, id, &reason)).await
 }
 
 async fn retry_card(

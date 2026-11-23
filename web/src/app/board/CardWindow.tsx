@@ -33,6 +33,7 @@ import {
   issueUrl,
   parentOf,
 } from "./model";
+import { DONE_ASKED } from "./model/inbox";
 import { NeedsYouBlock } from "./NeedsYou";
 
 /** The status icon of a card: what it asks of a person or is doing now first, then the column it stands in. */
@@ -255,7 +256,17 @@ export function CardContent({
           </div>
         </div>
 
-        <FollowedRequest board={board} card={card} />
+        <FollowedRequest
+          board={board}
+          card={card}
+          busy={busy}
+          // While the assignee's /done waits, "Release it" of the block below is the same action.
+          onRelease={
+            item?.kind === DONE_ASKED
+              ? undefined
+              : () => onDecide({ kind: "release", card: card.id, number: card.number })
+          }
+        />
 
         <div className="px-6 pb-6">
           <CardThread

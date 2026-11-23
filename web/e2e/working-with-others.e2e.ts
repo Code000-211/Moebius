@@ -2,7 +2,9 @@
  * Working with people on other servers, in a real browser (ADR 0027), against the fake server: an issue someone took on
  * another server is greyed with "Taken by @alice"; a pull request someone else opened is followed by a card in
  * review, which has "Review with agent" and "Merge" where the card window asks for a person's turn; the repository's
- * "Working with others" box saves; the Profile keeps the person's logins. Set MOEBIUS_SHOT_DIR to also write the pictures
+ * "Working with others" box saves, commands in issue comments included (ADR 0028): an issue taken with /take is greyed
+ * with "Taken by @alice with /take" and the owner may release it from the card, and an assignee's /done waits in the card
+ * window as "Moebius needs you" with the three answers; the Profile keeps the person's logins. Set MOEBIUS_SHOT_DIR to also write the pictures
  * of the board, the followed card and its window (light and dark, 1280 px wide, twice the pixels).
  */
 import { mkdirSync } from "node:fs";
@@ -35,6 +37,7 @@ async function open(scheme: "light" | "dark" = "light") {
   server = await startServer();
   if (!server.board) throw new Error("this test needs the fake server");
   const made = server.board.seedElsewhere();
+  const commands = server.board.seedCommands();
   context = await browser.newContext({
     viewport: { width: 1280, height: 900 },
     colorScheme: scheme,
@@ -45,7 +48,7 @@ async function open(scheme: "light" | "dark" = "light") {
   await page.getByRole("navigation", { name: "Pages" }).waitFor();
   await page.goto(`${server.url}/projects/1`);
   await page.getByRole("heading", { name: "demo", level: 1 }).waitFor();
-  return made;
+  return { ...made, ...commands };
 }
 
 describe.skipIf(usesRealServer)("working with others", () => {
@@ -121,6 +124,80 @@ describe.skipIf(usesRealServer)("working with others", () => {
     expect(await box.getByLabel("Label").inputValue()).toBe("Go");
   });
 
+  it("saves the commands in issue comments with the limit and the answers", async () => {
+    await open();
+    await page.goto(`${server.url}/projects/1/repositories/1`);
+    const part = page.getByTestId("issue-commands");
+    await part.waitFor();
+    await part.getByLabel("Take issues with /take, /release and /done").click();
+    await part.getByLabel("Issues one login may hold").fill("2");
+    await part.getByLabel("Answer on GitHub").click();
+    await page
+      .getByTestId("working-with-others")
+      .getByRole("button", { name: "Save settings" })
+      .click();
+    // Saved: the part has what was sent, so there is nothing left to save.
+    await page.waitForFunction(() =>
+      document
+        .querySelector('[data-testid="working-with-others"] button[type="submit"]')
+        ?.hasAttribute("disabled"),
+    );
+    expect(await part.getByLabel("Issues one login may hold").inputValue()).toBe("2");
+    expect(
+      await part
+        .getByLabel("Take issues with /take, /release and /done")
+        .getAttribute("aria-checked"),
+    ).toBe("true");
+    expect(await part.getByLabel("Answer on GitHub").getAttribute("aria-checked")).toBe("false");
+  });
+
+  it("greys an issue taken with /take, and the owner may release it from the card", async () => {
+    const { takenWith } = await open();
+    const card = page.getByTestId(`card-${takenWith}`);
+    await card.waitFor();
+    expect(await card.getByTestId("card-activity").textContent()).toBe(
+      "Taken by @alice with /take",
+    );
+    expect(await card.evaluate((n) => getComputedStyle(n).opacity)).toBe("0.6");
+    if (SHOTS) await shoot("taken-with-take-board");
+    await card.click();
+    const window = page.locator("[data-card-window]");
+    expect(await window.getByTestId("taken-note").textContent()).toContain(
+      "Taken by @alice with /take on GitHub",
+    );
+    if (SHOTS) await shoot("taken-with-take-window");
+    await window.getByRole("button", { name: "Release from @alice" }).click();
+    await page.getByText(/^Released #/).waitFor();
+    expect(
+      server.board?.requests.some((r) => r.path === `/v1/cards/${takenWith}/release-taken`),
+    ).toBe(true);
+    await window
+      .getByRole("button", { name: "Release from @alice" })
+      .waitFor({ state: "detached" });
+  });
+
+  it("asks the owner what to do with an issue its assignee says is done, and answers on the card", async () => {
+    const { asked } = await open();
+    await page.getByTestId(`card-${asked}`).click();
+    const window = page.locator("[data-card-window]");
+    const block = window.getByTestId("needs-you-block");
+    await block.waitFor();
+    expect(await block.textContent()).toContain("@alice says");
+    expect(await block.getByTestId("done-reason").textContent()).toContain(
+      "The assets are cached now.",
+    );
+    await block.getByRole("button", { name: "Give it back to @alice" }).waitFor();
+    await block.getByRole("button", { name: "Release it" }).waitFor();
+    // The same action is not offered twice: the top of the window has no release while the question is open.
+    expect(await window.getByRole("button", { name: "Release from @alice" }).count()).toBe(0);
+    if (SHOTS) await shoot("done-question-window");
+    await block.getByRole("button", { name: "Close the issue" }).click();
+    await page.getByText(/^Closed #/).waitFor();
+    expect(server.board?.requests.find((r) => r.path === `/v1/cards/${asked}/done`)?.body).toEqual({
+      answer: "close",
+    });
+  });
+
   it("keeps the person's login on GitHub in the Profile", async () => {
     await open();
     await page.goto(`${server.url}/profile`);
@@ -136,7 +213,7 @@ describe.skipIf(usesRealServer)("working with others", () => {
 describe.skipIf(usesRealServer || !SHOTS)("the pictures", () => {
   for (const scheme of ["light", "dark"] as const) {
     it(`takes them in the ${scheme} theme`, async () => {
-      const { followed } = await open(scheme);
+      const { followed, takenWith, asked } = await open(scheme);
       await page.getByTestId(`card-${followed}`).waitFor();
       await shoot(`board-${scheme}`);
       await page.getByTestId(`card-${followed}`).click();
@@ -148,6 +225,21 @@ describe.skipIf(usesRealServer || !SHOTS)("the pictures", () => {
       await page.goto(`${server.url}/projects/1/repositories/1`);
       await page.getByTestId("working-with-others").waitFor();
       await shoot(`working-with-others-${scheme}`);
+      await page
+        .getByTestId("working-with-others")
+        .getByRole("button", { name: "Save settings" })
+        .scrollIntoViewIfNeeded();
+      await shoot(`settings-commands-${scheme}`);
+      await page.goto(`${server.url}/projects/1`);
+      await page.getByTestId(`card-${takenWith}`).waitFor();
+      await shoot(`taken-with-take-board-${scheme}`);
+      await page.getByTestId(`card-${takenWith}`).click();
+      await page.locator("[data-card-window]").getByTestId("taken-note").waitFor();
+      await shoot(`taken-with-take-window-${scheme}`);
+      await page.goto(`${server.url}/projects/1`);
+      await page.getByTestId(`card-${asked}`).click();
+      await page.locator("[data-card-window]").getByTestId("done-reason").waitFor();
+      await shoot(`done-question-window-${scheme}`);
     });
   }
 });

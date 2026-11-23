@@ -46,6 +46,7 @@ interface FakeCard {
   } | null;
   /** The forge login of someone on another server who took the issue. */
   taken_by?: string | null;
+  taken_by_command?: boolean;
   assign_problem?: string | null;
   /** The card's open changes in the repositories besides its own (`seedChange`). */
   more_changes: Array<{
@@ -228,6 +229,11 @@ export interface BoardFake {
    * card in review that follows her pull request 7, with its inbox item. Returns their numbers.
    */
   seedElsewhere(): { taken: number; followed: number };
+  /**
+   * Puts two issues `alice` took with `/take` in a comment on the board (Not started): one just taken, and one she says
+   * is done, which waits for the owner with its inbox item. Returns their numbers.
+   */
+  seedCommands(): { takenWith: number; asked: number };
   /** Makes the next request with `method` to `path` fail with `status` and `message`. */
   refuseNext(method: string, path: string, status: number, message: string): void;
   /** The non-GET requests the board routes received, in order. */
@@ -643,6 +649,8 @@ export function createBoardFake(send: (event: ServerEvent) => void): BoardFake {
     const merge = /^\/v1\/changes\/(\d+)\/merge$/.exec(path);
     const reject = /^\/v1\/changes\/(\d+)\/reject$/.exec(path);
     const review = /^\/v1\/changes\/(\d+)\/review$/.exec(path);
+    const done = /^\/v1\/cards\/(\d+)\/done$/.exec(path);
+    const releaseTaken = /^\/v1\/cards\/(\d+)\/release-taken$/.exec(path);
     const block = /^\/v1\/cards\/(\d+)\/block$/.exec(path);
     const unblock = /^\/v1\/cards\/(\d+)\/unblock$/.exec(path);
     if (method !== "POST") return undefined;
@@ -676,6 +684,28 @@ export function createBoardFake(send: (event: ServerEvent) => void): BoardFake {
       if (!target) return fail(404, `card ${unblock[1]} not found`);
       if (!target.held) return fail(409, `card ${target.id} is not held`);
       target.held = null;
+      send({ kind: "card_updated", data: view(target) });
+      return ok(view(target));
+    }
+    if (done || releaseTaken) {
+      const target = find(Number((done ?? releaseTaken)?.[1]));
+      if (!target) return fail(404, "no such card");
+      const asked = inbox.some(
+        (i) => i.card_id === target.id && i.kind === "done_asked" && i.resolved_at === null,
+      );
+      const answer = (body as { answer?: string } | null)?.answer;
+      if (done && !asked)
+        return fail(409, "nobody has said this issue is done, or it was answered");
+      if (done && !["close", "give_back", "release"].includes(answer ?? ""))
+        return fail(422, `answer is "close", "give_back" or "release", not ${answer}`);
+      if (releaseTaken && !target.taken_by_command)
+        return fail(409, `#${target.number} was not taken with /take`);
+      resolve(target.id, ["done_asked"]);
+      if (releaseTaken || answer === "release") {
+        target.taken_by = null;
+        target.taken_by_command = false;
+      }
+      if (answer === "close") send(move(target, "Done"));
       send({ kind: "card_updated", data: view(target) });
       return ok(view(target));
     }
@@ -856,6 +886,38 @@ export function createBoardFake(send: (event: ServerEvent) => void): BoardFake {
         at: NOW - 60,
       });
       return { taken: first, followed: first + 1 };
+    },
+    seedCommands() {
+      const first = Math.max(...cards.map((c) => c.id)) + 1;
+      cards.push(
+        card(first, {
+          title: "Add dark mode to the settings page",
+          column: "Not started",
+          taken_by: "alice",
+          taken_by_command: true,
+        }),
+        card(first + 1, {
+          title: "Cache the compiled assets",
+          column: "Not started",
+          taken_by: "alice",
+          taken_by_command: true,
+        }),
+      );
+      inbox.push({
+        id: Math.max(...inbox.map((item) => item.id)) + 1,
+        kind: "done_asked",
+        card_id: first + 1,
+        title: "@alice says #" + (first + 1) + " is done: Cache the compiled assets",
+        data: {
+          login: "alice",
+          reason: "The assets are cached now.\nSee the notes in the description.",
+          repository: "demo",
+        },
+        resolved_at: null,
+        assignees: [],
+        at: NOW - 90,
+      });
+      return { takenWith: first, asked: first + 1 };
     },
     refuseNext(method, path, status, message) {
       refusals.set(`${method} ${path}`, { status, message });

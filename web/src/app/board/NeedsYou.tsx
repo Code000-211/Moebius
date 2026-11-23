@@ -10,7 +10,7 @@ import { Button } from "../../ui/components/Button";
 import { ago } from "../../ui/lib/format";
 import { useNow } from "../../ui/lib/useNow";
 import type { Decision } from "./decisions";
-import { OUTSIDE_CHANGE } from "./model/inbox";
+import { DONE_ASKED, OUTSIDE_CHANGE } from "./model/inbox";
 
 /** The mark of Moebius in the thread: a dark square with its initial. */
 export function MoebiusMark() {
@@ -23,6 +23,12 @@ export function MoebiusMark() {
     </span>
   );
 }
+
+/** The login that wrote `/done`, and what else they wrote, as the item keeps them. */
+const loginOf = (item: InboxItem): string =>
+  typeof item.data.login === "string" ? item.data.login : "the assignee";
+const reasonOf = (item: InboxItem): string =>
+  typeof item.data.reason === "string" ? item.data.reason : "";
 
 export function NeedsYouBlock({
   card,
@@ -73,6 +79,14 @@ export function NeedsYouBlock({
         <span className="shrink-0 text-sm tabular-nums text-secondary">{ago(now, item.at)}</span>
       </div>
       <p className="m-0 text-md text-text [overflow-wrap:anywhere]">{item.title}</p>
+      {item.kind === DONE_ASKED && reasonOf(item) !== "" && (
+        <p
+          data-testid="done-reason"
+          className="m-0 whitespace-pre-line border-l-2 border-hairline-strong pl-3 text-base text-secondary [overflow-wrap:anywhere]"
+        >
+          {reasonOf(item)}
+        </p>
+      )}
       {rejecting && change !== null ? (
         <form
           className="flex flex-wrap items-center gap-2"
@@ -146,6 +160,32 @@ export function NeedsYouBlock({
                 onClick={() => onDecide({ kind: "merge", change, number })}
               >
                 Merge
+              </Button>
+            </>
+          )}
+          {item.kind === DONE_ASKED && (
+            <>
+              <Button
+                disabled={busy}
+                onClick={() => onDecide({ kind: "done", card: card.id, number, answer: "close" })}
+              >
+                Close the issue
+              </Button>
+              <Button
+                variant="secondary"
+                disabled={busy}
+                onClick={() =>
+                  onDecide({ kind: "done", card: card.id, number, answer: "give_back" })
+                }
+              >
+                {`Give it back to @${loginOf(item)}`}
+              </Button>
+              <Button
+                variant="secondary"
+                disabled={busy}
+                onClick={() => onDecide({ kind: "done", card: card.id, number, answer: "release" })}
+              >
+                Release it
               </Button>
             </>
           )}

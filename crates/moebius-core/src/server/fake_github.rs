@@ -46,6 +46,17 @@ pub(super) struct FakeGitHub {
     pub(super) label_writes: Mutex<Vec<(u64, Vec<String>)>>,
     /// The open pull requests `GET /pulls` lists.
     pub(super) listed_pulls: Mutex<Vec<Value>>,
+    /// The comments of the issues that have a thread of their own, by issue number; an issue without one answers
+    /// `comments`. A comment written to such an issue joins its thread, as it does on GitHub.
+    pub(super) threads: Mutex<std::collections::BTreeMap<u64, Vec<Value>>>,
+    /// The comments it was asked to write, as issue number and text.
+    pub(super) posted: Mutex<Vec<(u64, String)>>,
+    /// The id of the next comment it is given: ids only grow, as GitHub's do.
+    pub(super) next_comment: std::sync::atomic::AtomicI64,
+    /// Whether taking an assignee off an issue fails with a server error, as a forge does for a moment.
+    pub(super) unassign_fails: std::sync::atomic::AtomicBool,
+    /// The states it was asked to give an issue (`open` or `closed`), as issue number and state.
+    pub(super) state_writes: Mutex<Vec<(u64, String)>>,
 }
 
 /// The access token the fake accepts at `GET /user`.
@@ -76,6 +87,33 @@ impl FakeGitHub {
         if let Some(found) = issues.1.iter_mut().find(|i| i["number"] == number) {
             edit(found);
         }
+    }
+
+    /// Writes a comment on issue `number` as `login` does, so that the next poll reads it.
+    pub(super) fn comment(&self, number: u64, login: &str, body: &str) -> i64 {
+        let at = time::OffsetDateTime::now_utc()
+            .format(&time::format_description::well_known::Rfc3339)
+            .unwrap();
+        self.comment_at(number, login, body, &at)
+    }
+
+    /// [`FakeGitHub::comment`] written at the time `at` (RFC 3339).
+    pub(super) fn comment_at(&self, number: u64, login: &str, body: &str, at: &str) -> i64 {
+        let id = self
+            .next_comment
+            .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        self.threads
+            .lock()
+            .unwrap()
+            .entry(number)
+            .or_default()
+            .push(json!({
+                "id": id, "user": { "login": login }, "body": body,
+                "created_at": at,
+            }));
+        let count = self.threads.lock().unwrap()[&number].len();
+        self.edit_issue(number, |issue| issue["comments"] = json!(count));
+        id
     }
 
     pub(super) fn asked(&self) -> Vec<Option<String>> {
@@ -122,6 +160,11 @@ pub(super) async fn fake_github() -> (String, Arc<FakeGitHub>) {
         assignable: std::sync::atomic::AtomicBool::new(true),
         label_writes: Mutex::new(Vec::new()),
         listed_pulls: Mutex::new(Vec::new()),
+        threads: Mutex::new(Default::default()),
+        posted: Mutex::new(Vec::new()),
+        state_writes: Mutex::new(Vec::new()),
+        unassign_fails: std::sync::atomic::AtomicBool::new(false),
+        next_comment: std::sync::atomic::AtomicI64::new(1000),
         pulls: Mutex::new(Pulls {
             opened: Vec::new(),
             updated: Vec::new(),
@@ -205,16 +248,52 @@ pub(super) async fn fake_github() -> (String, Arc<FakeGitHub>) {
             ),
         )
         .route(
+            "/repos/acme/widgets/issues/{number}",
+            axum::routing::patch(
+                |State(fake): State<Arc<FakeGitHub>>,
+                 UrlPath(number): UrlPath<u64>,
+                 axum::Json(body): axum::Json<Value>| async move {
+                    if let Some(state) = body["state"].as_str() {
+                        let state = state.to_string();
+                        fake.edit_issue(number, |issue| issue["state"] = json!(state));
+                        fake.state_writes.lock().unwrap().push((number, state));
+                    }
+                    axum::Json(issue(number, "closed", "leon", ""))
+                },
+            ),
+        )
+        .route(
             "/repos/acme/widgets/issues/{number}/comments",
-            get(|State(fake): State<Arc<FakeGitHub>>| async move {
+            get(|State(fake): State<Arc<FakeGitHub>>, UrlPath(number): UrlPath<u64>| async move {
                 fake.comment_reads
                     .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                if let Some(thread) = fake.threads.lock().unwrap().get(&number) {
+                    return axum::Json(thread.clone()).into_response();
+                }
                 match fake.comments.lock().unwrap().clone() {
                     Some(comments) => axum::Json(comments).into_response(),
                     None => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
                 }
             })
-            .post(|| async { (StatusCode::CREATED, axum::Json(json!({ "id": 501 }))) }),
+            .post(
+                |State(fake): State<Arc<FakeGitHub>>,
+                 UrlPath(number): UrlPath<u64>,
+                 axum::Json(body): axum::Json<Value>| async move {
+                    let text = body["body"].as_str().unwrap_or_default().to_string();
+                    let threaded = fake.threads.lock().unwrap().contains_key(&number);
+                    let counted = {
+                        let mut posted = fake.posted.lock().unwrap();
+                        posted.push((number, text.clone()));
+                        posted.len() as i64 + 500
+                    };
+                    let id = if threaded {
+                        fake.comment(number, "moebius-bot", &text)
+                    } else {
+                        counted
+                    };
+                    (StatusCode::CREATED, axum::Json(json!({ "id": id })))
+                },
+            ),
         )
         .route(
             "/repos/acme/widgets/issues/{number}/assignees",
@@ -258,6 +337,9 @@ pub(super) async fn fake_github() -> (String, Arc<FakeGitHub>) {
                 |State(fake): State<Arc<FakeGitHub>>,
                  UrlPath(number): UrlPath<u64>,
                  axum::Json(body): axum::Json<Value>| async move {
+                    if fake.unassign_fails.load(std::sync::atomic::Ordering::SeqCst) {
+                        return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+                    }
                     let login = body["assignees"][0].as_str().unwrap().to_string();
                     fake.assigned
                         .lock()
@@ -274,7 +356,7 @@ pub(super) async fn fake_github() -> (String, Arc<FakeGitHub>) {
                         issue["assignees"] = json!(kept);
                     });
                     fake.unassigned.lock().unwrap().push((number, login));
-                    axum::Json(json!({}))
+                    axum::Json(json!({})).into_response()
                 },
             ),
         )
