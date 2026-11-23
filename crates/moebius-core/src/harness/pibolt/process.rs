@@ -46,6 +46,8 @@ pub(super) struct Place<'a> {
     /// The directory the run puts what it does not need again in, as its own temporary directory, which the run may
     /// delete (see `crate::harness::run::scratch`). None for a run on a runner, which has directories of its own.
     pub(super) scratch: Option<&'a Path>,
+    /// Whether it reads a pull request someone else opened: it is started with no tools at all.
+    pub(super) restricted: bool,
 }
 
 /// Where a run's Pi is started from, for the launcher: the agent's name, its card, its definition and the file Pi's
@@ -120,6 +122,10 @@ impl PiBolt {
             .arg(place.sessions);
         if place.continues {
             command.arg("--continue");
+        }
+        // A review of a pull request someone else opened has no tools; the router refuses any call it makes anyway.
+        if place.restricted {
+            command.arg("--no-tools");
         }
         if let Some(thinking) = &agent.thinking {
             command.args(["--thinking", thinking]);
@@ -272,6 +278,7 @@ impl PiBolt {
             run: run.id,
             repository,
             scratch: scratch.as_deref(),
+            restricted: run.restricted,
         };
         let mut command = self.command(agent, &place, false);
         let mut launched = None;
@@ -603,6 +610,38 @@ mod tests {
     }
 
     #[test]
+    fn a_restricted_run_is_started_without_tools() {
+        let (_dir, _app, pi, _repo) = setup();
+        let agent = pi.agent_set().agents["Coder"].clone();
+        let args = |restricted: bool| -> Vec<String> {
+            let place = Place {
+                worktree: Path::new("/work"),
+                agent_dir: Path::new("/agent"),
+                sessions: Path::new("/sessions"),
+                continues: false,
+                ask: Path::new("/ask.ts"),
+                bridge: Path::new("/bridge.ts"),
+                token: "run-token",
+                operates: false,
+                run: 12,
+                repository: None,
+                scratch: None,
+                restricted,
+            };
+            pi.command(&agent, &place, false)
+                .get_args()
+                .map(|a| a.to_string_lossy().into_owned())
+                .collect()
+        };
+        assert!(
+            args(true).contains(&"--no-tools".to_string()),
+            "{:?}",
+            args(true)
+        );
+        assert!(!args(false).contains(&"--no-tools".to_string()));
+    }
+
+    #[test]
     fn the_moebius_agent_and_the_grilling_partner_are_given_the_api_and_no_other_agent_is() {
         let (_dir, _app, pi, _repo) = setup();
         pi.api_url.set("http://127.0.0.1:7".into()).unwrap();
@@ -620,6 +659,7 @@ mod tests {
                 run: 12,
                 repository,
                 scratch: Some(Path::new("/scratch")),
+                restricted: false,
             };
             let command = pi.command(&agent, &place, false);
             command
@@ -671,6 +711,7 @@ mod tests {
                 run: 12,
                 repository: None,
                 scratch: Some(Path::new("/scratch")),
+                restricted: false,
             };
             let args: Vec<_> = pi
                 .command(&agent, &place, false)

@@ -11,6 +11,7 @@ use super::{Result, Store, now};
 /// The tables and columns of this part.
 pub(super) const SCHEMA: &str = r#"
 ALTER TABLE repositories ADD COLUMN merge_reviewed INTEGER NOT NULL DEFAULT 1;
+ALTER TABLE runs ADD COLUMN restricted INTEGER NOT NULL DEFAULT 0;
 CREATE TABLE external_reviews (
     id INTEGER PRIMARY KEY,
     change_id INTEGER NOT NULL REFERENCES changes(id),
@@ -88,6 +89,25 @@ impl Store {
             params![merge, id],
         )?;
         Ok(())
+    }
+
+    /// Marks the run as restricted, as it is started: it reads a pull request someone else opened, has no tools, and
+    /// nothing changes that later.
+    pub fn set_run_restricted(&self, run_id: i64) -> Result<()> {
+        self.conn()
+            .execute("UPDATE runs SET restricted = 1 WHERE id = ?1", [run_id])?;
+        Ok(())
+    }
+
+    /// Whether the run was started restricted. A run that is not there counts as restricted: nothing it asks is allowed.
+    pub fn run_restricted(&self, run_id: i64) -> Result<bool> {
+        Ok(self
+            .read()
+            .query_row("SELECT restricted FROM runs WHERE id = ?1", [run_id], |r| {
+                r.get(0)
+            })
+            .optional()?
+            .unwrap_or(true))
     }
 
     /// Asks for a round on `head` of the change, which starts once the checks of the head are known and green.

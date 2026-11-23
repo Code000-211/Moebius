@@ -72,6 +72,7 @@ impl PiBolt {
             run: run_id,
             repository: stored.repository_id,
             scratch: Some(&scratch),
+            restricted: false,
         };
         let command = self.command(&config, &place, true);
         let follower = Follower::start(app.clone(), run_id, sessions);

@@ -41,10 +41,9 @@ pub(super) fn new_session() -> String {
 /// The tools of Claude Code a run may never use: its question tool, which has nobody to answer it headless.
 const DISALLOWED: &str = "AskUserQuestion";
 
-/// The tools a restricted run (a review of a pull request someone else opened) may not use besides: everything that
-/// writes, runs a command, reaches the network or starts a sub-agent. What is left reads files of the worktree, and the
-/// router still checks each call (see `decide::guard::restricted`).
-const DISALLOWED_RESTRICTED: &str = "AskUserQuestion,Bash,BashOutput,KillShell,Edit,MultiEdit,Write,NotebookEdit,WebFetch,WebSearch,Task,Agent,SlashCommand,TodoWrite";
+/// The tools a restricted run (a review of a pull request someone else opened) may not use, besides having none (`--tools
+/// ""`): the router refuses any call of its anyway.
+const DISALLOWED_RESTRICTED: &str = "AskUserQuestion,Bash,BashOutput,KillShell,Edit,MultiEdit,Write,NotebookEdit,Read,Grep,Glob,LS,WebFetch,WebSearch,Task,Agent,SlashCommand,TodoWrite";
 
 /// Where a Claude Code starts and what it is given.
 pub(super) struct Place<'a> {
@@ -125,6 +124,10 @@ impl ClaudeCode {
                 "--session-id"
             })
             .arg(place.session);
+        if place.restricted {
+            // No built-in tool at all.
+            command.args(["--tools", ""]);
+        }
         if let Some(instructions) = &agent.instructions {
             command.arg("--append-system-prompt").arg(instructions);
         }

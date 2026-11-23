@@ -24,6 +24,15 @@ pub(super) struct Call {
     pub(super) input: Value,
 }
 
+/// The arguments of a call as JSON: none given is an empty object; text that is not JSON stays text, which no tool
+/// takes, so the call is refused (see [`Decider::refused`]).
+pub(super) fn parse_arguments(text: &str) -> Value {
+    if text.trim().is_empty() {
+        return json!({});
+    }
+    serde_json::from_str(text).unwrap_or_else(|_| json!(text))
+}
+
 impl Call {
     /// The call of an OpenAI `tool_calls` entry, whose arguments are JSON text; arguments that are not JSON are given
     /// as the text.
@@ -31,7 +40,7 @@ impl Call {
         Self {
             id: id.to_string(),
             name: name.to_string(),
-            input: serde_json::from_str(arguments).unwrap_or_else(|_| json!(arguments)),
+            input: parse_arguments(arguments),
         }
     }
 
@@ -54,6 +63,11 @@ pub(super) struct Decider {
 impl Decider {
     /// Why `call` is refused, or none when it is allowed. Without a checker every call is refused.
     async fn refused(&self, call: &Call) -> Option<String> {
+        // What the check cannot read it cannot judge: a harness may repair arguments it was given (a raw new line, a bad
+        // escape, a cut-off object) and read what the check never saw, so arguments that are no object are refused.
+        if !call.input.is_object() {
+            return Some("the call's arguments cannot be read, so it is refused".into());
+        }
         let Some(checker) = self.checker.clone() else {
             return Some("no tool-call check is set up".into());
         };
@@ -239,6 +253,33 @@ pub(super) mod tests {
             grant,
         };
         (dir, app, decider)
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn a_call_whose_arguments_are_no_object_is_refused_for_the_decider_never_saw_what_it_reads()
+     {
+        let (_dir, _app, decider) = decider();
+        // Arguments a harness may repair (a raw new line, a bad escape, a cut-off object) and then read.
+        for text in [
+            "{\"path\": \"/etc/passwd\"\n",
+            "{\"path\": \"/etc/pas\\swd\"}",
+            "not json",
+            "[\"read\"]",
+            "3",
+            "null",
+        ] {
+            let call = Call::of_openai("c1", "read", text);
+            let reason = decider.refused(&call).await;
+            assert!(
+                reason.is_some_and(|r| r.contains("cannot be read")),
+                "{text:?} was allowed"
+            );
+        }
+        // Arguments that are an object, or none at all, go to the decider as before.
+        for text in ["{\"path\": \"a.txt\"}", "", "  "] {
+            let call = Call::of_openai("c1", "read", text);
+            assert_eq!(decider.refused(&call).await, None, "{text:?}");
+        }
     }
 
     #[tokio::test(flavor = "multi_thread")]

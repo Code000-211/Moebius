@@ -167,7 +167,7 @@ impl AnthropicStream {
         let input = if held.json.trim().is_empty() {
             held.input.clone()
         } else {
-            serde_json::from_str(&held.json).unwrap_or_else(|_| json!(held.json))
+            super::parse_arguments(&held.json)
         };
         let call = Call {
             id: held.id.clone(),

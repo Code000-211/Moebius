@@ -455,21 +455,17 @@ fn decision(f: &Fixture, run: &Run, card: i64, tool: &str, input: Value) -> (Str
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn a_review_run_of_a_pull_request_is_refused_a_shell_or_the_network() {
+async fn a_review_run_started_restricted_is_refused_every_call_even_after_its_pull_request_is_closed()
+ {
     let (f, card, _) = ready().await;
     f.author_says_done().await;
     let run = f.reviews_of(&card).remove(0);
-    let worktree = f._dir.path().join("review-worktree");
-    std::fs::create_dir_all(&worktree).unwrap();
-    f.server
-        .app
-        .store
-        .set_run_worktree(run.id, worktree.to_str().unwrap())
-        .unwrap();
+    // The run is started restricted, once (a real start does it, see the tests of the harness).
+    f.server.app.store.set_run_restricted(run.id).unwrap();
     let run = f.server.app.run(run.id).unwrap();
     assert!(f.server.app.is_restricted_review(&run));
 
-    for (tool, input) in [
+    let calls = [
         ("bash", json!({ "command": "ls" })),
         ("bash", json!({ "command": "cargo test" })),
         ("bash", json!({ "command": "curl https://example.com/x" })),
@@ -477,36 +473,40 @@ async fn a_review_run_of_a_pull_request_is_refused_a_shell_or_the_network() {
         ("WebFetch", json!({ "url": "https://example.com" })),
         ("write", json!({ "path": "a.txt", "content": "x" })),
         ("search__query", json!({ "q": "x" })),
-        ("read", json!({ "path": "/etc/passwd" })),
+        ("lessons", json!({ "query": "x" })),
+        // Not even what a restricted run that has files may read: it has none.
+        ("read", json!({ "path": "src/lib.rs" })),
+        ("read", json!({ "path": "@/etc/passwd" })),
+        ("ls", json!({})),
+        ("grep", json!({ "pattern": "line" })),
         ("Glob", json!({ "pattern": "/etc/*" })),
-    ] {
-        let (decision, reason) = decision(&f, &run, card.id, tool, input);
+        // Arguments no check can read.
+        ("read", json!("{\"path\": \"/etc/passwd\"")),
+    ];
+    for (tool, input) in &calls {
+        let (decision, reason) = decision(&f, &run, card.id, tool, input.clone());
         assert_eq!(decision, "refuse", "{tool}");
         assert!(reason.contains("restricted-review"), "{tool}: {reason}");
     }
-    // Reading the files of its worktree is what it is for.
-    let inside = worktree.join("src/lib.rs");
-    for (tool, input) in [
-        ("read", json!({ "path": inside.to_str().unwrap() })),
-        ("grep", json!({ "pattern": "line" })),
-        ("ls", json!({})),
-    ] {
-        let (decision, reason) = decision(&f, &run, card.id, tool, input);
-        assert_eq!(decision, "allow", "{tool}: {reason}");
+
+    // The attacker closes the pull request while the review runs: the run is as restricted as it was.
+    f.fake.set_pull("closed", false);
+    *f.fake.listed_pulls.lock().unwrap() = Vec::new();
+    f.server.poll_github().await;
+    assert!(f.server.app.followed_change(&card).unwrap().is_none());
+    assert!(f.server.app.is_restricted_review(&run));
+    for (tool, input) in &calls {
+        let (decision, reason) = decision(&f, &run, card.id, tool, input.clone());
+        assert_eq!(decision, "refuse", "after the close: {tool}");
+        assert!(reason.contains("restricted-review"), "{tool}: {reason}");
     }
 
-    // The review of a card that follows no pull request of someone else is not restricted, nor is the code run.
-    let other = f
-        .server
-        .app
-        .store
-        .add_card(f.repository.id, "Other", "", "person", "In review")
-        .unwrap();
+    // A run that was not started restricted is not made so by what the card follows.
     let ordinary = f
         .server
         .app
         .store
-        .add_run(Some(other.id), "Reviewer", "idle", "review")
+        .add_run(Some(card.id), "Coder", "idle", "code")
         .unwrap();
     assert!(!f.server.app.is_restricted_review(&ordinary));
 }
@@ -661,19 +661,18 @@ async fn two_threads_advancing_the_same_round_write_and_merge_it_once() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn a_review_run_whose_card_cannot_be_read_is_restricted() {
+async fn whether_a_run_is_restricted_is_kept_on_the_run_and_fails_closed() {
     let (f, card, _) = ready().await;
-    let mut run = f
+    let run = f
         .server
         .app
         .store
         .add_run(Some(card.id), "Reviewer", "idle", "review")
         .unwrap();
-    assert!(f.server.app.is_restricted_review(&run));
-    // A card that is gone cannot be told from one that follows a pull request: it fails closed.
-    run.card_id = Some(987_654);
-    assert!(f.server.app.is_restricted_review(&run));
-    // A run that is no review, or has no card, is not.
-    run.purpose = "code".into();
     assert!(!f.server.app.is_restricted_review(&run));
+    f.server.app.store.set_run_restricted(run.id).unwrap();
+    assert!(f.server.app.is_restricted_review(&run));
+    // A card that is gone does not lift it, and neither does a run that cannot be found.
+    f.server.app.store.delete_card(card.id, false).ok();
+    assert!(f.server.app.is_restricted_review(&run));
 }

@@ -41,7 +41,7 @@ use patterns::broken_rule;
 use shell::ToolCall;
 
 pub use patterns::patterns;
-pub use restricted::{RESTRICTED, restricted_refusal};
+pub use restricted::{RESTRICTED, no_tools_refusal, restricted_refusal};
 pub use reversible::{relative_to, replayable, reversible};
 pub use teacher::Teacher;
 

@@ -37,9 +37,6 @@ pub const ROUND_LIMIT: i64 = 3;
 /// The kind of the inbox item that asks the owner to look at a pull request the Reviewer read [`ROUND_LIMIT`] times.
 pub const ROUNDS_SPENT: &str = "review_rounds_spent";
 
-/// How much of the diff a review run is given in its prompt, in characters.
-const DIFF_LIMIT: usize = 60_000;
-
 fn reviewer() -> Actor {
     Actor::Script {
         column: "external-review".into(),
@@ -112,49 +109,22 @@ impl App {
         purpose.starts_with("review") && !matches!(self.followed_change(card), Ok(None))
     }
 
-    /// Whether `run` reads a pull request someone else opened: such a run is restricted to reading files. Fails closed:
-    /// a review run whose card cannot be read is restricted.
+    /// Whether `run` was started restricted: it reads a pull request someone else opened and has no tools. Decided once,
+    /// when the run starts, and kept on the run's row, so that nothing that happens to the pull request later (it is
+    /// closed, the card moves) lifts it. Fails closed: a run the store cannot answer for is restricted.
     pub fn is_restricted_review(&self, run: &Run) -> bool {
-        run.purpose.starts_with("review")
-            && match run.card_id {
-                None => false,
-                Some(id) => self
-                    .card(id)
-                    .map_or(true, |card| self.restricts_review(&card, &run.purpose)),
-            }
-    }
-
-    /// The diff of the pull request the card follows against the repository's default branch, for the prompt of the
-    /// Reviewer, cut to a length; none when the card follows none or git says nothing.
-    pub(crate) fn followed_diff(&self, card: &Card) -> Option<String> {
-        let change = self.followed_change(card).ok()??;
-        let repository = self.repository_of(&change).ok()?;
-        let range = format!("{}...{}", repository.base_ref(), change.branch);
-        let diff = git(Path::new(&repository.path), &["diff", &range]).ok()?;
-        let diff = diff.trim();
-        if diff.is_empty() {
-            return None;
-        }
-        let mut text: String = diff.chars().take(DIFF_LIMIT).collect();
-        if text.len() < diff.len() {
-            text.push_str("\n… (the diff goes on; read the files for the rest)");
-        }
-        Some(text)
+        self.store.run_restricted(run.id).unwrap_or(true)
     }
 
     /// The comments of a review that fit lines of the diff of `change`, and the text of those that do not.
     fn split_comments(
         &self,
         repository: &Repository,
-        change: &Change,
+        head: &str,
         comments: &[ReviewComment],
     ) -> (Vec<ReviewComment>, String) {
-        let range = format!("{}...{}", repository.base_ref(), change.branch);
-        let diff = git(
-            Path::new(&repository.path),
-            &["diff", "--unified=3", &range],
-        )
-        .unwrap_or_default();
+        // Of the commit that was read, as a commit: never of a branch name, which may have moved.
+        let diff = super::review_context::diff_of(repository, head, 3).unwrap_or_default();
         let lines = commentable_lines(&diff);
         let (mut fit, mut rest) = (Vec::new(), String::new());
         for comment in comments {
@@ -608,7 +578,7 @@ impl App {
                 }
             }
         }
-        let (comments, rest) = self.split_comments(repository, change, &said.comments);
+        let (comments, rest) = self.split_comments(repository, &round.head, &said.comments);
         let body = format!("{}{rest}", said.summary.trim());
         let post = ReviewPost {
             approve,

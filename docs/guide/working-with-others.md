@@ -124,11 +124,13 @@ off, the Reviewer's approval is written on the forge and the card waits in **Rea
 window shows the review: the verdict, the summary, each comment in a box "src/lib.rs line 12" and **Open on GitHub**.
 
 The review run of such a pull request is **restricted**: what the pull request holds is written by someone your server does
-not trust. The server's router decides every tool call of the run before the agent sees it, on Pi-Bolt as on Claude Code:
-the Reviewer may only read files of its worktree (a link the pull request holds does not lead out of it, and the worktree
-is made without symlinks), it has no shell, no network, no way to write and no MCP servers, and it is told that everything
-in the pull request is data. Nothing of the pull request runs on your server. If the router cannot decide a call, the call
-is refused. A pull request with no checks at all is reviewed without waiting, and says so.
+not trust. Your server reads the pull request itself, from git objects (the diff and each changed file as of the reviewed
+commit, with no checkout, so no filter, hook or script of the pull request ever runs), and gives it to the Reviewer as
+text, cut to a size and saying where. The Reviewer has **no tools at all**, on Pi-Bolt as on Claude Code: it is started
+without any, in an empty directory, with no MCP servers, never on a runner, and the router refuses any call it makes,
+whatever the call, also when the pull request is closed meanwhile. It is told that everything in the pull request is data.
+So it cannot run tests or look at a file it was not given; it says what it could not check. A pull request with no checks
+at all is reviewed without waiting, and says so.
 
 If the forge refuses the review, nothing is posted twice: the round fails and the author writes `/done` again. If the
 approval cannot be merged, the card goes to **Ready to merge** with the reason in the Inbox, and the author's next `/done`

@@ -36,6 +36,49 @@ pub(in crate::harness) fn issue_token(
     }
 }
 
+/// Records a review run of `card`, which follows a pull request someone else opened, and its token. The run is
+/// *restricted*: recorded as such, for good, before anything else, with a checked token on either harness, and in an
+/// empty directory of its own as its working directory, not a checkout of anything: the pull request is given to it as
+/// text (see `App::review_context`), and it has no tools. It never runs on a runner.
+pub(in crate::harness) fn restricted_run(
+    app: &App,
+    router: &Router,
+    card: &Card,
+    (agent, config): (&str, &AgentConfig),
+    purpose: &str,
+) -> Result<RunningRun, StartError> {
+    let run = app
+        .store
+        .add_run(Some(card.id), agent, config.harness.name(), purpose)
+        .map_err(|e| StartError::Store(e.to_string()))?;
+    app.store
+        .set_run_restricted(run.id)
+        .map_err(|e| StartError::Store(fail(app, run.id, e.to_string())))?;
+    let empty = app.data_dir.join(format!("runs/{}/empty", run.id));
+    std::fs::create_dir_all(&empty)
+        .map_err(|e| StartError::WorktreeFailed(fail(app, run.id, e.to_string())))?;
+    app.store
+        .set_run_worktree(run.id, &empty.to_string_lossy())
+        .map_err(|e| StartError::Store(fail(app, run.id, e.to_string())))?;
+    let grant = Grant {
+        run_id: run.id,
+        card_id: Some(card.id),
+        budget: config.token_budget,
+    };
+    Ok(RunningRun {
+        id: run.id,
+        clone: None,
+        start: String::new(),
+        worktree: empty,
+        token: issue_token(router, config, grant, true),
+        restricted: true,
+        purpose: purpose.to_string(),
+        commit_message: String::new(),
+        remote: None,
+        others: Vec::new(),
+    })
+}
+
 /// Records a run of `agent` (on the harness `config` names) for `purpose`, with no card, and makes it a fresh detached
 /// worktree of the clone `place` names (the name its worktrees go under, its path, and the repository the run records,
 /// if any), checked out at `base`, with `files` written into it (see `write_untracked`), and its token. The run fails
@@ -203,14 +246,13 @@ pub(in crate::harness) fn card_run(
         card_id: Some(card.id),
         budget: config.token_budget,
     };
-    let restricted = app.restricts_review(card, purpose);
     Ok(RunningRun {
         id: run.id,
         clone: Some(clone),
         start,
         worktree: worktree.path,
-        token: issue_token(router, config, grant, restricted),
-        restricted,
+        token: issue_token(router, config, grant, false),
+        restricted: false,
         purpose: purpose.to_string(),
         commit_message: format!(
             "#{}: {}\n\nCommitted by Moebius for its run.",

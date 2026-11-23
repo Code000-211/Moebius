@@ -43,19 +43,27 @@ server merge what the Reviewer approves. A pull request is somebody else's code,
   thank the author on the issue. Off, the review is approved and the card goes to Ready to merge with an Inbox item for
   the owner. The default is on because the owner asked for it; the hint in the settings says that foreign code then
   lands without a person looking.
-- **The run is restricted, and the restriction is enforced by the router, not by the prompt.** What the pull request holds
-  is the work of a person the server does not trust, and an agent that reads it can be told by it what to do. The Pi-Bolt
-  bridge blocks no tool call, and Pi-Bolt is the default harness, so a rule in the guard alone would bind only Claude Code.
-  A `review` run of a card that follows such a pull request is therefore given a *checked token* on either harness: the
-  router decides every tool call of the model's answers before the harness sees them, and a refused call never reaches
-  it. The decision is a fixed rule (`restricted-review`, in the guard, before the rules in prose): only the tools that read
-  files, on paths that resolve inside the worktree. Symlinks are followed before that test and the worktree is made with
-  `core.symlinks=false`, so a link the pull request holds leads nowhere; a pattern that names a place may not be absolute
-  or go up. Anything that fails while deciding, including a card the store cannot read, counts as restricted. The run is
-  started without MCP servers, the server's environment (the forge token, the model keys) is withheld from its process as
-  for every run, and its prompt gives it the diff and says that all the pull request holds is data and no instruction.
-  Claude Code is also started with its writing, shell, network and sub-agent tools switched off. Pi-Bolt gets no
-  allowlist on its command line (nothing here shows that Pi has one, so none is relied on): the router is the one guard.
+- **The Reviewer of such a pull request has no tools and no checkout.** What the pull request holds is the work of a
+  person the server does not trust, and every attempt to let an agent read it with tools failed in another way (a path
+  the checks read differently from the harness, arguments the harness repairs after the check, a checkout that runs the
+  git filters the pull request's attributes name, a symlink on a runner). So the server reads it itself, from git objects
+  only, and gives it to the Reviewer as text (`app::review_context`): the diff against the merge base and each changed
+  file whole, as of the commit recorded as reviewed, with `git diff` and `git cat-file`, no textconv, no external diff,
+  no attributes file, and no worktree, so no filter or hook of the pull request ever runs. It is cut to a size and says
+  where; binary files, symlinks and submodules are named only. The commit is recorded before anything is read and every
+  read is of that commit, never of a branch name that may move, so the Reviewer reads the tree that is merged, whatever
+  earlier work the card has.
+- **The run is started restricted, once.** It is recorded as restricted on its row before anything else (`runs.restricted`),
+  and nothing that happens later lifts it: closing the pull request, or the card moving, changes nothing. It has an empty
+  directory as its working directory and no clone, a *checked token* on either harness (so the router decides every call
+  of its answers; Pi-Bolt's bridge blocks none), no MCP servers, and it never runs on a runner. Pi-Bolt is started with
+  `--no-tools` and Claude Code with `--tools ""`; neither flag could be tried against a real Pi here, so the router is the
+  guarantee, not the flags. The router refuses *every* call of such a run, whatever it is (`restricted-review`, before the
+  rules in prose), and refuses any call of any checked run whose arguments are not a JSON object, which a harness may
+  repair and read where the check could not. Anything that cannot be decided is refused.
+- **The narrower mode stays for other restricted uses** (`guard::restricted_refusal`): only the tools that read files, on
+  paths that resolve inside a worktree with symlinks followed, no leading `@` (which Pi strips from a path), no absolute or
+  `..` pattern, and arguments that are a JSON object. Nothing uses it for a review of a pull request now.
 - **Rounds are taken by one thread.** The poll and the engine both move rounds along, so a round changes state by a
   compare-and-set in the store (`starting`, `posting`), and only the thread that wins starts the run, writes the review or
   merges. A review the forge fails to take is not written again by itself (a forge such as GitLab may have written part of
@@ -69,13 +77,15 @@ server merge what the Reviewer approves. A pull request is somebody else's code,
 
 ## Consequences
 
-- A review of a pull request cannot run the repository's tests, so it judges by reading, and says what it could not check.
-  The checks of the forge are what runs the code, and they must be green before anything is merged.
+- A review of a pull request cannot run the repository's tests, read a file it was not given or look anything up, so it
+  judges by reading what it is given, and says what it could not check or what was cut. The checks of the forge are what
+  runs the code, and they must be green before anything is merged.
 - With `merge_reviewed` on, a pull request that the Reviewer approves wrongly is merged. The checks and the pinned head are
   what stand between a stranger's code and the default branch; a person who wants more turns the setting off.
 - The restricted mode is for pull requests someone else opened; the Reviewer of the board's own changes still runs the
   repository's checks.
-- A restricted Pi-Bolt run can still *try* any tool; the router removes the call from the answer, so the agent is told it
-  was refused, and nothing runs. The restriction holds as long as the router does, which is the only place Pi-Bolt's calls
-  are decided.
+- A restricted run can still *ask* for a tool, if the flag that removes them does not work; the router removes the call
+  from the answer, so the agent is told it was refused, and nothing runs. The restriction holds as long as the router does,
+  which is the only place Pi-Bolt's calls are decided. If Pi did not know `--no-tools`, it would not start, and the review
+  would fail rather than run unrestricted.
 - A review is only as quick as a poll, or a tick of the card, after the run ends.

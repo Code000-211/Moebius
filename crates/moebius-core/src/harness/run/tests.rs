@@ -583,10 +583,9 @@ fn a_decider_that_fails_leaves_the_run_without_a_hint() {
     );
 }
 
-/// What a review run of a pull request someone else opened is started with, on either harness: a checked token (Pi-Bolt's
-/// bridge blocks no call, so the router is where the restriction is enforced), no MCP servers, and a worktree whose
-/// symlinks are plain files. The same review of a card that follows no such request is none of that.
-#[cfg(unix)] // The pull request's branch holds a symlink, which needs Unix.
+/// What a review run of a pull request someone else opened is started with, on either harness: recorded restricted on
+/// its row, a checked token, no MCP servers, no runner, and no checkout: its working directory is an empty directory
+/// and it has no clone. The same review of a card that follows no such request is none of that.
 #[test]
 fn a_review_of_a_pull_request_someone_else_opened_is_started_restricted_on_either_harness() {
     use crate::config::HarnessKind;
@@ -599,9 +598,9 @@ fn a_review_of_a_pull_request_someone_else_opened_is_started_restricted_on_eithe
     let runners = Arc::new(Runners::default());
     let repository = setup.app.store.repository(setup.repo).unwrap().unwrap();
     let clone = PathBuf::from(&repository.path);
-    // The pull request's branch has a link that leads out of any worktree.
+    // The pull request's branch has a file, and a link that leads out of any worktree.
     git(&clone, &["checkout", "--quiet", "-b", "moebius/pr-7"]).unwrap();
-    std::os::unix::fs::symlink("/etc", clone.join("link")).unwrap();
+    std::fs::write(clone.join("feature.txt"), "feature\n").unwrap();
     git(&clone, &["add", "."]).unwrap();
     git(
         &clone,
@@ -613,10 +612,11 @@ fn a_review_of_a_pull_request_someone_else_opened_is_started_restricted_on_eithe
             "commit",
             "--quiet",
             "-m",
-            "a link",
+            "a feature",
         ],
     )
     .unwrap();
+    let head = git(&clone, &["rev-parse", "HEAD"]).unwrap();
     git(&clone, &["checkout", "--quiet", "main"]).unwrap();
     let followed = setup
         .app
@@ -630,13 +630,29 @@ fn a_review_of_a_pull_request_someone_else_opened_is_started_restricted_on_eithe
             Some(followed.id),
             "moebius/pr-7",
             Some(7),
-            "abc",
+            &head,
         )
         .unwrap();
     setup
         .app
         .store
         .set_change_outside(change.id, "alice", "In progress")
+        .unwrap();
+    setup
+        .app
+        .store
+        .set_change_reviewed_head(change.id, &head)
+        .unwrap();
+    // The card has an earlier code run of Moebius's own: the review is of the pull request all the same.
+    let earlier = setup
+        .app
+        .store
+        .add_run(Some(followed.id), "Coder", "idle", "code")
+        .unwrap();
+    setup
+        .app
+        .store
+        .set_run_status(earlier.id, "succeeded")
         .unwrap();
     let own = setup
         .app
@@ -668,10 +684,10 @@ fn a_review_of_a_pull_request_someone_else_opened_is_started_restricted_on_eithe
                 harness,
                 tool_output: Default::default(),
                 engineering_skills: Default::default(),
-                runner: None,
+                runner: restricted.then(|| "far-away".to_string()),
             };
             let seen = std::cell::RefCell::new(None);
-            let _ = start_card(
+            let started = start_card(
                 &setup.app,
                 (&router, &runners),
                 card,
@@ -679,30 +695,44 @@ fn a_review_of_a_pull_request_someone_else_opened_is_started_restricted_on_eithe
                 ("review", None),
                 Variant::default(),
                 &|launching| {
-                    let link = launching.run.worktree.join("link");
+                    let prompt = launching.prompt.unwrap_or_default().to_string();
                     *seen.borrow_mut() = Some((
                         launching.run.restricted,
                         router.is_checked(&launching.run.token),
                         launching.config.mcp.len(),
-                        std::fs::symlink_metadata(&link).map(|m| m.file_type().is_symlink()),
+                        launching.config.runner.clone(),
+                        launching.run.clone.is_some(),
+                        std::fs::read_dir(&launching.run.worktree).map(|d| d.count()),
+                        setup.app.store.run_restricted(launching.run.id).unwrap(),
+                        prompt,
                     ));
                     Err("not started: the test only looks".into())
                 },
             );
-            let (marked, checked, servers, link) = seen.into_inner().expect("the run was launched");
             let name = format!("{harness:?}, restricted {restricted}");
-            assert_eq!(marked, restricted, "{name}");
-            // Claude Code's calls are always checked; Pi-Bolt's only when the run is restricted.
-            assert_eq!(
-                checked,
-                restricted || harness == HarnessKind::ClaudeCode,
-                "{name}"
-            );
-            assert_eq!(servers, usize::from(!restricted), "{name}");
-            // Only a card of the pull request's branch has the link, and it is a plain file there.
-            if restricted {
-                assert_eq!(link.ok(), Some(false), "{name}");
+            assert!(started.is_err(), "{name}");
+            let (marked, checked, servers, runner, has_clone, files, stored, prompt) =
+                seen.into_inner().expect("the run was launched");
+            if !restricted {
+                // Moebius's own change is reviewed as before: a worktree of its clone, its servers, and its token as
+                // its harness has it (Claude Code's calls are checked, Pi-Bolt's are not).
+                assert!(!marked && !stored, "{name}");
+                assert_eq!(checked, harness == HarnessKind::ClaudeCode, "{name}");
+                assert_eq!(servers, 1, "{name}");
+                assert!(has_clone, "{name}");
+                assert!(!prompt.contains("You have no tools at all"), "{name}");
+                continue;
             }
+            assert!(marked && stored, "{name}");
+            assert!(checked, "{name}: a checked token on either harness");
+            assert_eq!(servers, 0, "{name}");
+            assert_eq!(runner, None, "{name}: never on a runner");
+            assert!(!has_clone, "{name}: no clone, no checkout");
+            assert_eq!(files.ok(), Some(0), "{name}: an empty directory");
+            // The prompt holds the pull request as of its commit, and no other branch: not the earlier code run's.
+            assert!(prompt.contains(&head), "{name}: {prompt}");
+            assert!(prompt.contains("feature.txt"), "{name}");
+            assert!(prompt.contains("You have no tools at all"), "{name}");
         }
     }
 }

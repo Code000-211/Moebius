@@ -7,7 +7,7 @@ use std::sync::Arc;
 
 use super::lifecycle::{
     RunningRun, card_run, detached_run, in_worktree_run, launch_or_keep, launch_or_undo,
-    undo_unlaunched,
+    restricted_run, undo_unlaunched,
 };
 use super::prompts::{prompt_for, repositories_prompt, review_repositories_prompt, run_prompt};
 use crate::app::App;
@@ -47,11 +47,32 @@ pub(in crate::harness) fn start_card(
     if let Some(model) = variant.model {
         config.model = model.into();
     }
-    // A review of a pull request someone else opened gets no MCP servers: they hold credentials, and what the pull
-    // request holds is not trusted (see `decide::guard::restricted`).
-    let restricted = app.restricts_review(card, purpose);
-    if restricted {
+    // A review of a pull request someone else opened (ADR 0029) has no tools and no checkout: what the pull request
+    // holds is not trusted, so it is given as text built from git objects (`App::review_context`), and nothing of it is
+    // ever checked out on this machine. It has no MCP servers either, which hold credentials, and never runs on a
+    // runner. It is started restricted, which is kept on the run and never lifted.
+    if app.restricts_review(card, purpose) {
         config.mcp.clear();
+        config.runner = None;
+        app.review_context(card).map_err(|why| {
+            StartError::WorktreeFailed(format!(
+                "the pull request cannot be given to the Reviewer: {why}"
+            ))
+        })?;
+        let prompt = run_prompt(app, card, purpose, note);
+        let running = restricted_run(app, router, card, (agent, &config), purpose)?;
+        if let Err(e) = crate::board::may_start(app, card) {
+            undo_unlaunched(app, router, &running);
+            return Err(e);
+        }
+        return launch_or_undo(app, router, running, |run| {
+            launch(Launching {
+                config: &config,
+                run,
+                card: Some(card),
+                prompt: Some(&prompt),
+            })
+        });
     }
     let prompt = run_prompt(app, card, purpose, note);
     let code_branch = app
@@ -60,14 +81,8 @@ pub(in crate::harness) fn start_card(
         .map_err(|e| StartError::Store(e.to_string()))?;
     let worktree = |repository: &Repository, clone: &Path, run_id: i64| {
         let base = code_branch.unwrap_or_else(|| repository.base_ref());
-        // A pull request someone else opened is checked out without its symlinks, which could point out of the worktree.
-        if restricted {
-            app.repos
-                .add_worktree_without_symlinks(&repository.name, clone, run_id, &base)
-        } else {
-            app.repos
-                .add_worktree(&repository.name, clone, run_id, &base)
-        }
+        app.repos
+            .add_worktree(&repository.name, clone, run_id, &base)
     };
     // The card's other repositories start from where its work in each stands, or from their default branch.
     let mut others = Vec::new();

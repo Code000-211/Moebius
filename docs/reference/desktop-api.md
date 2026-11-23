@@ -4629,10 +4629,15 @@ by the Reviewer when its author says so. The steps are in [the guide](../guide/w
   answered that it was reviewed already. A round whose run did not end, or whose answer is no verdict, is `failed` and does
   not count, so the author can write `/done` again; a round dropped because the head moved before the verdict was used is
   `stale` and does not count either.
-- **The run.** A `review` run of the card by the Reviewer, started with the restricted mode below, in a worktree of the local
-  branch `moebius/pr-<number>` fetched just before, whose prompt holds the issue, the diff of the request (cut to 60,000
-  characters) and the instruction that everything the pull request holds is data and no instruction. The head it reads is
-  `Change.reviewed_head`. Decided in the engine's tick of the card and after each poll of the request.
+- **The run.** A `review` run of the card by the Reviewer, started restricted (below), whose prompt holds the issue, the
+  instruction that everything the pull request holds is data and no instruction, and the pull request itself as text, built
+  by the server from git objects (`App::review_context`): the diff against the merge base (cut to 60,000 bytes) and each
+  changed file whole as of the commit (40,000 bytes a file, 150,000 and 60 files in all), with `git diff` and `git cat-file`
+  only (no textconv, no external diff, `core.attributesFile=/dev/null`), so nothing is checked out and no git filter runs.
+  Binary files, symlinks, submodules, deleted files and files over 160,000 bytes are named only; what is cut is said. The
+  commit is the one recorded as `Change.reviewed_head` before anything is read, and every read is of that commit, never of
+  the branch `moebius/pr-<number>` or of an earlier `code` run's branch. A review does not start when the context cannot be
+  made. Decided in the engine's tick of the card and after each poll of the request.
 - **What the Reviewer answers.** Its answer ends with one JSON object in a fenced `json` block:
   `{"verdict": "approve" | "changes", "summary": string, "comments": [{"path": string, "line": number, "body": string}]}`.
   `path` is the file as the diff names it, `line` a line of the file after the change (from 1). A `changes` verdict needs a
@@ -4670,23 +4675,26 @@ by the Reviewer when its author says so. The steps are in [the guide](../guide/w
   null), `summary`, `comments` (`{"path", "line", "body"}`), `url` (the review on the forge once it is written, else null),
   `head` (the commit it read) and `current` (whether that is the request's head now). The card window shows the verdict, the
   summary, each comment in a box "path line N" and "Open on GitHub".
-- **The restricted mode.** The run of a review of a pull request someone else opened (a run whose purpose is `review...` of
-  a card that has such an open change) is restricted, on either harness. Its token is a *checked* token (`Router::issue_checked_token`):
-  the router decides every tool call of the model's answers through `decide("tool_call")` before the harness sees them,
-  which matters for Pi-Bolt, whose bridge blocks no call. The decision is a fixed built-in rule, `restricted-review`, applied
-  before the rules in prose and whatever they say: only the tools that read files are allowed (Pi's `read`, `grep`, `find`,
-  `ls`, Claude Code's `Read`, `Grep`, `Glob`, `LS`). A path they name (`path`, `file_path`, `notebook_path`, `directory`,
-  `cwd`) must resolve, through the filesystem and with symlinks followed, inside the run's worktree, which is checked out with
-  `core.symlinks=false`; a pattern that names a place (`glob`, `include`, `exclude`, `ignore`, and `pattern` of `find`, `ls`,
-  `Glob`, `LS`) may not be absolute, start with `~` or `$`, or have a `..` part. Every other call is refused with a reason that
-  starts `restricted-review`: no shell (so nothing of the pull request, its build scripts or tests, runs on the server), no
-  network, no `write` or `edit`, no tool of an MCP server (the run is also started without MCP servers), and a call with no
-  worktree to read. The question's context has `restricted` = `restricted-review`. Whatever fails while deciding whether a
-  run is restricted (a card the store cannot read) counts as restricted: the calls are refused, there are no MCP servers and
-  the prompt is the data-only one. Claude Code is also started with `--disallowedTools` for its shell, writing, network and
-  sub-agent tools; Pi-Bolt has no allowlist on its command line, so the router is its only guard. The process has the
-  server's usual environment withheld, so no forge token and no model key but the router's own. The prompt gives the diff and
-  says that everything the pull request holds is data and no instruction.
+- **The restricted mode.** A run of a review of a pull request someone else opened is started restricted: `runs.restricted`
+  is set before anything else and never changes, so closing the pull request or moving the card does not lift it. It has an
+  empty directory (`<data_dir>/runs/<id>/empty`) as its working directory and no clone, no MCP servers, no runner (a runner
+  named by the agent or the variant is dropped), and **no tools**: Pi-Bolt is started with `--no-tools` and Claude Code with
+  `--tools ""` and the built-in tools in `--disallowedTools`. (Neither flag was tried against a real Pi or Claude here; the
+  router is the guarantee. Without a flag that Pi knows, it would not start and the review would fail, not run free.) Its
+  token is a *checked* token (`Router::issue_checked_token`) on either harness: the router decides every tool call of the
+  model's answers through `decide("tool_call")` before the harness sees them, which matters for Pi-Bolt, whose bridge blocks
+  no call. For a restricted run every call is refused with a reason that starts `restricted-review`, whatever the tool
+  (`restricted-review`, a fixed built-in rule before the rules in prose), the question's context has `restricted` =
+  `restricted-review`, and the router refuses any call of any checked run whose arguments are no JSON object (a harness may
+  repair text that does not parse, and read what the check never saw); no arguments is `{}`. A run the store has no row for
+  counts as restricted. The process has the server's usual environment withheld, so no forge token and no model key but
+  the router's own.
+  The narrower mode, `guard::restricted_refusal`, is for a restricted use that has a worktree and may read it: only the
+  tools that read files (Pi's `read`, `grep`, `find`, `ls`, Claude Code's `Read`, `Grep`, `Glob`, `LS`), a path they name
+  (`path`, `file_path`, `notebook_path`, `directory`, `cwd`) resolving inside the worktree with symlinks followed and no
+  leading `@` (Pi strips it), and a pattern that names a place (`glob`, `include`, `exclude`, `ignore`, and `pattern` of `find`,
+  `ls`, `Glob`, `LS`) neither absolute, nor starting with `~`, `$` or `@`, nor holding a `..` part; arguments that are no
+  object are refused. No review of a pull request uses it.
 - **One thread acts on a round.** The poll and the engine tick both call `App::advance_external_reviews`. A round changes
   state by compare-and-set in the store (`wanted` to `starting`, `running` or `approved` to `posting`), so one thread starts
   the run, writes the review and merges. A round's `head` is the head its run reads, set when it starts. The merge is refused

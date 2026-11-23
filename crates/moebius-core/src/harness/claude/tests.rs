@@ -894,7 +894,7 @@ fn killing_all_claude_code_runs_closes_their_tunnels_and_clears_the_runner() {
 }
 
 #[test]
-fn a_restricted_run_is_left_only_the_tools_that_read_files() {
+fn a_restricted_run_is_started_without_tools() {
     let s = setup();
     let agent = s.claude.agents.read().unwrap().agents["Coder"].clone();
     let disallowed = |restricted: bool| {
@@ -918,14 +918,27 @@ fn a_restricted_run_is_left_only_the_tools_that_read_files() {
             .map(|a| a.to_string_lossy().into_owned())
             .collect();
         let at = args.iter().position(|a| a == "--disallowedTools").unwrap();
-        args[at + 1].clone()
+        // `--tools ""` leaves it no built-in tool at all.
+        let tools = args
+            .iter()
+            .position(|a| a == "--tools")
+            .map(|at| args[at + 1].clone());
+        (args[at + 1].clone(), tools)
     };
-    assert_eq!(disallowed(false), "AskUserQuestion");
-    let list = disallowed(true);
-    for tool in ["Bash", "Edit", "Write", "WebFetch", "WebSearch", "Task"] {
+    assert_eq!(disallowed(false), ("AskUserQuestion".to_string(), None));
+    let (list, tools) = disallowed(true);
+    assert_eq!(tools.as_deref(), Some(""), "no built-in tool");
+    for tool in [
+        "Bash",
+        "Edit",
+        "Write",
+        "WebFetch",
+        "WebSearch",
+        "Task",
+        "Read",
+        "Grep",
+        "Glob",
+    ] {
         assert!(list.split(',').any(|t| t == tool), "{tool} in {list}");
-    }
-    for tool in ["Read", "Grep", "Glob"] {
-        assert!(!list.split(',').any(|t| t == tool), "{tool} in {list}");
     }
 }

@@ -587,6 +587,7 @@ At the top:
 | `app/stopping.rs` | Holding (blocking), releasing and deleting a card, which stops its runs and, for a delete, removes what it left in the clone. |
 | `app/commands.rs` | Commands in issue comments ([ADR 0028](adr/0028-helpers-take-issues-with-commands-in-comments.md)): `/take`, `/release` and `/done` read once from the comments the poll read, answered on the issue, limited per login, and the owner's answers to a `/done` and release from the card. |
 | `app/reviews.rs` | The Reviewer reads a followed pull request when its author says `/done` ([ADR 0029](adr/0029-the-reviewer-reads-a-pull-request-when-its-author-says-done.md)): rounds that wait for green checks, a review run read as a structured verdict, a review with comments on lines written on the forge, and the merge pinned to the head that was read, or Ready to merge. |
+| `app/review_context.rs` | What the Reviewer of a pull request someone else opened is given to read: the diff and the changed files as of the reviewed commit, built from git objects alone (no checkout, no filters, cut to a size), as text for its prompt. |
 | `app/taking.rs` | Working with people on other servers through the forge ([ADR 0027](adr/0027-working-with-people-on-other-servers-through-the-forge.md)): taking an issue assigns the person on the forge, an issue someone else took is left alone, the ready label kept on the issues that are ready, and the pull requests of people on other servers followed to their merge or close. |
 | `app/pausing.rs` | Pausing all agents: the pause kept in the store, which the board engine and every starter of a run read, and the harness holding the runs going. |
 | `app/runs.rs` | A person's hand in a run: steering, stopping, a shell in its worktree, a chat's terminal interface, and a shell on the server. |
@@ -877,7 +878,7 @@ At the top:
 | `decide/guard/shell.rs` | How the guard reads a tool call: simple commands, redirects, nested shells, `cd`, and paths. |
 | `decide/guard/patterns.rs` | The built-in rules, fixed patterns over a tool call. |
 | `decide/guard/reversible.rs` | Whether a tool call can be replayed: its effects stay in the worktree, and a `bash` command names no absolute path. |
-| `decide/guard/restricted.rs` | The restricted mode of a review run of a pull request someone else opened: only tools that read files inside the worktree, whatever the rules say. |
+| `decide/guard/restricted.rs` | The restricted mode of a review run of a pull request someone else opened: the refusal of every call of a restricted review run, which has no tools, and the narrower mode for reading a worktree. |
 | `decide/guard/teacher.rs` | The teacher model: what it is told, the request through the router, and reading its answer. |
 | `decide/localize/mod.rs` | The decision point `localize`: the ranked list of files as a choice, the outcome of a hint with its recall and precision, and the baseline decider that answers it. |
 | `decide/localize/index.rs` | The search index of a repository, read from the files of its default branch and made again when the branch moves. |
