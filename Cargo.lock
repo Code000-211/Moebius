@@ -2881,7 +2881,7 @@ dependencies = [
 
 [[package]]
 name = "moebius"
-version = "0.17.3"
+version = "0.18.0"
 dependencies = [
  "axum",
  "clap",
@@ -2899,7 +2899,7 @@ dependencies = [
 
 [[package]]
 name = "moebius-core"
-version = "0.17.3"
+version = "0.18.0"
 dependencies = [
  "axum",
  "base64 0.22.1",
@@ -2933,7 +2933,7 @@ dependencies = [
 
 [[package]]
 name = "moebius-desktop"
-version = "0.17.3"
+version = "0.18.0"
 dependencies = [
  "axum",
  "flate2",
@@ -2962,7 +2962,7 @@ dependencies = [
 
 [[package]]
 name = "moebius-plugin-api"
-version = "0.17.3"
+version = "0.18.0"
 dependencies = [
  "serde",
  "serde_json",
