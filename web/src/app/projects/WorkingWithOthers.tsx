@@ -4,7 +4,8 @@
  * ready with a label (only the owner's server should), and it says which issues this server's agents take: every approved
  * one, or only those that carry the label and nobody took. A second part, "Commands in issue comments", lets people who
  * may comment on an issue but not assign it take, release and finish issues with `/take`, `/release` and `/done`, which the
- * server does for them with its own token. Saved with one button.
+ * server does for them with its own token. A third, "Pull requests of others", says whether a pull request the Reviewer
+ * approved is merged by the server. Saved with one button.
  */
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
@@ -37,6 +38,7 @@ export function WorkingWithOthers({ repository }: { repository: Repository }) {
     commands: repository.commands ?? false,
     limit: repository.command_limit ?? DEFAULT_COMMAND_LIMIT,
     answer: repository.answer_on_forge ?? true,
+    merge: repository.merge_reviewed ?? true,
   };
   const [mark, setMark] = useState(stored.mark);
   const [label, setLabel] = useState(stored.label);
@@ -44,6 +46,7 @@ export function WorkingWithOthers({ repository }: { repository: Repository }) {
   const [commands, setCommands] = useState(stored.commands);
   const [limit, setLimit] = useState(String(stored.limit));
   const [answer, setAnswer] = useState(stored.answer);
+  const [merge, setMerge] = useState(stored.merge);
   const trimmed = label.trim();
   const limitNumber = Number(limit);
   const limitOk =
@@ -54,7 +57,8 @@ export function WorkingWithOthers({ repository }: { repository: Repository }) {
     takes !== stored.takes ||
     commands !== stored.commands ||
     (limitOk && limitNumber !== stored.limit) ||
-    answer !== stored.answer;
+    answer !== stored.answer ||
+    merge !== stored.merge;
   const valid = trimmed !== "" && limitOk;
   const save = useMutation({
     mutationFn: () =>
@@ -65,6 +69,7 @@ export function WorkingWithOthers({ repository }: { repository: Repository }) {
         commands,
         command_limit: limitNumber,
         answer_on_forge: answer,
+        merge_reviewed: merge,
       }),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: keys.snapshot });
@@ -175,6 +180,30 @@ export function WorkingWithOthers({ repository }: { repository: Repository }) {
               </span>
             </div>
             <Switch label={`Answer on ${forge}`} checked={answer} onChange={setAnswer} />
+          </div>
+        </section>
+        <section
+          aria-labelledby="pull-requests-title"
+          data-testid="external-pull-requests"
+          className="flex flex-col gap-5 border-t border-hairline pt-5"
+        >
+          <h3 id="pull-requests-title" className="m-0 text-md font-semibold text-text">
+            Pull requests of others
+          </h3>
+          <div className="flex items-start justify-between gap-4">
+            <div className="flex min-w-0 flex-col gap-0.5">
+              <span className="text-base font-medium text-text">
+                Merge external pull requests the reviewer approves
+              </span>
+              <span className="text-sm text-muted">
+                {`When the author of a pull request that closes an issue writes /done, the Reviewer reads it, and an approved one whose checks have passed is merged. Foreign code then lands without a person looking. Off, it is approved on ${forge} and waits in Ready to merge for you.`}
+              </span>
+            </div>
+            <Switch
+              label="Merge external pull requests the reviewer approves"
+              checked={merge}
+              onChange={setMerge}
+            />
           </div>
         </section>
         <div className="flex gap-2">

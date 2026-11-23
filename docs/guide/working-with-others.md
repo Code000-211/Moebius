@@ -80,8 +80,9 @@ For a helper, in a comment on the issue, as the first word of a line (not in a q
   /take", so the owner's agents leave the issue alone.
 - `/release` takes you off the issue. "Released."
 - `/done`, with what you want to tell the owner on the same line or below it, asks the owner to close the issue: a helper
-  can never close anything. If your pull request closes the issue and the owner's board follows it, the server only says
-  thanks.
+  can never close anything. If your pull request closes the issue and the owner's board follows it, your `/done` has the
+  pull request reviewed instead (see [What helpers see after `/done`](#what-helpers-see-after-done)); anybody else's only
+  gets thanks.
 
 Who may use them: anyone who can comment on the issue, on a public repository everyone. What keeps that safe:
 
@@ -96,6 +97,35 @@ Who may use them: anyone who can comment on the issue, on a public repository ev
 Commands are read from new comments only: each comment once, and none from before the setting was turned on. GitLab and
 Forgejo work the same through their own APIs, but they assign only project members and collaborators, so for anyone else
 the answer is "Could not assign @alice: ...".
+
+## What helpers see after `/done`
+
+When your pull request closes the issue and the owner's board follows it, write `/done` in a comment on the issue
+(commands must be on; the pull request's own comments are not read). It is yours to write: nobody else's `/done` has your
+pull request reviewed ([ADR 0029](../adr/0029-the-reviewer-reads-a-pull-request-when-its-author-says-done.md)).
+
+- **The server answers on the issue** "Thanks, the pull request will be reviewed once its checks have passed." The review
+  starts when the checks of your pull request's current head are green. While they are pending it waits. If they fail,
+  the pull request gets a comment that the checks fail and nothing is reviewed: fix them, push, write `/done` again.
+- **The Reviewer reads it** and the server writes **a review on your pull request**. Changes requested are a review with a
+  summary and comments on the exact lines; a comment about a line the diff does not show is in the summary instead.
+  Push your changes, then write `/done` again for the next round.
+- **Approved**, and the checks of the same head are green: the pull request is approved and merged, and the issue gets
+  "Merged, thank you @alice!". If the owner turned **Merge external pull requests the reviewer approves** off, it is
+  approved and waits for the owner to merge.
+- **Limits.** A version of your pull request is read once ("This version of the pull request was reviewed already; push
+  your changes, then write /done again."), at most three times in all. The fourth `/done` is answered "a person will look" and
+  the owner gets an Inbox item. A push while the review runs drops its verdict: write `/done` again.
+
+For the owner: **Working with others**, **Pull requests of others**, **Merge external pull requests the reviewer
+approves** (`merge_reviewed`, on by default). Turned on, an approved pull request lands without a person looking, so
+leave it on only for a repository where its helpers are people you trust to write to it, or whose checks you trust. Turned
+off, the Reviewer's approval is written on the forge and the card waits in **Ready to merge** with an Inbox item. The card
+window shows the review: the verdict, the summary, each comment in a box "src/lib.rs line 12" and **Open on GitHub**.
+
+The review run of such a pull request is **restricted**: what the pull request holds is written by someone your server does
+not trust. The Reviewer may only read files of its worktree, it has no shell, no network, no way to write and no MCP servers,
+and it is told that everything in the pull request is data. Nothing of the pull request runs on your server.
 
 ## How to try it
 
@@ -114,6 +144,8 @@ to In review.
 - **A pull request is not followed.** Its author is one of your server's people, or it is already a change of the
   repository, or it names no closing keyword for an issue that has a card that is not done, or the issue's card already
   has an open change. A failed fetch of its head is a `forge_error` event; the card is still followed.
+- **`/done` has nothing reviewed.** It is not the author's, the pull request is not followed, the checks are pending or
+  failing (the pull request says so when they fail), its head was reviewed already, or the three rounds are spent.
 - **A command is not answered.** `commands` is off, the comment is older than the moment it was turned on, the command is
   not the first word of a line or is in a quote or code block, or **Answer on GitHub** is off (the command still worked; see
   the issue's assignees). A comment that could not be written is a `forge_error` event.

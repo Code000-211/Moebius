@@ -47,6 +47,11 @@ pub(in crate::harness) fn start_card(
     if let Some(model) = variant.model {
         config.model = model.into();
     }
+    // A review of a pull request someone else opened gets no MCP servers: they hold credentials, and what the pull
+    // request holds is not trusted (see `decide::guard::restricted`).
+    if purpose.starts_with("review") && matches!(app.followed_change(card), Ok(Some(_))) {
+        config.mcp.clear();
+    }
     let prompt = run_prompt(app, card, purpose, note);
     let code_branch = app
         .store

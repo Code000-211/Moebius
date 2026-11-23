@@ -426,7 +426,12 @@ impl App {
     }
 
     /// Merges one change, as `merge_change` does, without marking its card when the merge fails.
-    fn merge_one(&self, by: &Actor, change_id: i64, reason: &str) -> Result<String> {
+    pub(in crate::app) fn merge_one(
+        &self,
+        by: &Actor,
+        change_id: i64,
+        reason: &str,
+    ) -> Result<String> {
         let change = self.change(change_id)?;
         if change.state != "open" {
             return Err(AppError::Invalid(format!(

@@ -84,6 +84,7 @@ describe("the repository's working with others", () => {
       commands: false,
       command_limit: 3,
       answer_on_forge: true,
+      merge_reviewed: true,
     });
   });
 
@@ -125,6 +126,7 @@ describe("the repository's working with others", () => {
       commands: true,
       command_limit: 5,
       answer_on_forge: false,
+      merge_reviewed: true,
     });
   });
 
@@ -144,5 +146,25 @@ describe("the repository's working with others", () => {
     fireEvent.change(screen.getByLabelText("Label"), { target: { value: "x" } });
     fireEvent.click(screen.getByRole("button", { name: "Save settings" }));
     await screen.findByText(/Couldn't save this/);
+  });
+
+  it("merges the pull requests the reviewer approves until the owner turns it off, and says what that means", async () => {
+    const fetcher = show();
+    const merge = screen.getByLabelText("Merge external pull requests the reviewer approves");
+    expect(merge.getAttribute("aria-checked")).toBe("true");
+    expect(screen.getByText(/Foreign code then lands without a person looking/)).toBeTruthy();
+    fireEvent.click(merge);
+    fireEvent.click(screen.getByRole("button", { name: "Save settings" }));
+    await waitFor(() => expect(fetcher).toHaveBeenCalled());
+    expect(sent(fetcher)).toMatchObject({ merge_reviewed: false });
+  });
+
+  it("shows a repository that does not merge them as off", () => {
+    show({ merge_reviewed: false });
+    expect(
+      screen
+        .getByLabelText("Merge external pull requests the reviewer approves")
+        .getAttribute("aria-checked"),
+    ).toBe("false");
   });
 });

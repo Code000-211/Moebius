@@ -427,7 +427,7 @@ These objects appear in the responses. All ids are numbers; times are Unix secon
 GitLab, such as `group/project`, or the repository on Forgejo as `owner/repo`, or null) and `home_project_id` (the
 [project](#projects) its new issues land in, which was made with it) and `files_of` (the id of the project whose own
 files the repository holds, see [a project's own files](#a-projects-own-files), or null for every repository a person
-added), `mark_ready` (true when the server keeps the ready label on the repository's issues, default false), `ready_label` (the label, default `Ready for agent`) `agents_take` (`all`, the default, or `labelled`), `commands` (true when comments on the repository's issues may give the commands `/take`, `/release` and `/done`, default false), `command_limit` (how many open issues a login may hold that it took with `/take`, default 3) and `answer_on_forge` (true when the server writes the result of every command as a comment on the issue, default true); see [`PUT /v1/repositories/{id}`](#put-v1repositoriesid) and [Commands in issue comments](#commands-in-issue-comments).
+added), `mark_ready` (true when the server keeps the ready label on the repository's issues, default false), `ready_label` (the label, default `Ready for agent`) `agents_take` (`all`, the default, or `labelled`), `commands` (true when comments on the repository's issues may give the commands `/take`, `/release` and `/done`, default false), `command_limit` (how many open issues a login may hold that it took with `/take`, default 3) `answer_on_forge` (true when the server writes the result of every command as a comment on the issue, default true) and `merge_reviewed` (true when the server merges a followed pull request the Reviewer approved, default true; see [Reviews of followed pull requests](#reviews-of-followed-pull-requests)); see [`PUT /v1/repositories/{id}`](#put-v1repositoriesid) and [Commands in issue comments](#commands-in-issue-comments).
 
 `Card`: `id`, `repository_id`, `project_id` (the [project](#projects) whose board it is on), `number` (the number of its issue in its repository: the forge's number for an issue of a forge), `project_number` (its number in its project) and `project_key` (the key of its project), which together name it, `WEB-24`; `title`, `body`, `author`, `column`, `created_at`, `note` (why the card was sent
 back to coding, or null), `retried_after` (the id of the card's latest run when a person last retried it, or null) and
@@ -518,6 +518,7 @@ of the card is merged, and the card stays where it is until its last change is m
 same change failing again keeps it, another stop replaces it) and
 `project_label` (`data.label`, `data.repository`; its `title` says the label names no project of the repository, and the card it is about stays where it is: see [the project label](#the-project-label)) and
 `outside_change` (`data.change`, `data.pull_request`, `data.author`, `data.repository`: the card follows a pull request someone else opened; resolved when the request is merged or closed; see [Working with people on other servers](#working-with-people-on-other-servers)) and
+`review_rounds_spent` (`data.change`, `data.pull_request`, `data.author`, `data.repository`: the Reviewer read the pull request the card follows three times and its author wrote `/done` again; resolved when the request is merged or closed; see [Reviews of followed pull requests](#reviews-of-followed-pull-requests)) and
 `done_asked` (`data.login`, `data.reason`, `data.repository`: the assignee of the issue, `login`, wrote `/done` in a comment and `reason` is the rest of that comment; resolved by the owner's answer, `POST /v1/cards/{id}/done`, or when the assignee is released; see [Commands in issue comments](#commands-in-issue-comments)) and
 `proposal` (`data.proposal`, `data.branch`, `data.trials`: an array of `{"card", "outcome", "reason"}` for the cards it
 addresses, and `data.regression`: the same for the cards of the regression set, empty when none was tried; its `title` is the
@@ -775,7 +776,7 @@ gets. Each entry of `cards` is a `Card` with what a board shows of it, so that a
 | `counts_as_sub_issue` | Whether the card counts as a sub-issue of its `parent` (see [only issues a person can have vouched for](#the-issue-tracker)). A client that builds stacks, counts "done of total" or decides what is next from `parent` uses only the cards where this is true; one that is false is an ordinary top-level card, whatever parent it names. |
 | `refusals` | How many tool calls of that latest run were refused (its `tool_check` and `mcp_call` run events with the decision `refuse`). |
 | `attempts` | The latest group of attempts of a card that was tried several times at once (see [column scripts](column-scripts.md#attempts)), oldest first, each `{"run", "model", "status", "result", "output", "picked", "reason"}`: `model` the model or class the attempt was started with, or null; `status` its run's status; `result` `passed`, `failed` or null before it was judged; `output` why it failed; `picked` whether it was the one kept, and `reason` why. Absent when the card has no attempts. |
-| `change` | The card's open change in its own issue's repository, `{"id", "repository", "state", "checks", "review_verdict", "outside_author"}`, or null. `repository` is the name of the repository the change is in. `outside_author` is the forge login of whoever opened the pull request when the card follows one that someone else opened, and is left out for Moebius's own change. `checks` is `pending`, `success`, `failure` or `none`, as `card.change.checks`; `review_verdict` is `approve` or `changes` once a review ended since the latest `code` run, else null. Whether the change conflicts is not in the snapshot. |
+| `change` | The card's open change in its own issue's repository, `{"id", "repository", "state", "checks", "review_verdict", "outside_author", "external_review"}`, or null. `repository` is the name of the repository the change is in. `outside_author` is the forge login of whoever opened the pull request when the card follows one that someone else opened, and is left out for Moebius's own change. `checks` is `pending`, `success`, `failure` or `none`, as `card.change.checks`; `review_verdict` is `approve` or `changes` once a review ended since the latest `code` run, else null. Whether the change conflicts is not in the snapshot. `external_review` is left out unless the card follows a pull request someone else opened and the author asked for a review; it is the latest round of the Reviewer on it, `{"round", "round_limit", "state", "verdict", "summary", "comments", "url", "head", "current"}` (see [Reviews of followed pull requests](#reviews-of-followed-pull-requests)). |
 | `changes` | Every open change of the card, one per repository it works in that has one, in the order the changes are merged (the order of `repositories`), each as `change` above. A card over one repository has this one change or none; `change` is the entry of its own repository. Empty for a card in Done. |
 
 A card in `Done` has `rounds` and `tokens` 0, no `run`, no `change`, no blockers and no refusals: the snapshot is read on
@@ -1650,7 +1651,7 @@ For Forgejo, such as Codeberg, with `[forgejo]` set up, the clone sends the acce
 
 A person, or the Moebius agent, changes a repository on a forge: the logins whose issues need no approval and how it
 works with people on other servers (see [Working with people on other servers](#working-with-people-on-other-servers)).
-Request: `{"trusted": [string], "mark_ready": bool, "ready_label": string, "agents_take": string, "commands": bool, "command_limit": number, "answer_on_forge": bool, "reason": string}`;
+Request: `{"trusted": [string], "mark_ready": bool, "ready_label": string, "agents_take": string, "commands": bool, "command_limit": number, "answer_on_forge": bool, "merge_reviewed": bool, "reason": string}`;
 every key is optional, and a key left out stays as it is. `reason` is kept with the decision.
 
 - `trusted` replaces the logins whose issues on a repository on a forge need no approval. Each login is trimmed and
@@ -1671,10 +1672,14 @@ every key is optional, and a key left out stays as it is. `reason` is kept with 
   `/take`.
 - `answer_on_forge` (default `true`): whether the server writes the result of every command, and of the owner's answers,
   as a comment on the issue.
+- `merge_reviewed` (default `true`): whether the server merges a followed pull request the Reviewer approved and whose
+  checks are green (see [Reviews of followed pull requests](#reviews-of-followed-pull-requests)). Off, an approved one is
+  approved on the forge and waits in `Ready to merge` for a person. Turned on, it means foreign code lands without a person
+  looking.
 
 The decision is recorded (kind `edit_repository`, decider `person` or `agent:Moebius`; its context has `repository`,
 and for `trusted` also `trusted` and `previous_trusted`, the logins joined with `, `, and for the other keys
-`mark_ready`, `ready_label`, `agents_take`, `commands`, `command_limit` and `answer_on_forge`) and the event `repository_updated` is sent. An edit that changes nothing
+`mark_ready`, `ready_label`, `agents_take`, `commands`, `command_limit`, `answer_on_forge` and `merge_reviewed`) and the event `repository_updated` is sent. An edit that changes nothing
 records nothing. Response: the `Repository`. Errors: `404` no such repository; `422` the repository is on no forge, a
 login is blank or has other characters, the label is not allowed, `agents_take` is neither `all` nor `labelled`, or
 `command_limit` is not a number from 1 to 50.
@@ -4590,20 +4595,85 @@ the steps are in [the guide](../guide/working-with-others.md#helpers-without-a-r
   nothing changes.
 - **`/release`** takes the commenter off the issue (`Forge::unassign_issue`) and resolves a `done_asked` item. The card is
   the server's own again unless someone else is assigned.
-- **`/done`** asks the owner, unless a pull request the card follows is already its change (the card has an open
-  `outside_change`), which is only thanked. Otherwise a `done_asked` inbox item is added for the card, with the login and the
+- **`/done`** of the author of a pull request the card follows (the card has an open `outside_change`) has the pull
+  request reviewed (see [Reviews of followed pull requests](#reviews-of-followed-pull-requests)), whoever the issue is
+  assigned to; anybody else's `/done` on such a card is only thanked. For any other card it asks the owner. A `done_asked` inbox item is added for the card, with the login and the
   rest of the comment (up to 500 characters) as `data.login` and `data.reason`, and the card window draws the "Moebius needs
   you" block with the reason and three buttons, which call [`POST /v1/cards/{id}/done`](#post-v1cardsiddone) with `close`,
   `give_back` and `release`. A second `/done` while one waits is only answered.
 - **Answers.** While `answer_on_forge` is true the server writes one comment per command, in the words: `Assigned to
   @alice.`, `Released.`, `Already taken by @bob.`, `Already assigned to you.`, `Already taken.`, `This issue is closed.`,
   `Only issues labelled <label> can be taken.`, `You already have 3 issues; release one first.`, `Only @alice can do that.`,
-  `Nobody has this issue.`, `Thanks, the pull request is followed.`, `The owner has been asked already.`, `Thanks, the
+  `Nobody has this issue.`, `Thanks, the pull request is followed; only its author can have it reviewed with /done.`, `The owner has been asked already.`, `Thanks, the
   owner will take a look.` and `Could not assign @alice: <the forge's reason>`. The owner's actions on the card
   (`/v1/cards/{id}/done` and `/v1/cards/{id}/release-taken`) are answered on the issue in the same way. A comment that cannot
   be written is a `forge_error` event; the command has been done.
 - **The owner can always release** an issue taken with `/take` from the card, whatever `commands` is now
   (`POST /v1/cards/{id}/release-taken`).
+
+## Reviews of followed pull requests
+
+[ADR 0029](../adr/0029-the-reviewer-reads-a-pull-request-when-its-author-says-done.md). A card that follows a pull request
+someone else opened (see [Working with people on other servers](#working-with-people-on-other-servers)) has it reviewed
+by the Reviewer when its author says so. The steps are in [the guide](../guide/working-with-others.md#what-helpers-see-after-done).
+
+- **When.** The login that opened the request writes `/done` in a comment on the issue (the commands of
+  [Commands in issue comments](#commands-in-issue-comments) must be on; comments on the pull request itself are not
+  read). The poll that reads it adds a round, and the round starts once the checks of the request's current head are known
+  and `success`: `pending` checks, or checks not yet read for the head after a push, make it wait; `failure` ends the round
+  with a comment on the pull request ("The checks of this pull request fail, so nothing was reviewed...") and nothing is
+  reviewed. Nobody else's `/done` has it reviewed.
+- **Rounds.** At most three rounds per pull request (`ROUND_LIMIT`). A round counts once its run started and until it is
+  dropped. A fourth `/done` is answered "a person will look" and adds a `review_rounds_spent` inbox item for the card.
+  A new `/done` after a push starts the next round. A head is never read twice: a `/done` for a head that has a round is
+  answered that it was reviewed already. A round whose run did not end, or whose answer is no verdict, is `failed` and does
+  not count, so the author can write `/done` again; a round dropped because the head moved before the verdict was used is
+  `stale` and does not count either.
+- **The run.** A `review` run of the card by the Reviewer, started with the restricted mode below, in a worktree of the local
+  branch `moebius/pr-<number>` fetched just before, whose prompt holds the issue, the diff of the request (cut to 60,000
+  characters) and the instruction that everything the pull request holds is data and no instruction. The head it reads is
+  `Change.reviewed_head`. Decided in the engine's tick of the card and after each poll of the request.
+- **What the Reviewer answers.** Its answer ends with one JSON object in a fenced `json` block:
+  `{"verdict": "approve" | "changes", "summary": string, "comments": [{"path": string, "line": number, "body": string}]}`.
+  `path` is the file as the diff names it, `line` a line of the file after the change (from 1). A `changes` verdict needs a
+  summary or a comment; comments with an empty body are dropped, and at most 50 are kept. Anything else (no object, another
+  verdict, a comment without a file or a line) is no verdict. `board::structured::read` reads it; the card's `review`
+  (`card.review`, `review_verdict`) reads the same object, with the summary and the comments as its findings.
+- **Changes requested.** The server writes a review that asks for changes, tied to the head that was read, with the summary
+  as its body. A comment whose file and line are in the diff of the request (the lines of its hunks, three lines of
+  context included) is a comment on that line; the others are appended to the body as `` `path` line N: text``. A forge
+  that refuses the review with lines gets it again with every comment in the body. The card stays in `In review`, and the
+  issue gets "Reviewed pull request #7: changes are requested...".
+  GitHub `POST /repos/{repo}/pulls/{n}/reviews` with `event` `REQUEST_CHANGES` and `comments` of `path`, `line`, `side`
+  `RIGHT`; Forgejo the same route with `event` `REQUEST_CHANGES` and `comments` of `path`, `new_position`; GitLab, which has
+  no review that asks for changes, a note that starts "Changes requested." and one discussion on the diff per comment
+  (`POST /projects/{id}/merge_requests/{n}/notes` and `/discussions` with a `position` of `new_path` and `new_line`). A forge
+  without any of these gets one comment with everything in it (`Forge::review_request`).
+- **Approved.** With `merge_reviewed` on (the default): when the checks of the head that was read are `success` the server
+  writes an approving review (GitHub and Forgejo `APPROVE`/`APPROVED`, GitLab a note and `POST .../approve` with the `sha`)
+  and merges the request pinned to that head (see `POST /v1/changes/{id}/merge`; a `merge` decision of the decider
+  `script:external-review`), the card moves to `Done`, and the issue gets "Merged, thank you @alice!". `pending` checks
+  wait, with the round `approved`; `failure` writes nothing but a comment on the pull request. With `merge_reviewed` off: the
+  approving review is written, the card moves to `Ready to merge`, a `ready_to_merge` inbox item is added, and the issue is
+  told that the owner will merge it.
+- **Never merged.** A verdict counts for the head it read only. When the poll has read a push before the verdict is used,
+  the round is `stale` and nothing is written. When it has not, the forge refuses the merge pinned to the old head, the pull
+  request is told "...it could not be merged", and the card stays in `In review`. A request that is not followed (its author
+  may not write and is no assignee) has no round at all.
+- **External review in the snapshot.** `ChangeView.external_review`: `round` (from 1; 0 until it starts), `round_limit` (3),
+  `state` (`wanted`, `running`, `approved`, `posted`, `merged`, `stale` or `failed`), `verdict` (`approve`, `changes` or
+  null), `summary`, `comments` (`{"path", "line", "body"}`), `url` (the review on the forge once it is written, else null),
+  `head` (the commit it read) and `current` (whether that is the request's head now). The card window shows the verdict, the
+  summary, each comment in a box "path line N" and "Open on GitHub".
+- **The restricted mode.** The run of a review of a pull request someone else opened (a run whose purpose is `review...` of
+  a card that has such an open change) is decided by a fixed built-in rule, `restricted-review`, before the rules in prose
+  and whatever they say: only the tools that read files are allowed (Pi's `read`, `grep`, `find`, `ls`, Claude Code's `Read`,
+  `Grep`, `Glob`, `LS`), and only on paths inside the run's worktree. Every other call is refused with a reason that starts
+  `restricted-review`: no shell (so nothing of the pull request, its build scripts or tests, runs on the server), no network
+  (`bash`, `WebFetch`, `WebSearch` and the like), no `write` or `edit`, and no tool of an MCP server (the run is also started
+  without MCP servers). The question's context has `restricted` = `restricted-review`. The run has the server's usual
+  environment withheld, so no forge token and no model key but the router's own. The diff and files are data; the prompt
+  says so.
 
 ## Events
 

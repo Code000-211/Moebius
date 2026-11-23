@@ -23,6 +23,7 @@
 //! `reversible` says whether a call can be replayed (see `replay`). This module is the decider that puts them together.
 
 mod patterns;
+mod restricted;
 mod reversible;
 mod shell;
 mod teacher;
@@ -40,6 +41,7 @@ use patterns::broken_rule;
 use shell::ToolCall;
 
 pub use patterns::patterns;
+pub use restricted::{RESTRICTED, restricted_refusal};
 pub use reversible::{relative_to, replayable, reversible};
 pub use teacher::Teacher;
 

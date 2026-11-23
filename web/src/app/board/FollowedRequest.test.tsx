@@ -56,6 +56,36 @@ describe("what the window says of someone else's work", () => {
     expect(screen.queryByTestId("taken-note")).toBeNull();
   });
 
+  it("shows the review of the followed pull request under its badge", () => {
+    const followed = card(5, {
+      column: "In review",
+      taken_by: "alice",
+      change: {
+        id: 9,
+        state: "open",
+        checks: "success",
+        review_verdict: "changes",
+        outside_author: "alice",
+        external_review: {
+          round: 1,
+          round_limit: 3,
+          state: "posted",
+          verdict: "changes",
+          summary: "Needs a test.",
+          comments: [{ path: "src/a.rs", line: 3, body: "Why?" }],
+          url: "https://github.test/acme/demo/pull/7#pullrequestreview-1",
+          head: "abc",
+          current: true,
+        },
+      },
+    });
+    const full = { ...board([followed]), changes: [change] };
+    render(<FollowedRequest board={full} card={followed} />);
+    expect(screen.getByText("Changes requested")).toBeTruthy();
+    expect(screen.getByText("src/a.rs line 3")).toBeTruthy();
+    expect(screen.getByRole("link", { name: "Open on GitHub" })).toBeTruthy();
+  });
+
   it("says who took an issue, and why the server could not assign its own person", () => {
     const taken = card(5, {
       taken_by: "alice",

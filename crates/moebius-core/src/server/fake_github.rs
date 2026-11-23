@@ -57,6 +57,10 @@ pub(super) struct FakeGitHub {
     pub(super) unassign_fails: std::sync::atomic::AtomicBool,
     /// The states it was asked to give an issue (`open` or `closed`), as issue number and state.
     pub(super) state_writes: Mutex<Vec<(u64, String)>>,
+    /// The reviews it was asked to write on pull request 7.
+    pub(super) review_posts: Mutex<Vec<Value>>,
+    /// Whether it refuses a review that has comments on lines, as GitHub does for a line the diff does not have.
+    pub(super) refuse_line_comments: std::sync::atomic::AtomicBool,
 }
 
 /// The access token the fake accepts at `GET /user`.
@@ -163,6 +167,8 @@ pub(super) async fn fake_github() -> (String, Arc<FakeGitHub>) {
         threads: Mutex::new(Default::default()),
         posted: Mutex::new(Vec::new()),
         state_writes: Mutex::new(Vec::new()),
+        review_posts: Mutex::new(Vec::new()),
+        refuse_line_comments: std::sync::atomic::AtomicBool::new(false),
         unassign_fails: std::sync::atomic::AtomicBool::new(false),
         next_comment: std::sync::atomic::AtomicI64::new(1000),
         pulls: Mutex::new(Pulls {
@@ -443,14 +449,46 @@ pub(super) async fn fake_github() -> (String, Arc<FakeGitHub>) {
             "/repos/acme/widgets/pulls/{number}/reviews",
             get(|State(fake): State<Arc<FakeGitHub>>| async move {
                 axum::Json(fake.pulls.lock().unwrap().reviews.clone())
-            }),
+            })
+            .post(
+                |State(fake): State<Arc<FakeGitHub>>, axum::Json(body): axum::Json<Value>| async move {
+                    let lines = body["comments"].as_array().is_some_and(|c| !c.is_empty());
+                    if lines && fake.refuse_line_comments.load(std::sync::atomic::Ordering::SeqCst) {
+                        return (
+                            StatusCode::UNPROCESSABLE_ENTITY,
+                            axum::Json(json!({ "message": "Line could not be resolved" })),
+                        )
+                            .into_response();
+                    }
+                    fake.review_posts.lock().unwrap().push(body);
+                    (
+                        StatusCode::OK,
+                        axum::Json(json!({
+                            "id": 91,
+                            "html_url": "https://github.test/acme/widgets/pull/7#pullrequestreview-91",
+                        })),
+                    )
+                        .into_response()
+                },
+            ),
         )
         .route(
             "/repos/acme/widgets/pulls/{number}/merge",
             axum::routing::put(
                 |State(fake): State<Arc<FakeGitHub>>, axum::Json(body): axum::Json<Value>| async move {
-                    fake.pulls.lock().unwrap().merged.push(body);
-                    axum::Json(json!({ "sha": "c0ffee", "merged": true }))
+                    let mut pulls = fake.pulls.lock().unwrap();
+                    // As GitHub does, it refuses a merge pinned to a commit that is no longer the head.
+                    if body.get("sha").is_some_and(|sha| *sha != pulls.pull["head"]["sha"])
+                        && !pulls.pull["head"]["sha"].is_null()
+                    {
+                        return (
+                            StatusCode::CONFLICT,
+                            axum::Json(json!({ "message": "Head branch was modified" })),
+                        )
+                            .into_response();
+                    }
+                    pulls.merged.push(body);
+                    axum::Json(json!({ "sha": "c0ffee", "merged": true })).into_response()
                 },
             ),
         )

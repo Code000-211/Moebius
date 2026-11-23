@@ -100,6 +100,24 @@ describe.skipIf(usesRealServer)("working with others", () => {
     expect(server.board?.requests.some((r) => r.path === "/v1/changes/30/merge")).toBe(true);
   });
 
+  it("shows the review of a followed pull request: verdict, summary, comments on lines and the way to the forge", async () => {
+    const { followed } = await open();
+    await page.getByTestId(`card-${followed}`).click();
+    const review = page.locator("[data-card-window]").getByTestId("external-review");
+    await review.waitFor();
+    expect(await review.textContent()).toContain("Changes requested");
+    expect(await review.textContent()).toContain("Round 1 of 3");
+    expect(await review.textContent()).toContain("The cache is never emptied");
+    const comments = review.getByTestId("review-comment");
+    expect(await comments.count()).toBe(2);
+    expect(await comments.first().textContent()).toContain("src/cache.rs line 42");
+    const link = review.getByRole("link", { name: "Open on GitHub" });
+    expect(await link.getAttribute("href")).toBe(
+      "https://github.test/acme/demo/pull/7#pullrequestreview-91",
+    );
+    if (SHOTS) await shoot("external-review-window");
+  });
+
   it("says why an issue is taken in its window", async () => {
     const { taken } = await open();
     await page.getByTestId(`card-${taken}`).click();
@@ -149,6 +167,36 @@ describe.skipIf(usesRealServer)("working with others", () => {
         .getAttribute("aria-checked"),
     ).toBe("true");
     expect(await part.getByLabel("Answer on GitHub").getAttribute("aria-checked")).toBe("false");
+  });
+
+  it("saves whether the server merges the pull requests the reviewer approves", async () => {
+    await open();
+    await page.goto(`${server.url}/projects/1/repositories/1`);
+    const part = page.getByTestId("external-pull-requests");
+    await part.waitFor();
+    const merge = part.getByLabel("Merge external pull requests the reviewer approves");
+    // On until the owner turns it off.
+    expect(await merge.getAttribute("aria-checked")).toBe("true");
+    expect(await part.textContent()).toContain("Foreign code then lands without a person looking");
+    await merge.click();
+    await page
+      .getByTestId("working-with-others")
+      .getByRole("button", { name: "Save settings" })
+      .click();
+    await page.waitForFunction(() =>
+      document
+        .querySelector('[data-testid="working-with-others"] button[type="submit"]')
+        ?.hasAttribute("disabled"),
+    );
+    expect(await merge.getAttribute("aria-checked")).toBe("false");
+    // It was kept: the page shows it again after a reload.
+    await page.reload();
+    await part.waitFor();
+    expect(
+      await part
+        .getByLabel("Merge external pull requests the reviewer approves")
+        .getAttribute("aria-checked"),
+    ).toBe("false");
   });
 
   it("greys an issue taken with /take, and the owner may release it from the card", async () => {

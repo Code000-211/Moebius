@@ -2,7 +2,7 @@
  * What the card window says of a card that is someone else's work (ADR 0027), in the parts the other cards use: for a pull
  * request someone on another server opened, the pull request's badge, the avatar and login of whoever opened it and its
  * checks as an own change's are worded; for an issue someone took, one quiet sentence; and, when the server could not
- * assign its own person on the forge, why. The actions for the pull request (review it, merge it) are where every
+ * assign its own person on the forge, why; and the review the Reviewer wrote on the pull request (`ExternalReview.tsx`). The actions for the pull request (review it, merge it) are where every
  * change's are, in the block that asks for a person's turn (`NeedsYou.tsx`).
  */
 import type { Board, Card } from "../../api/types/board";
@@ -11,6 +11,7 @@ import { PrBadge } from "../../ui/components/PrBadge";
 import { Avatar } from "../../ui/page/Avatar";
 import { Notice } from "../../ui/page/Notice";
 import { CHECKS } from "./CardProperties";
+import { ExternalReview } from "./ExternalReview";
 import { changeOf, forgeName, pullRequestOf } from "./model";
 
 export function FollowedRequest({
@@ -51,6 +52,9 @@ export function FollowedRequest({
             </span>
           )}
         </div>
+      )}
+      {author && card.change?.external_review && (
+        <ExternalReview review={card.change.external_review} forge={forge} />
       )}
       {!author && card.taken_by && card.taken_by_command && (
         <div className="flex min-w-0 flex-wrap items-center justify-between gap-x-4 gap-y-2">

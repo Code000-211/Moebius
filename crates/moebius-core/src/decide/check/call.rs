@@ -85,6 +85,8 @@ pub(crate) fn decide_call(
 ///   the run, when the run is on this machine (see `crate::harness::run::scratch`). A run on a runner has none: it
 ///   keeps the temporary directory of the runner, which the server neither made nor removes.
 /// - `card_title`, `card_body`: the card the run works on, when it has one.
+/// - `restricted`: `restricted-review` for a run that reads a pull request someone else opened, whose calls are refused
+///   unless they read files of its worktree (see `guard`); the refusal comes as `builtin_refusal`.
 /// - `builtin_refusal`: the built-in rule the call breaks, tested on the call before redaction (see `guard`).
 /// - `rules`: the rules that apply, as Markdown (`## <name>` and the rule's text), the server's first (see `rules`).
 /// - `rules_error`: instead of `rules`, why the server's rules file cannot be read. The guard refuses every call
@@ -146,15 +148,33 @@ fn tool_call_question(
         context.insert("card_title".into(), card.title);
         context.insert("card_body".into(), card.body);
     }
+    // A review of a pull request someone else opened is restricted to reading files, whatever the rules say.
+    let restricted = run
+        .as_ref()
+        .is_some_and(|run| app.is_restricted_review(run));
+    if restricted {
+        context.insert("restricted".into(), guard::RESTRICTED.into());
+    }
     // The context is redacted before any decider reads it, so the built-in rules are tested here, on the call as
     // it will be executed.
-    if let Some(refusal) = guard::builtin_refusal(
-        &request.tool,
-        &request.input,
-        context.get("worktree").map(Path::new),
-        context.get("scratch").map(Path::new),
-        &guard::other_worktrees(&context),
-    ) {
+    let restricted_refusal = restricted
+        .then(|| {
+            guard::restricted_refusal(
+                &request.tool,
+                &request.input,
+                context.get("worktree").map(Path::new),
+            )
+        })
+        .flatten();
+    if let Some(refusal) = restricted_refusal.or_else(|| {
+        guard::builtin_refusal(
+            &request.tool,
+            &request.input,
+            context.get("worktree").map(Path::new),
+            context.get("scratch").map(Path::new),
+            &guard::other_worktrees(&context),
+        )
+    }) {
         context.insert("builtin_refusal".into(), refusal);
     }
     let project = repository

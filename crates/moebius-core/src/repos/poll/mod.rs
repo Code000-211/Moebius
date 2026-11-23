@@ -359,7 +359,12 @@ async fn poll_request<F: Polled>(
                     &status.head,
                     status.failed.as_deref(),
                     status.review.as_deref(),
-                )
+                )?;
+                // A review the author asked for goes on once the checks of the head are known.
+                if let Some(card) = change.card_id {
+                    app.advance_external_reviews(card);
+                }
+                Ok::<(), crate::app::AppError>(())
             })
             .await
         }

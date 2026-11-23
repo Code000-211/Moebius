@@ -1,0 +1,621 @@
+//! Reviews of the pull requests someone else opened (ADR 0029). When the author of a followed pull request writes `/done`
+//! on the issue, the server has the Reviewer read it, once the checks of its head are known and green, and writes what
+//! the Reviewer found on the forge as a review with comments on lines. An approved pull request is merged, pinned to the
+//! head that was read, unless the repository leaves the merge to the owner.
+//!
+//! One round is one row of `external_reviews` (see `store::reviews`) and moves through its states, driven by
+//! [`App::advance_external_reviews`], which the poll calls after it read the checks of the request and the engine calls
+//! for the card at each tick:
+//!
+//! - `/done` of the author adds a `wanted` round, unless the pull request was reviewed three times already (the owner is
+//!   asked instead) or its head was reviewed;
+//! - a `wanted` round starts once the checks of the head are green: pending checks wait, red ones are answered on the
+//!   pull request and nothing is reviewed;
+//! - a `running` round ends with the Reviewer's structured answer (see `board::structured`): a review of the head it read
+//!   only, dropped when the head moved meanwhile;
+//! - changes requested are written as a review that asks for them, with the comments on the lines the diff has; the rest
+//!   goes into the body;
+//! - an approval is written as an approving review, and the pull request is merged when the repository says so and its
+//!   checks are green, else the card goes to Ready to merge and the owner is asked.
+//!
+//! A review run of such a pull request is restricted: it reads files and nothing else (see `decide::guard`).
+
+use std::collections::{BTreeMap, BTreeSet};
+use std::path::Path;
+use std::sync::Arc;
+
+use super::{App, AppError, Result, columns};
+use crate::board::{CardRuns, Variant, structured};
+use crate::decide::Actor;
+use crate::repos::forge::ReviewPost;
+use crate::repos::git;
+use crate::store::{Card, Change, ExternalReview, Repository, ReviewComment, Run};
+
+/// How many rounds of the Reviewer a followed pull request gets; the owner is asked after that.
+pub const ROUND_LIMIT: i64 = 3;
+
+/// The kind of the inbox item that asks the owner to look at a pull request the Reviewer read [`ROUND_LIMIT`] times.
+pub const ROUNDS_SPENT: &str = "review_rounds_spent";
+
+/// How much of the diff a review run is given in its prompt, in characters.
+const DIFF_LIMIT: usize = 60_000;
+
+fn reviewer() -> Actor {
+    Actor::Script {
+        column: "external-review".into(),
+    }
+}
+
+/// The lines each file of a diff shows on its new side, with the three lines of context a forge shows: where a comment
+/// of a review may be written.
+fn commentable_lines(diff: &str) -> BTreeMap<String, BTreeSet<i64>> {
+    let mut lines: BTreeMap<String, BTreeSet<i64>> = BTreeMap::new();
+    let mut file: Option<String> = None;
+    let mut next = 0i64;
+    for line in diff.lines() {
+        if let Some(path) = line.strip_prefix("+++ ") {
+            file = path.strip_prefix("b/").map(str::to_string);
+        } else if line.starts_with("--- ") {
+            file = None;
+        } else if let Some(header) = line.strip_prefix("@@ ") {
+            next = header
+                .split_whitespace()
+                .find_map(|part| part.strip_prefix('+'))
+                .and_then(|part| part.split(',').next()?.parse().ok())
+                .unwrap_or(0);
+        } else if let Some(file) = &file {
+            match line.chars().next() {
+                Some('+') | Some(' ') => {
+                    lines.entry(file.clone()).or_default().insert(next);
+                    next += 1;
+                }
+                _ => {}
+            }
+        }
+    }
+    lines
+}
+
+impl App {
+    /// Makes `runs` start the review runs in place of the server's harness.
+    #[cfg(test)]
+    pub(crate) fn set_review_runs(&self, runs: Arc<dyn CardRuns>) {
+        *self.review_runs.lock().unwrap_or_else(|e| e.into_inner()) = Some(runs);
+    }
+
+    /// What starts the review runs.
+    fn review_runs(&self) -> Result<Arc<dyn CardRuns>> {
+        #[cfg(test)]
+        if let Some(runs) = self
+            .review_runs
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .clone()
+        {
+            return Ok(runs);
+        }
+        let runs: Arc<dyn CardRuns> = self.runs()?.clone();
+        Ok(runs)
+    }
+
+    /// The open change of the card that is a pull request someone else opened.
+    pub(crate) fn followed_change(&self, card: &Card) -> Result<Option<Change>> {
+        Ok(self
+            .open_changes(card)?
+            .into_iter()
+            .find(|change| change.outside_author.is_some()))
+    }
+
+    /// Whether `run` reads a pull request someone else opened: such a run is restricted to reading files.
+    pub fn is_restricted_review(&self, run: &Run) -> bool {
+        run.purpose.starts_with("review")
+            && run
+                .card_id
+                .and_then(|id| self.card(id).ok())
+                .and_then(|card| self.followed_change(&card).ok().flatten())
+                .is_some()
+    }
+
+    /// The diff of the pull request the card follows against the repository's default branch, for the prompt of the
+    /// Reviewer, cut to a length; none when the card follows none or git says nothing.
+    pub(crate) fn followed_diff(&self, card: &Card) -> Option<String> {
+        let change = self.followed_change(card).ok()??;
+        let repository = self.repository_of(&change).ok()?;
+        let range = format!("{}...{}", repository.base_ref(), change.branch);
+        let diff = git(Path::new(&repository.path), &["diff", &range]).ok()?;
+        let diff = diff.trim();
+        if diff.is_empty() {
+            return None;
+        }
+        let mut text: String = diff.chars().take(DIFF_LIMIT).collect();
+        if text.len() < diff.len() {
+            text.push_str("\n… (the diff goes on; read the files for the rest)");
+        }
+        Some(text)
+    }
+
+    /// The comments of a review that fit lines of the diff of `change`, and the text of those that do not.
+    fn split_comments(
+        &self,
+        repository: &Repository,
+        change: &Change,
+        comments: &[ReviewComment],
+    ) -> (Vec<ReviewComment>, String) {
+        let range = format!("{}...{}", repository.base_ref(), change.branch);
+        let diff = git(
+            Path::new(&repository.path),
+            &["diff", "--unified=3", &range],
+        )
+        .unwrap_or_default();
+        let lines = commentable_lines(&diff);
+        let (mut fit, mut rest) = (Vec::new(), String::new());
+        for comment in comments {
+            if lines
+                .get(&comment.path)
+                .is_some_and(|set| set.contains(&comment.line))
+            {
+                fit.push(comment.clone());
+            } else {
+                rest.push_str(&format!(
+                    "\n\n`{}` line {}: {}",
+                    comment.path, comment.line, comment.body
+                ));
+            }
+        }
+        (fit, rest)
+    }
+
+    /// Writes `text` as a comment on the pull request of `change`, when the repository answers on the forge. A comment
+    /// that cannot be written is reported with the forge's other errors.
+    fn answer_on_request(&self, repository: &Repository, change: &Change, text: &str) {
+        let (true, Some(number)) = (repository.answer_on_forge, change.pull_request) else {
+            return;
+        };
+        let written = self
+            .forge(repository)
+            .and_then(|forge| Ok(forge.comment_issue(repository, number, text)?));
+        if let Err(e) = written {
+            self.bus.publish(crate::bus::Event::ForgeError {
+                repository: repository.name.clone(),
+                message: format!("pull request #{number}: {e}"),
+            });
+        }
+    }
+
+    /// `/done` of the author of the pull request the card follows: asks for a round of the Reviewer on its head. The
+    /// answer says what comes of it.
+    pub(in crate::app) fn review_on_done(
+        &self,
+        repository: &Repository,
+        card: &Card,
+        change: &Change,
+    ) -> Result<String> {
+        if self.store.external_review_rounds(change.id)? >= ROUND_LIMIT {
+            self.ask_owner_to_look(card, change)?;
+            return Ok(
+                "The pull request was reviewed three times already; a person will look.".into(),
+            );
+        }
+        let wanted = self
+            .store
+            .external_reviews(change.id)?
+            .iter()
+            .any(|r| r.state == "wanted");
+        if wanted {
+            return Ok("The review starts once the checks have passed.".into());
+        }
+        let Some(head) = change.head.as_deref() else {
+            return Ok(
+                "I do not know the head of the pull request yet; write /done again in a moment."
+                    .into(),
+            );
+        };
+        if self.store.external_review_of_head(change.id, head)? {
+            return Ok(
+                "This version of the pull request was reviewed already; push your changes, then write /done again."
+                    .into(),
+            );
+        }
+        self.store.add_external_review(change.id, head)?;
+        let _ = repository;
+        Ok("Thanks, the pull request will be reviewed once its checks have passed.".into())
+    }
+
+    /// Puts an item in the owner's inbox that says the Reviewer read the pull request often enough.
+    fn ask_owner_to_look(&self, card: &Card, change: &Change) -> Result<()> {
+        if self.store.has_open_inbox_item(card.id, ROUNDS_SPENT)? {
+            return Ok(());
+        }
+        self.store.add_inbox_item(
+            ROUNDS_SPENT,
+            Some(card.id),
+            &format!(
+                "Pull request #{} was reviewed {ROUND_LIMIT} times: {}",
+                change.pull_request.unwrap_or_default(),
+                card.title
+            ),
+            &serde_json::json!({
+                "change": change.id,
+                "pull_request": change.pull_request,
+                "author": change.outside_author,
+                "repository": self.repository(card.repository_id)?.name,
+            }),
+        )?;
+        self.bus
+            .publish(crate::bus::Event::CardUpdated(self.card(card.id)?));
+        Ok(())
+    }
+
+    /// Moves on the rounds of the Reviewer on the pull request the card follows, as the module says. Called after the
+    /// poll read the request and at each tick of the card; does nothing for a card that follows no request or has no
+    /// round going. A failure is reported with the forge's errors, and the round it came from is retried at the next
+    /// call unless it says otherwise.
+    pub fn advance_external_reviews(self: &Arc<Self>, card_id: i64) {
+        let result = self.card(card_id).and_then(|card| {
+            let Some(change) = self.followed_change(&card)? else {
+                return Ok(());
+            };
+            if self
+                .store
+                .external_reviews(change.id)?
+                .iter()
+                .all(|r| !matches!(r.state.as_str(), "wanted" | "running" | "approved"))
+            {
+                return Ok(());
+            }
+            self.advance(&card, &change)
+        });
+        if let Err(e) = result {
+            let name = self
+                .card(card_id)
+                .ok()
+                .and_then(|card| self.repository(card.repository_id).ok())
+                .map(|r| r.name)
+                .unwrap_or_default();
+            self.bus.publish(crate::bus::Event::ForgeError {
+                repository: name,
+                message: format!("the review of a pull request: {e}"),
+            });
+        }
+    }
+
+    fn advance(self: &Arc<Self>, card: &Card, change: &Change) -> Result<()> {
+        let repository = self.repository_of(change)?;
+        for round in self.store.external_reviews(change.id)? {
+            match round.state.as_str() {
+                "wanted" => self.advance_wanted(&repository, card, change, &round)?,
+                "running" => self.advance_running(&repository, card, change, &round)?,
+                "approved" => {
+                    let said = structured::Structured {
+                        verdict: "approve",
+                        summary: round.summary.clone(),
+                        comments: round.comments.clone(),
+                    };
+                    self.act_on_verdict(&repository, card, change, &round, &said)?;
+                }
+                _ => {}
+            }
+        }
+        Ok(())
+    }
+
+    /// A round the author asked for: waits for the checks of the current head, answers red ones, starts the Reviewer
+    /// on green ones.
+    fn advance_wanted(
+        self: &Arc<Self>,
+        repository: &Repository,
+        card: &Card,
+        change: &Change,
+        round: &ExternalReview,
+    ) -> Result<()> {
+        let end = |why: &str, text: &str| -> Result<()> {
+            self.store
+                .set_external_review_verdict(round.id, "failed", "", why, &[])?;
+            self.answer_on_request(repository, change, text);
+            Ok(())
+        };
+        let Some(head) = change.head.as_deref() else {
+            return Ok(());
+        };
+        if self.store.external_review_rounds(change.id)? >= ROUND_LIMIT {
+            self.store
+                .set_external_review_verdict(round.id, "failed", "", "rounds spent", &[])?;
+            return self.ask_owner_to_look(card, change);
+        }
+        if self.store.external_review_of_head(change.id, head)? {
+            return end(
+                "head reviewed",
+                "This version of the pull request was reviewed already; push your changes, then write /done again.",
+            );
+        }
+        // The checks are those of the head the poll read last; after a push they are unknown until it has read them.
+        if change.checks_head.as_deref() != Some(head) {
+            return Ok(());
+        }
+        match change.checks.as_deref() {
+            Some("success") => {}
+            Some("failure") => {
+                return end(
+                    "checks failed",
+                    "The checks of this pull request fail, so nothing was reviewed. Fix them, push, then write /done again.",
+                );
+            }
+            // Pending, or none: the review waits for them.
+            _ => return Ok(()),
+        }
+        let runs = self.review_runs()?;
+        if !runs.has_agent("Reviewer") {
+            return end(
+                "no Reviewer",
+                "There is no Reviewer agent on this server, so nothing was reviewed.",
+            );
+        }
+        // The Reviewer reads what is fetched now; when the request moved on since the poll, the poll reads it first.
+        if let Some(number) = change.pull_request {
+            let forge = self.forge(repository)?;
+            forge.fetch_request(repository, number, &change.branch)?;
+            let fetched = git(Path::new(&repository.path), &["rev-parse", &change.branch])?;
+            if fetched != head {
+                return Ok(());
+            }
+        }
+        self.store.set_change_reviewed_head(change.id, head)?;
+        let context = BTreeMap::from([
+            ("repository".into(), repository.name.clone()),
+            (
+                "pull_request".into(),
+                change.pull_request.unwrap_or_default().to_string(),
+            ),
+        ]);
+        self.record_action(
+            &reviewer(),
+            "review_change",
+            Some(card.id),
+            None,
+            context,
+            "the author said the pull request is done",
+        )?;
+        let rounds = self.store.external_review_rounds(change.id)? + 1;
+        let run = runs
+            .start(self, card, "Reviewer", ("review", None), Variant::default())
+            .map_err(|e| AppError::Conflict(e.to_string()))?;
+        self.store.start_external_review(round.id, run.id, rounds)?;
+        self.bus
+            .publish(crate::bus::Event::CardUpdated(self.card(card.id)?));
+        Ok(())
+    }
+
+    /// A round whose run is going: nothing until it ends; then its answer is read.
+    fn advance_running(
+        &self,
+        repository: &Repository,
+        card: &Card,
+        change: &Change,
+        round: &ExternalReview,
+    ) -> Result<()> {
+        let Some(run) = round.run_id.map(|id| self.run(id)).transpose()? else {
+            return Ok(());
+        };
+        match run.status.as_str() {
+            "starting" | "running" => return Ok(()),
+            "succeeded" => {}
+            _ => {
+                self.store.set_external_review_verdict(
+                    round.id,
+                    "failed",
+                    "",
+                    "the run did not end",
+                    &[],
+                )?;
+                self.answer_on_request(
+                    repository,
+                    change,
+                    "The review could not be done. Write /done to try again.",
+                );
+                return Ok(());
+            }
+        }
+        let Some(said) = structured::read(run.summary.as_deref()) else {
+            self.store.set_external_review_verdict(
+                round.id,
+                "failed",
+                "",
+                "the review gave no verdict",
+                &[],
+            )?;
+            self.answer_on_request(
+                repository,
+                change,
+                "The review gave no verdict, so nothing was written. Write /done to try again.",
+            );
+            return Ok(());
+        };
+        // A verdict counts for the head it read only.
+        if change.head.as_deref() != Some(round.head.as_str()) {
+            self.store.set_external_review_verdict(
+                round.id,
+                "stale",
+                said.verdict,
+                &said.summary,
+                &said.comments,
+            )?;
+            self.answer_on_request(
+                repository,
+                change,
+                "The pull request changed while it was reviewed, so the review was dropped. Write /done to have the new version reviewed.",
+            );
+            return Ok(());
+        }
+        self.act_on_verdict(repository, card, change, round, &said)
+    }
+
+    /// Writes the verdict of `round` on the forge, and merges or hands on an approved pull request.
+    fn act_on_verdict(
+        &self,
+        repository: &Repository,
+        card: &Card,
+        change: &Change,
+        round: &ExternalReview,
+        said: &structured::Structured,
+    ) -> Result<()> {
+        let number = change.pull_request.unwrap_or_default();
+        let approve = said.verdict == "approve";
+        if approve && repository.merge_reviewed {
+            // Merged only when the checks of the head that was read are green; pending ones are waited for.
+            if change.head.as_deref() != Some(round.head.as_str()) {
+                self.store
+                    .set_external_review_state(round.id, "stale", None)?;
+                return Ok(());
+            }
+            match (change.checks_head.as_deref() == Some(&round.head))
+                .then_some(change.checks.as_deref())
+            {
+                Some(Some("success")) => {}
+                Some(Some("failure")) => {
+                    self.store.set_external_review_verdict(
+                        round.id,
+                        "posted",
+                        said.verdict,
+                        &said.summary,
+                        &said.comments,
+                    )?;
+                    self.answer_on_request(
+                        repository,
+                        change,
+                        "The reviewer approved this version, but its checks fail now, so it is not merged.",
+                    );
+                    return Ok(());
+                }
+                _ => {
+                    self.store.set_external_review_verdict(
+                        round.id,
+                        "approved",
+                        said.verdict,
+                        &said.summary,
+                        &said.comments,
+                    )?;
+                    return Ok(());
+                }
+            }
+        }
+        let (comments, rest) = self.split_comments(repository, change, &said.comments);
+        let body = format!("{}{rest}", said.summary.trim());
+        let post = ReviewPost {
+            approve,
+            head: &round.head,
+            body: body.trim(),
+            comments: &comments,
+        };
+        let forge = self.forge(repository)?;
+        let url = match forge.review_request(repository, number, &post) {
+            Ok(url) => url,
+            Err(first) => {
+                // A forge that refuses the lines still takes the review without them.
+                let plain = ReviewPost {
+                    comments: &[],
+                    body: &format!("{}{}", said.summary.trim(), {
+                        let all: String = comments
+                            .iter()
+                            .map(|c| format!("\n\n`{}` line {}: {}", c.path, c.line, c.body))
+                            .collect();
+                        format!("{all}{rest}")
+                    }),
+                    ..post
+                };
+                forge
+                    .review_request(repository, number, &plain)
+                    .map_err(|e| AppError::Conflict(format!("{first}; {e}")))?
+            }
+        };
+        self.store.set_external_review_verdict(
+            round.id,
+            "posted",
+            said.verdict,
+            &said.summary,
+            &said.comments,
+        )?;
+        self.store
+            .set_external_review_state(round.id, "posted", Some(&url))?;
+        if !approve {
+            self.answer(
+                repository,
+                card.id,
+                &format!(
+                    "Reviewed pull request #{number}: changes are requested, see the review there. Push your changes, then write /done."
+                ),
+            );
+            self.bus
+                .publish(crate::bus::Event::CardUpdated(self.card(card.id)?));
+            return Ok(());
+        }
+        if repository.merge_reviewed {
+            return self.merge_reviewed(repository, card, change, round);
+        }
+        // The owner merges: the card waits in Ready to merge.
+        self.store.resolve_inbox_for_card(card.id)?;
+        self.move_card(card.id, columns::READY_TO_MERGE, Some(&reviewer()))?;
+        self.store.add_inbox_item(
+            "ready_to_merge",
+            Some(card.id),
+            &card.title,
+            &serde_json::json!({ "change": change.id, "branch": change.branch }),
+        )?;
+        self.answer(
+            repository,
+            card.id,
+            &format!("Reviewed pull request #{number}: approved. The owner will merge it."),
+        );
+        Ok(())
+    }
+
+    /// Merges the approved pull request, pinned to the head that was read, and thanks its author.
+    fn merge_reviewed(
+        &self,
+        repository: &Repository,
+        card: &Card,
+        change: &Change,
+        round: &ExternalReview,
+    ) -> Result<()> {
+        let by = reviewer();
+        let author = change.outside_author.clone().unwrap_or_default();
+        match self.merge_one(&by, change.id, "the Reviewer approved the pull request") {
+            Ok(_) => {
+                self.store
+                    .set_external_review_state(round.id, "merged", None)?;
+                self.answer(
+                    repository,
+                    card.id,
+                    &format!("Merged, thank you @{author}!"),
+                );
+                Ok(())
+            }
+            Err(e) => {
+                let reason = e.to_string();
+                let reason = reason.lines().next().unwrap_or_default();
+                self.answer_on_request(
+                    repository,
+                    change,
+                    &format!(
+                        "The reviewer approved this version, but it could not be merged: {reason}"
+                    ),
+                );
+                Err(e)
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_lines_of_a_diff_are_the_new_side_of_each_hunk() {
+        let diff = "diff --git a/a.rs b/a.rs\n--- a/a.rs\n+++ b/a.rs\n@@ -1,3 +10,4 @@ fn x\n ctx\n-old\n+new\n+newer\n ctx2\n\
+                    diff --git a/b.rs b/b.rs\n--- /dev/null\n+++ b/b.rs\n@@ -0,0 +1,2 @@\n+one\n+two";
+        let lines = commentable_lines(diff);
+        assert_eq!(lines["a.rs"], BTreeSet::from([10, 11, 12, 13]));
+        assert_eq!(lines["b.rs"], BTreeSet::from([1, 2]));
+        assert!(!lines.contains_key("c.rs"));
+    }
+}

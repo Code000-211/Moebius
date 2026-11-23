@@ -253,7 +253,7 @@ async fn only_a_person_answers_and_only_a_question_can_be_answered() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn done_with_a_followed_pull_request_only_says_thanks() {
+async fn done_with_a_followed_pull_request_asks_for_its_review_and_not_the_owner() {
     let f = Fixture::new().await;
     f.fake.threads.lock().unwrap().insert(1, Vec::new());
     let card = following(&f).await;
@@ -262,7 +262,10 @@ async fn done_with_a_followed_pull_request_only_says_thanks() {
     f.says(1, "alice", "/done").await;
     assert_eq!(
         f.answers(),
-        vec![(1, "Thanks, the pull request is followed.".to_string())]
+        vec![(
+            1,
+            "Thanks, the pull request will be reviewed once its checks have passed.".to_string()
+        )]
     );
     assert!(f.asked_about(1).is_none());
 }

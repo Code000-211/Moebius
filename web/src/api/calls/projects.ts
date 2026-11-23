@@ -68,6 +68,7 @@ export interface WorkingWithOthers {
   commands: boolean;
   command_limit: number;
   answer_on_forge: boolean;
+  merge_reviewed: boolean;
 }
 
 /** Sets how the repository works with people on other servers: the ready label and which issues its agents take. */

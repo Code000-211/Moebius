@@ -55,6 +55,7 @@ mod projects;
 mod replays;
 mod research;
 mod retros;
+mod reviews;
 mod runs;
 mod shadows;
 mod taking;
@@ -110,6 +111,7 @@ pub use projects::{KEY_LIMIT, Project, is_key, parse_card_key};
 pub use replays::Replay;
 pub use research::{Budget, BudgetKind, Experiment, Research};
 pub use retros::{OwnEdits, Proposal, Retro, Trial};
+pub use reviews::{ExternalReview, ReviewComment};
 pub use runs::Run;
 pub use shadows::{NewShadow, ShadowStats, ShadowedOutcome, Takeover};
 pub use taking::{DEFAULT_READY_LABEL, LOGIN_FORGES};
@@ -530,6 +532,7 @@ UPDATE cards SET moved_at = COALESCE((SELECT MAX(at) FROM card_moves WHERE card_
     "ALTER TABLE person_preferences ADD COLUMN wrap_long_lines INTEGER NOT NULL DEFAULT 0;",
     taking::SCHEMA,
     commands::SCHEMA,
+    reviews::SCHEMA,
 ];
 
 #[cfg(test)]

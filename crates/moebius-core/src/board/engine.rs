@@ -128,6 +128,7 @@ impl Engine {
         // The card follows a pull request someone else opened: that person does the work, and the card waits in review
         // for the owner (ADR 0027).
         if self.app.follows_outside_request(&card)? {
+            self.app.advance_external_reviews(card.id);
             return Ok(Step::default());
         }
         let column = self

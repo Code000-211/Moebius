@@ -46,11 +46,13 @@ pub mod plugin_settings;
 mod projects;
 mod repositories;
 mod reproduce;
+mod reviews;
 mod runs;
 mod snapshot;
 mod stopping;
 mod taking;
 pub use commands::{Command, DONE_ASKED, command_in};
+pub use reviews::{ROUND_LIMIT, ROUNDS_SPENT};
 pub use taking::{
     OpenRequest, WorkingWithOthers, closing_references, followed_branch, forge_title,
 };
@@ -269,6 +271,9 @@ pub struct App {
     wiki_problem: Mutex<Option<String>>,
     /// What starts the chats of the server, once it has a harness.
     runs: OnceLock<Arc<dyn Runs>>,
+    /// What starts the review runs of followed pull requests in place of `runs`, for tests.
+    #[cfg(test)]
+    review_runs: Mutex<Option<Arc<dyn crate::board::CardRuns>>>,
     /// Where the server and the web app run (see `whereabouts`).
     whereabouts: whereabouts::Whereabouts,
 }
@@ -342,6 +347,8 @@ impl App {
             wiki: RwLock::default(),
             wiki_problem: Mutex::default(),
             runs: OnceLock::new(),
+            #[cfg(test)]
+            review_runs: Mutex::default(),
             whereabouts: Default::default(),
         }
     }

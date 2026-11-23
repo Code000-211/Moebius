@@ -147,6 +147,33 @@ pub struct ChangeView {
     /// card follows it (ADR 0027); left out for Moebius's own change.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub outside_author: Option<String>,
+    /// The latest round of the Reviewer on a followed pull request that is going or was written on the forge (ADR 0029);
+    /// left out for Moebius's own change and while nobody asked for one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub external_review: Option<ExternalReviewView>,
+}
+
+/// A round of the Reviewer on a followed pull request, as the card window shows it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ExternalReviewView {
+    /// The round's place among the pull request's rounds, from 1; 0 until it starts.
+    pub round: i64,
+    /// How many rounds a pull request gets.
+    pub round_limit: i64,
+    /// `wanted` (waiting for the checks), `running`, `approved` (waiting for the checks to merge), `posted`, `merged`,
+    /// `stale` or `failed`.
+    pub state: String,
+    /// `approve` or `changes` once the Reviewer concluded.
+    pub verdict: Option<String>,
+    pub summary: String,
+    /// The comments on lines of the diff.
+    pub comments: Vec<crate::store::ReviewComment>,
+    /// Where the review is on the forge, once it is written there.
+    pub url: Option<String>,
+    /// The commit the round read.
+    pub head: String,
+    /// Whether the round read the pull request as it is now.
+    pub current: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -282,6 +309,25 @@ fn card_view(
             // A review of a pull request someone else opened counts for the commit it read, not for a later push.
             review_verdict: verdict.clone().filter(|_| change.review_is_current()),
             outside_author: change.outside_author.clone(),
+            external_review: match change.outside_author {
+                Some(_) => lookups
+                    .external_reviews(change.id)?
+                    .into_iter()
+                    .rev()
+                    .find(|r| r.state != "failed" && r.state != "stale" || r.verdict.is_some())
+                    .map(|r| ExternalReviewView {
+                        current: change.head.as_deref() == Some(r.head.as_str()),
+                        round: r.round,
+                        round_limit: crate::app::ROUND_LIMIT,
+                        state: r.state,
+                        verdict: r.verdict,
+                        summary: r.summary,
+                        comments: r.comments,
+                        url: r.url,
+                        head: r.head,
+                    }),
+                None => None,
+            },
         };
         if change.repository_id == Some(view.card.repository_id) {
             view.change = Some(shown.clone());

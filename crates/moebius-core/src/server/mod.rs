@@ -23,6 +23,8 @@ pub mod outgoing;
 pub mod packages;
 pub mod plugins;
 pub mod ports;
+#[cfg(test)]
+mod reviews_tests;
 pub(crate) mod schedule;
 pub mod settings;
 pub mod setup;

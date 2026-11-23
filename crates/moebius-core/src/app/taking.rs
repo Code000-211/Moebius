@@ -48,6 +48,7 @@ pub struct WorkingWithOthers {
     pub commands: Option<bool>,
     pub command_limit: Option<i64>,
     pub answer_on_forge: Option<bool>,
+    pub merge_reviewed: Option<bool>,
 }
 
 /// What taking an issue came to.
@@ -295,7 +296,8 @@ impl App {
     /// A person, or the Moebius agent, changes how the repository works with others: whether the server marks the issues
     /// that are ready for agents with a label (`mark_ready`), which label (`ready_label`), which issues its agents
     /// take (`agents_take`, `all` or `labelled`), and the commands in issue comments (`commands`, `command_limit`,
-    /// `answer_on_forge`; see `app::commands`); what is left out stays. Recorded as an `edit_repository` decision and
+    /// `answer_on_forge`; see `app::commands`) and whether a followed pull request the Reviewer approved is merged by the
+    /// server (`merge_reviewed`; see `app::reviews`); what is left out stays. Recorded as an `edit_repository` decision and
     /// announced as `repository_updated`; an edit that changes nothing does neither. A repository without a forge has
     /// no one to work with.
     pub fn edit_working_with_others(
@@ -338,7 +340,8 @@ impl App {
         let mark = edit.mark_ready.unwrap_or(repository.mark_ready);
         let commands = edit.commands.unwrap_or(repository.commands);
         let answer = edit.answer_on_forge.unwrap_or(repository.answer_on_forge);
-        let unchanged = (mark, &label, &takes, commands, limit, answer)
+        let merge = edit.merge_reviewed.unwrap_or(repository.merge_reviewed);
+        let unchanged = (mark, &label, &takes, commands, limit, answer, merge)
             == (
                 repository.mark_ready,
                 &repository.ready_label,
@@ -346,6 +349,7 @@ impl App {
                 repository.commands,
                 repository.command_limit,
                 repository.answer_on_forge,
+                repository.merge_reviewed,
             );
         if unchanged {
             return Ok(repository);
@@ -358,12 +362,14 @@ impl App {
             ("commands".into(), commands.to_string()),
             ("command_limit".into(), limit.to_string()),
             ("answer_on_forge".into(), answer.to_string()),
+            ("merge_reviewed".into(), merge.to_string()),
         ]);
         self.record_action(by, "edit_repository", None, None, context, reason)?;
         self.store
             .set_repository_working_with_others(id, mark, &label, &takes)?;
         self.store
             .set_repository_commands(id, commands, limit, answer)?;
+        self.store.set_repository_merge_reviewed(id, merge)?;
         let repository = self.repository(id)?;
         self.bus
             .publish(Event::RepositoryUpdated(repository.clone()));

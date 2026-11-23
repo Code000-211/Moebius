@@ -61,6 +61,22 @@ pub struct Review {
 /// with the findings before it. A summary without a verdict, or with another one, asks for changes, because work that
 /// was not reviewed is not approved.
 fn verdict(summary: Option<&str>) -> Review {
+    // A review of a pull request someone else opened ends with a JSON object (see `structured`).
+    if let Some(said) = super::structured::read(summary) {
+        let mut findings = said.summary.clone();
+        for comment in &said.comments {
+            findings.push_str(&format!(
+                "\n{} line {}: {}",
+                comment.path, comment.line, comment.body
+            ));
+        }
+        return Review {
+            verdict: said.verdict,
+            findings: findings.trim().to_string(),
+            judgements: String::new(),
+            axes: Vec::new(),
+        };
+    }
     let text = summary.unwrap_or("").trim_end();
     let (findings, last) = text.rsplit_once('\n').unwrap_or(("", text));
     let said = last

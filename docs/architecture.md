@@ -586,6 +586,7 @@ At the top:
 | `app/snapshot.rs` | What the snapshot needs to know about each card (repositories, people, approvals, dependencies, open changes), read once for all cards. |
 | `app/stopping.rs` | Holding (blocking), releasing and deleting a card, which stops its runs and, for a delete, removes what it left in the clone. |
 | `app/commands.rs` | Commands in issue comments ([ADR 0028](adr/0028-helpers-take-issues-with-commands-in-comments.md)): `/take`, `/release` and `/done` read once from the comments the poll read, answered on the issue, limited per login, and the owner's answers to a `/done` and release from the card. |
+| `app/reviews.rs` | The Reviewer reads a followed pull request when its author says `/done` ([ADR 0029](adr/0029-the-reviewer-reads-a-pull-request-when-its-author-says-done.md)): rounds that wait for green checks, a review run read as a structured verdict, a review with comments on lines written on the forge, and the merge pinned to the head that was read, or Ready to merge. |
 | `app/taking.rs` | Working with people on other servers through the forge ([ADR 0027](adr/0027-working-with-people-on-other-servers-through-the-forge.md)): taking an issue assigns the person on the forge, an issue someone else took is left alone, the ready label kept on the issues that are ready, and the pull requests of people on other servers followed to their merge or close. |
 | `app/pausing.rs` | Pausing all agents: the pause kept in the store, which the board engine and every starter of a run read, and the harness holding the runs going. |
 | `app/runs.rs` | A person's hand in a run: steering, stopping, a shell in its worktree, a chat's terminal interface, and a shell on the server. |
@@ -694,6 +695,7 @@ At the top:
 | `store/issues.rs` | What an issue has besides its text: its parent, labels, claim, whether it was closed, and its comments. |
 | `store/changes.rs` | Changes: a branch offered for merging, with its pull request, checks and review. |
 | `store/commands.rs` | What the store keeps for commands in issue comments: the repository's settings for them, the newest comment read per issue, the login a card was taken by command, and how many issues a login holds. |
+| `store/reviews.rs` | The rounds of the Reviewer on followed pull requests (state, head, verdict, summary, comments on lines, the review's address) and the repository's `merge_reviewed`. |
 | `store/taking.rs` | What a server knows of who took an issue: a person's logins on the forges, the logins an issue is assigned to, why an assignment failed, and a repository's settings for working with others. |
 | `store/attempts.rs` | Attempts: the runs a card was tried with at once, how each fared, which was picked and why, and the rounds of which none passed. |
 | `store/runs.rs` | Runs: an agent's work in a harness, from its start to its end. |
@@ -752,6 +754,7 @@ At the top:
 | `server/fake_forgejo.rs` | For the tests only: a fake Forgejo with one repository, a server that polls it, and the tests of the Forgejo forge through it. |
 | `server/commands_tests.rs` | For the tests only: commands in issue comments, against the fake GitHub. |
 | `server/taking_tests.rs` | For the tests only: working with people on other servers, against the fake GitHub. |
+| `server/reviews_tests.rs` | For the tests only: the review of a followed pull request after `/done`, against the fake GitHub. |
 | `server/api/mod.rs` | The desktop API: the state it needs, the token check, the router that merges the routes of its parts, how a failure becomes a status, and `GET /v1/health`. |
 | `server/api/cards.rs` | The snapshot of every board, issues, cards and their changes (edit, approve, block, unblock, delete, retry, merge, reject), a card's runs and history. |
 | `server/api/planning.rs` | The routes that set a card's priority and due date. |
@@ -851,6 +854,7 @@ At the top:
 | `board/engine.rs` | The board engine: runs the script of a card's column (`tick`, which skips a held card, and `settle`) and applies what it did. |
 | `board/api.rs` | The `moebius` table, the functions a script acts through. |
 | `board/review.rs` | The review along two axes: the findings with evidence of the Standards and Spec runs read into one verdict. |
+| `board/structured.rs` | The structured review of a pull request someone else opened: the JSON object at the end of the Reviewer's answer, with the verdict, the summary and the comments on lines. |
 | `board/attempts.rs` | `moebius.start_runs`, `moebius.check_attempt` and `moebius.settle_attempts`, and the `card.attempts` and `card.selection` fields. |
 | `board/card.rs` | The `card` table a script reads, with the card's change and the verdict of its review. |
 | `board/cache.rs` | What the engine remembers between script calls: the bytecode of each script text, the cards a tick can leave alone (settled with nothing to do, while the store's write counter and the limits stay the same, for at most a minute) and the project scripts read during one tick. |
@@ -873,6 +877,7 @@ At the top:
 | `decide/guard/shell.rs` | How the guard reads a tool call: simple commands, redirects, nested shells, `cd`, and paths. |
 | `decide/guard/patterns.rs` | The built-in rules, fixed patterns over a tool call. |
 | `decide/guard/reversible.rs` | Whether a tool call can be replayed: its effects stay in the worktree, and a `bash` command names no absolute path. |
+| `decide/guard/restricted.rs` | The restricted mode of a review run of a pull request someone else opened: only tools that read files inside the worktree, whatever the rules say. |
 | `decide/guard/teacher.rs` | The teacher model: what it is told, the request through the router, and reading its answer. |
 | `decide/localize/mod.rs` | The decision point `localize`: the ranked list of files as a choice, the outcome of a hint with its recall and precision, and the baseline decider that answers it. |
 | `decide/localize/index.rs` | The search index of a repository, read from the files of its default branch and made again when the branch moves. |

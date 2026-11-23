@@ -14,7 +14,7 @@ use crate::repos::forgejo::{Forgejo, ForgejoError};
 use crate::repos::github::{GitHub, GitHubError};
 use crate::repos::gitlab::{GitLab, GitLabError};
 use crate::repos::{GitError, Repos, git};
-use crate::store::{Change, Repository};
+use crate::store::{Change, Repository, ReviewComment};
 
 /// Why a forge could not do what it was asked.
 #[derive(Debug, thiserror::Error)]
@@ -165,6 +165,39 @@ fn pinned_head(change: &Change) -> Option<&str> {
     change.outside_author.as_ref().and(change.head.as_deref())
 }
 
+/// What a review of a pull or merge request says, to be written on the forge.
+#[derive(Debug, Clone, Copy)]
+pub struct ReviewPost<'a> {
+    /// Whether the review approves the request or asks for changes.
+    pub approve: bool,
+    /// The commit the review read; the forge ties the review to it.
+    pub head: &'a str,
+    /// The summary, which is the body of the review.
+    pub body: &'a str,
+    /// Comments on lines of the diff, each in the file as the request leaves it.
+    pub comments: &'a [ReviewComment],
+}
+
+impl ReviewPost<'_> {
+    /// The review as one comment, for a forge that cannot hold a review with comments on lines: the verdict, the
+    /// summary and each comment under the file and line it is about.
+    pub fn as_comment(&self) -> String {
+        let verdict = if self.approve {
+            "Approved."
+        } else {
+            "Changes requested."
+        };
+        let mut text = format!("**{verdict}**\n\n{}", self.body.trim());
+        for comment in self.comments {
+            text.push_str(&format!(
+                "\n\n`{}` line {}: {}",
+                comment.path, comment.line, comment.body
+            ));
+        }
+        text
+    }
+}
+
 /// A forge as the core uses it. Its methods block, so they are called from threads that may block.
 pub trait Forge: Send + Sync {
     /// The name repositories refer to it by, such as `none` or `github`.
@@ -275,6 +308,18 @@ pub trait Forge: Send + Sync {
         _branch: &str,
     ) -> Result<(), ForgeError> {
         Err(not_on_a_forge(repository))
+    }
+    /// Writes a review of the pull or merge request `number`: approving it or asking for changes, with the summary and
+    /// the comments on lines of its diff. Answers with where the review is on the forge. A forge that cannot hold a
+    /// review writes it as one comment (see [`ReviewPost::as_comment`]).
+    fn review_request(
+        &self,
+        repository: &Repository,
+        number: i64,
+        review: &ReviewPost,
+    ) -> Result<String, ForgeError> {
+        self.comment_issue(repository, number, &review.as_comment())
+            .map(|_| String::new())
     }
     /// Writes a comment on the issue `number` and returns its id on the forge.
     fn comment_issue(
@@ -470,6 +515,18 @@ impl Forge for GitHubForge {
             message,
             pinned_head(change),
         ))?)
+    }
+
+    fn review_request(
+        &self,
+        repository: &Repository,
+        number: i64,
+        review: &ReviewPost,
+    ) -> Result<String, ForgeError> {
+        let name = Self::github_name(repository)?;
+        Ok(self
+            .runtime
+            .block_on(self.github.review_pull_request(name, number, review))?)
     }
 
     fn assign_issue(
@@ -727,6 +784,18 @@ impl Forge for GitLabForge {
         ))?)
     }
 
+    fn review_request(
+        &self,
+        repository: &Repository,
+        number: i64,
+        review: &ReviewPost,
+    ) -> Result<String, ForgeError> {
+        let project = Self::project(repository)?;
+        Ok(self
+            .runtime
+            .block_on(self.gitlab.review_merge_request(project, number, review))?)
+    }
+
     fn assign_issue(
         &self,
         repository: &Repository,
@@ -961,6 +1030,18 @@ impl Forge for ForgejoForge {
             self.forgejo
                 .merge(repo, number, message, pinned_head(change)),
         )?)
+    }
+
+    fn review_request(
+        &self,
+        repository: &Repository,
+        number: i64,
+        review: &ReviewPost,
+    ) -> Result<String, ForgeError> {
+        let repo = Self::repo(repository)?;
+        Ok(self
+            .runtime
+            .block_on(self.forgejo.review_pull_request(repo, number, review))?)
     }
 
     fn assign_issue(

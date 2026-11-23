@@ -43,6 +43,18 @@ interface FakeCard {
     checks: string;
     review_verdict: string | null;
     outside_author?: string;
+    /** The Reviewer's latest round on a followed pull request (ADR 0029). */
+    external_review?: {
+      round: number;
+      round_limit: number;
+      state: string;
+      verdict: "approve" | "changes" | null;
+      summary: string;
+      comments: Array<{ path: string; line: number; body: string }>;
+      url: string | null;
+      head: string;
+      current: boolean;
+    };
   } | null;
   /** The forge login of someone on another server who took the issue. */
   taken_by?: string | null;
@@ -862,8 +874,30 @@ export function createBoardFake(send: (event: ServerEvent) => void): BoardFake {
             repository: "demo",
             state: "open",
             checks: "success",
-            review_verdict: null,
+            review_verdict: "changes",
             outside_author: "alice",
+            external_review: {
+              round: 1,
+              round_limit: 3,
+              state: "posted",
+              verdict: "changes",
+              summary: "The cache is never emptied, and nothing tests the new path.",
+              comments: [
+                {
+                  path: "src/cache.rs",
+                  line: 42,
+                  body: "This grows without a bound: evict the oldest entry when the map is full.",
+                },
+                {
+                  path: "src/cache.rs",
+                  line: 57,
+                  body: "Add a test that reads a cached asset twice.",
+                },
+              ],
+              url: "https://github.test/acme/demo/pull/7#pullrequestreview-91",
+              head: "abc",
+              current: true,
+            },
           },
         }),
       );
