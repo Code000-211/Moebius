@@ -404,6 +404,10 @@ const FILES: &[(&str, &str)] = &[
         include_str!("../../../../docs/guide/rules.md"),
     ),
     (
+        "guide/working-with-others.md",
+        include_str!("../../../../docs/guide/working-with-others.md"),
+    ),
+    (
         "guide/workflows.md",
         include_str!("../../../../docs/guide/workflows.md"),
     ),

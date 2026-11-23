@@ -12,6 +12,7 @@ import {
   changeOf,
   changeWorktree,
   describeHistory,
+  elsewhereBy,
   heldLine,
   issueUrl,
   nextCard,
@@ -265,5 +266,33 @@ describe("the second line of a card that needs a person", () => {
       "Waiting for approval",
     );
     expect(cardActivity(card(1), "needs-you")?.text).toBe("Your turn");
+  });
+});
+
+describe("the line of a card that is someone else's work", () => {
+  const change = { id: 3, state: "open", checks: "success", review_verdict: null } as const;
+
+  it("says who took an issue on another server", () => {
+    const taken = card(1, { taken_by: "alice" });
+    expect(cardActivity(taken, "idle")).toMatchObject({ text: "Taken by @alice", tone: "quiet" });
+    expect(cardActivity(taken, "waiting")).toMatchObject({ text: "Taken by @alice" });
+    // What a person must do outranks it, and a card of this server's own has no such line.
+    expect(cardActivity(taken, "needs-you", "Your turn")).toMatchObject({ text: "Your turn" });
+    expect(cardActivity(card(1), "idle")).toBeNull();
+  });
+
+  it("asks the owner to review a pull request someone else opened, and says whose it is after", () => {
+    const followed = card(1, { taken_by: "alice", change: { ...change, outside_author: "alice" } });
+    expect(cardActivity(followed, "needs-you", "Pull request to review")).toMatchObject({
+      text: "Review @alice's pull request",
+      tone: "needs-you",
+    });
+    expect(cardActivity(followed, "idle")).toMatchObject({
+      text: "Pull request by @alice",
+      tone: "quiet",
+    });
+    expect(elsewhereBy(followed)).toBe("alice");
+    expect(elsewhereBy(card(1, { taken_by: "bo" }))).toBe("bo");
+    expect(elsewhereBy(card(1))).toBeNull();
   });
 });

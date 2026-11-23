@@ -210,17 +210,33 @@ async fn start_steps(State(state): State<ApiState>) -> Result<axum::Json<setup::
         .await?
         .0;
     let config = state.config.get();
-    Ok(axum::Json(
-        setup::start(
-            &config,
-            available,
-            &agents,
-            repositories,
-            awaiting,
-            state.app.wiki_status().problem,
-        )
-        .await,
-    ))
+    let without_logins = blocking(&state.app, |app| app.forges_without_logins())
+        .await?
+        .0;
+    let mut start = setup::start(
+        &config,
+        available,
+        &agents,
+        repositories,
+        awaiting,
+        state.app.wiki_status().problem,
+    )
+    .await;
+    start
+        .pending
+        .extend(without_logins.into_iter().map(|forge| {
+            let title = crate::app::forge_title(forge);
+            setup::StartStep {
+                key: "forge_login".into(),
+                title: format!("Tell Moebius your login on {title}"),
+                done: false,
+                detail: format!(
+                    "Without it, taking an issue does not assign you on {title}, so people on other servers may take \
+                     it too. Set it in Settings > You > Profile."
+                ),
+            }
+        }));
+    Ok(axum::Json(start))
 }
 
 async fn plugins(State(state): State<ApiState>) -> axum::Json<setup::Plugins> {

@@ -29,3 +29,4 @@ One record per decision, numbered in the order they were taken. Where the spec a
 - [0024](0024-navigation-by-what-you-do.md) navigation by what you do
 - [0025](0025-workflows-belong-to-a-project.md) workflows belong to a project
 - [0026](0026-the-wiki-works-before-it-has-a-remote.md) the wiki works before it has a remote
+- [0027](0027-working-with-people-on-other-servers-through-the-forge.md) working with people on other servers through the forge

@@ -4,7 +4,9 @@
 // in place of priority, tags, relationships, the description preview, state words, round bars and links; the "more
 // actions" button is a slot (`menu`) the page fills with its own menu, beside the avatar; the card is opened by its
 // title being a button, so the card itself stays a group; a slot for the stack of its sub-issues (`stack`), and a slot
-// for the box that chooses the card (`select`), which stands in the card's top left corner.
+// for the box that chooses the card (`select`), which stands in the card's top left corner. A card that is someone
+// else's work (taken on another server, or a pull request someone else opened) wears that person's avatar, told as
+// such (`assigneesLabel`).
 
 import type { ReactNode } from "react";
 import { cn } from "../lib/cn";
@@ -21,6 +23,8 @@ export type KanbanCardContentProps = {
   activity?: { text: string; tone: "quiet" | "needs-you"; hint?: string } | null;
   /** The handles of the people the card is given to, as avatars; none while it is no one's. */
   assignees?: string[];
+  /** What the avatars are of, for a screen reader; "Given to" unless the card is someone else's work (see `AvatarStack`). */
+  assigneesLabel?: string;
   /** A card in Done is drawn quiet. */
   muted?: boolean;
   /**
@@ -43,6 +47,7 @@ export function KanbanCardContent({
   status,
   activity,
   assignees = [],
+  assigneesLabel,
   muted = false,
   onOpen,
   menu,
@@ -61,7 +66,7 @@ export function KanbanCardContent({
         <StatusIcon state={status} />
         <span className="font-mono text-xs text-muted tabular-nums">{displayId}</span>
         <span className="ml-auto flex shrink-0 items-center gap-1">
-          <AvatarStack handles={assignees} />
+          <AvatarStack handles={assignees} label={assigneesLabel} />
           {menu && (
             // Quiet until the card is pointed at, focused or its menu is open.
             <span className="-my-2 -mr-2 opacity-0 group-focus-within:opacity-100 group-hover:opacity-100 has-[[aria-expanded=true]]:opacity-100">

@@ -5,7 +5,8 @@
 //!   "owner/repo"` and optionally `trusted: [logins]` it is a repository whose issues are polled from GitHub; with
 //!   `forge: "gitlab"` and `project: "group/project"`, one whose issues are polled from GitLab; with `forge: "forgejo"`
 //!   and `project: "owner/repo"`, one on Forgejo, such as Codeberg.
-//! - `PUT /v1/repositories/{id}` `{trusted}`: replaces the logins a repository on a forge trusts.
+//! - `PUT /v1/repositories/{id}` `{trusted, mark_ready, ready_label, agents_take}`: replaces the logins a repository on a
+//!   forge trusts and how it works with others (each key left out stays as it is).
 //! - `DELETE /v1/repositories/{id}`: removes the repository with its cards, changes, chats and the rest, and deletes
 //!   its clone. Refused with `409` while one of its runs is still going.
 //! - `GET /v1/repositories/{id}/settings` and `PUT` and `DELETE /v1/repositories/{id}/settings/{file}`: the files of
@@ -85,7 +86,18 @@ pub struct NewRepository {
 /// The body of `PUT /v1/repositories/{id}`: the logins the repository trusts on its forge.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct EditedRepository {
-    pub trusted: Vec<String>,
+    /// The logins whose issues need no approval; left out, they stay.
+    #[serde(default)]
+    pub trusted: Option<Vec<String>>,
+    /// Whether the server marks the repository's ready issues with `ready_label`; left out, it stays.
+    #[serde(default)]
+    pub mark_ready: Option<bool>,
+    /// The label of ready issues; left out, it stays.
+    #[serde(default)]
+    pub ready_label: Option<String>,
+    /// Which issues the repository's agents take, `all` or `labelled`; left out, it stays.
+    #[serde(default)]
+    pub agents_take: Option<String>,
     #[serde(default)]
     pub reason: String,
 }
@@ -127,7 +139,24 @@ async fn edit_repository(
     axum::Json(edited): axum::Json<EditedRepository>,
 ) -> Result<axum::Json<Repository>, ApiError> {
     blocking(&state.app, move |app| {
-        app.edit_repository(&by, id, &edited.trusted, &edited.reason)
+        let mut repository = match &edited.trusted {
+            Some(trusted) => app.edit_repository(&by, id, trusted, &edited.reason)?,
+            None => app.repository(id)?,
+        };
+        if edited.mark_ready.is_some()
+            || edited.ready_label.is_some()
+            || edited.agents_take.is_some()
+        {
+            repository = app.edit_working_with_others(
+                &by,
+                id,
+                edited.mark_ready,
+                edited.ready_label.as_deref(),
+                edited.agents_take.as_deref(),
+                &edited.reason,
+            )?;
+        }
+        Ok(repository)
     })
     .await
 }

@@ -236,6 +236,7 @@ examples that the tests run.
 - **[Pi extensions](docs/guide/extensions.md)**: TypeScript inside the agent's process.
 - **[Plugins](docs/guide/plugins.md)**: deciders in Rust.
 - **[Command line](docs/guide/command-line.md)** and **[desktop API](docs/guide/desktop-api.md)**: script anything.
+- **[Working with others](docs/guide/working-with-others.md)**: help on a repository whose owner runs another server, through the forge.
 - **[The desktop app](docs/guide/desktop-app.md)**: install it and connect it to one server or several.
 
 Or just ask the Moebius agent: it knows the guide and the reference, and builds these for you.

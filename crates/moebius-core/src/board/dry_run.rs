@@ -69,6 +69,7 @@ fn made_up_card(lua: &Lua, column: &str, title: &str, author: &str) -> mlua::Res
     t.set("children", lua.create_table()?)?;
     t.set("labels", lua.create_table()?)?;
     t.set("claimed_by", mlua::Value::Nil)?;
+    t.set("taken_by", mlua::Value::Nil)?;
     t.set("assignees", lua.create_table()?)?;
     t.set("priority", "none")?;
     t.set("due", mlua::Value::Nil)?;

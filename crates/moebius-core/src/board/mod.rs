@@ -38,5 +38,5 @@ pub use kanban::{Column, Kanban, built_in_script, column_named, project_script, 
 pub use limits::Limits;
 pub use runs::{
     AgentInfo, CardRuns, ChatRuns, ImproveRuns, Runs, StartError, Tui, Variant, free_run_slots,
-    may_start,
+    may_start, may_take,
 };

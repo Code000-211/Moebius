@@ -87,6 +87,8 @@ export const keys = {
   places: ["places"] as const,
   /** What the person chose for themselves in the app. */
   preferences: ["preferences"] as const,
+  /** The person's logins on the forges. */
+  logins: ["logins"] as const,
   agents: ["agents"] as const,
   models: ["models"] as const,
   skills: ["skills"] as const,

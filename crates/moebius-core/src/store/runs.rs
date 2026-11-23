@@ -297,14 +297,28 @@ impl Store {
         Ok(())
     }
 
-    /// The branch of the card's latest successful `code` run, where its work stands.
+    /// The branch of the card's latest successful `code` run, where its work stands, or the local branch of the pull request
+    /// someone else opened that the card follows.
     pub fn code_branch(&self, card_id: i64) -> Result<Option<String>> {
-        Ok(self
+        let own = self
             .runs_for_card(card_id)?
             .iter()
             .rev()
             .find(|r| r.purpose == "code" && r.status == "succeeded")
-            .map(Run::branch))
+            .map(Run::branch);
+        if own.is_some() {
+            return Ok(own);
+        }
+        // A card that follows a pull request someone else opened has no code run: its work is that request's branch.
+        Ok(self
+            .conn()
+            .query_row(
+                "SELECT branch FROM changes WHERE card_id = ?1 AND state = 'open' AND outside_author IS NOT NULL \
+                 ORDER BY id DESC LIMIT 1",
+                [card_id],
+                |r| r.get(0),
+            )
+            .optional()?)
     }
 
     /// Records the commit a run of a card started from.

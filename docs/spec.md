@@ -20,6 +20,9 @@ what went wrong and tries out fixes, and the ones that worked wait in the inbox.
 - Repositories with the **GitHub forge**, with the **GitLab forge** (gitlab.com or self-hosted, with an access token),
   with the **Forgejo forge** (Codeberg, or a Forgejo or Gitea of one's own, with an access token), and repositories
   **without a forge** (plain git).
+- **Working with people on other servers through the forge** ([ADR 0027](adr/0027-working-with-people-on-other-servers-through-the-forge.md)): taking an issue
+  assigns the person on the forge, an issue someone else took is left alone, the server may keep a "Ready for agent" label, and a
+  pull request of someone else that closes an issue is followed to its merge.
 - Two harnesses, picked per agent by its `harness`: **Pi-Bolt**, driven in its RPC mode, with the Moebius **bridge**
   loaded into every run as a Pi extension, and **Claude Code**'s command line (`claude -p` with `stream-json`), which
   has no bridge: the router checks every tool call in its model's answers with `decide("tool_call")` and replaces a

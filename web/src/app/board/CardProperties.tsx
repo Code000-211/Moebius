@@ -385,6 +385,9 @@ export function CardProperties({
               <span className="text-secondary">No run has started</span>
             )}
           </Property>
+          {card.taken_by && !card.change?.outside_author && (
+            <Property name="Taken by">{`@${card.taken_by}, on another server`}</Property>
+          )}
           {card.held && <Property name="Blocked">{heldLine(card.held)}</Property>}
           <Property name="Why it waits">
             {waitingLine(board.waiting[String(card.id)], card.refusals)}
@@ -394,6 +397,17 @@ export function CardProperties({
               {CHECKS[change.checks] ?? change.checks}
             </Property>
           ))}
+          {changesOfCard(card).map(
+            (change) =>
+              change.outside_author && (
+                <Property
+                  key={`by-${change.id}`}
+                  name={`Pull request${inRepository(card, change)}`}
+                >
+                  {`Opened by @${change.outside_author}, on another server`}
+                </Property>
+              ),
+          )}
           {stopped && <MergeStopped item={stopped} />}
           <Property name="Cost">
             <span className="tabular-nums">{tokens(card.tokens)}</span>

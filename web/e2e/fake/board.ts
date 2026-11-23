@@ -42,7 +42,11 @@ interface FakeCard {
     state: string;
     checks: string;
     review_verdict: string | null;
+    outside_author?: string;
   } | null;
+  /** The forge login of someone on another server who took the issue. */
+  taken_by?: string | null;
+  assign_problem?: string | null;
   /** The card's open changes in the repositories besides its own (`seedChange`). */
   more_changes: Array<{
     id: number;
@@ -90,6 +94,8 @@ interface FakeChange {
   failed_checks: string | null;
   check_output: string | null;
   harness_repository: boolean;
+  outside_author?: string;
+  taken_from?: string;
 }
 
 interface FakeInboxItem {
@@ -217,6 +223,11 @@ export interface BoardFake {
    * checks of that repository are its own.
    */
   seedChange(id: number): void;
+  /**
+   * Puts two cards of other people's work on the board: an issue `alice` took on another server (Not started), and a
+   * card in review that follows her pull request 7, with its inbox item. Returns their numbers.
+   */
+  seedElsewhere(): { taken: number; followed: number };
   /** Makes the next request with `method` to `path` fail with `status` and `message`. */
   refuseNext(method: string, path: string, status: number, message: string): void;
   /** The non-GET requests the board routes received, in order. */
@@ -224,7 +235,8 @@ export interface BoardFake {
 }
 
 export function createBoardFake(send: (event: ServerEvent) => void): BoardFake {
-  const repo = repository();
+  const repo: Record<string, unknown> = repository();
+  let logins = { github: "", gitlab: "", forgejo: "" };
   let cards: FakeCard[] = [
     card(1, {
       title: "Add a feature",
@@ -630,6 +642,7 @@ export function createBoardFake(send: (event: ServerEvent) => void): BoardFake {
     const retry = /^\/v1\/cards\/(\d+)\/retry$/.exec(path);
     const merge = /^\/v1\/changes\/(\d+)\/merge$/.exec(path);
     const reject = /^\/v1\/changes\/(\d+)\/reject$/.exec(path);
+    const review = /^\/v1\/changes\/(\d+)\/review$/.exec(path);
     const block = /^\/v1\/cards\/(\d+)\/block$/.exec(path);
     const unblock = /^\/v1\/cards\/(\d+)\/unblock$/.exec(path);
     if (method !== "POST") return undefined;
@@ -702,7 +715,7 @@ export function createBoardFake(send: (event: ServerEvent) => void): BoardFake {
       found.state = "merged";
       const target = find(found.card_id);
       if (target) {
-        resolve(target.id, ["ready_to_merge"]);
+        resolve(target.id, ["ready_to_merge", "outside_change"]);
         target.change = null;
         target.rounds = 0;
         target.tokens = 0;
@@ -710,6 +723,17 @@ export function createBoardFake(send: (event: ServerEvent) => void): BoardFake {
       }
       send({ kind: "change_merged", data: found });
       return ok({ commit: "5ca1ab1e5ca1ab1e5ca1ab1e5ca1ab1e5ca1ab1" });
+    }
+    if (review) {
+      const found = changes.find((c) => c.id === Number(review[1]));
+      if (!found?.outside_author) return fail(422, "not a pull request someone else opened");
+      return ok({
+        id: 50,
+        card_id: found.card_id,
+        agent: "Reviewer",
+        purpose: "review",
+        status: "running",
+      });
     }
     if (reject) {
       const found = changes.find((c) => c.id === Number(reject[1]));
@@ -786,10 +810,70 @@ export function createBoardFake(send: (event: ServerEvent) => void): BoardFake {
       ];
       send({ kind: "card_updated", data: view(target) });
     },
+    seedElsewhere() {
+      const first = Math.max(...cards.map((c) => c.id)) + 1;
+      cards.push(
+        card(first, {
+          title: "Add dark mode to the settings page",
+          column: "Not started",
+          taken_by: "alice",
+        }),
+        card(first + 2, {
+          title: "Tidy the changelog",
+          column: "Not started",
+          assignees: ["lea"],
+        }),
+        card(first + 1, {
+          title: "Cache the compiled assets",
+          column: "In review",
+          taken_by: "alice",
+          change: {
+            id: 30,
+            repository: "demo",
+            state: "open",
+            checks: "success",
+            review_verdict: null,
+            outside_author: "alice",
+          },
+        }),
+      );
+      changes.push(
+        change(30, first + 1, {
+          pull_request: 7,
+          branch: "moebius/pr-7",
+          outside_author: "alice",
+          taken_from: "In progress",
+        }),
+      );
+      inbox.push({
+        id: Math.max(...inbox.map((item) => item.id)) + 1,
+        kind: "outside_change",
+        card_id: first + 1,
+        title: "Pull request #7 by @alice closes this issue",
+        data: { change: 30, pull_request: 7, author: "alice", repository: "demo" },
+        resolved_at: null,
+        assignees: [],
+        at: NOW - 60,
+      });
+      return { taken: first, followed: first + 1 };
+    },
     refuseNext(method, path, status, message) {
       refusals.set(`${method} ${path}`, { status, message });
     },
     handle(method, path, body) {
+      if (path === "/v1/logins") {
+        if (method === "PUT") {
+          requests.push({ method, path, body });
+          logins = { github: "", gitlab: "", forgejo: "", ...(body as object) };
+        }
+        return ok(logins);
+      }
+      if (path === "/v1/repositories/1" && method === "PUT") {
+        requests.push({ method, path, body });
+        Object.assign(repo, body);
+        send({ kind: "repository_updated", data: repo });
+        return ok(repo);
+      }
       const known =
         path === "/v1/repositories/1/issues" ||
         /^\/v1\/(cards|changes)\/\d+\//.test(path) ||

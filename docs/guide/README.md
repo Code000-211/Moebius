@@ -51,6 +51,7 @@ Built and described here:
 | Turn an idea into issues by being questioned about it | [Grilling](grilling.md) |
 | Have an agent do recurring work on a schedule, such as triaging new issues every morning | [Automations](automations.md) |
 | Have a trigger start a graph of steps, branch on a condition, wait for a person or call an HTTP service | [Workflows](workflows.md) |
+| Help on a repository whose owner runs another server, without taking the same issues | [Working with others](working-with-others.md) |
 | Answer your own decision points with Rust code | [Plugins](plugins.md) |
 | Add behaviour inside the Pi process of a run | [Extensions](extensions.md) |
 | Operate Moebius from a terminal or a script, or let the Moebius agent do it | [Command line](command-line.md) |

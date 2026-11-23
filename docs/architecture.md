@@ -267,7 +267,7 @@ finds the server again by that directory: it answers, or it is started again wit
     `set_issue_blocker`, `set_issue_parent` where `has_sub_issues`, `comment_issue`, `set_issue_open`; GitLab and Forgejo
     keep a parent as a line `Part of #n` of the body), then store, then publish an event of their own
     (`card_parent_changed`, `card_labels_changed`, `card_blocking_changed`, `card_links_changed`, `card_claimed`, `card_released`,
-    `card_commented`, `card_closed`, `card_reopened`). The poll reads the forge's side back: the clients put labels, a
+    `card_commented`, `card_closed`, `card_reopened`). Taking an issue (`claim_issue`, or a column script's `moebius.start_run` or `moebius.start_runs`) also assigns the person's login on the forge (`App::take_issue`, `Forge::assign_issue`), and the column scripts' starters ask `may_take` first, which makes a card taken by someone else on another server, or not labelled where a repository's agents take only labelled issues, wait (`App::left_alone`); the poll records an issue's assignees (`cards.forge_assignees`), keeps a repository's ready label (`App::mark_ready_issues`) and follows the open pull requests of people on other servers (`App::follow_open_requests`; [ADR 0027](adr/0027-working-with-people-on-other-servers-through-the-forge.md)). The poll reads the forge's side back: the clients put labels, a
     parent and a comment count in the forge-neutral `Issue`, `poll_issues` reads the comments and (`Polled::blockers`,
     kept per issue while it is unchanged) the blockers of the issues it syncs, and `App::sync_issue_details` copies it
     all and announces what changed. It acts only on what the forge changed since it was last seen to say it
@@ -585,6 +585,7 @@ At the top:
 | `app/issues/text.rs` | The lines of a description that hold a parent ("Part of #n") or a blocker ("Blocked by #n") where the forge has none. |
 | `app/snapshot.rs` | What the snapshot needs to know about each card (repositories, people, approvals, dependencies, open changes), read once for all cards. |
 | `app/stopping.rs` | Holding (blocking), releasing and deleting a card, which stops its runs and, for a delete, removes what it left in the clone. |
+| `app/taking.rs` | Working with people on other servers through the forge ([ADR 0027](adr/0027-working-with-people-on-other-servers-through-the-forge.md)): taking an issue assigns the person on the forge, an issue someone else took is left alone, the ready label kept on the issues that are ready, and the pull requests of people on other servers followed to their merge or close. |
 | `app/pausing.rs` | Pausing all agents: the pause kept in the store, which the board engine and every starter of a run read, and the harness holding the runs going. |
 | `app/runs.rs` | A person's hand in a run: steering, stopping, a shell in its worktree, a chat's terminal interface, and a shell on the server. |
 | `app/automations/mod.rs` | Automations: the automation origin, and the parts that make an automation a workflow, migrate a row to one, fire it and show it. |
@@ -691,6 +692,7 @@ At the top:
 | `store/links.rs` | The links between issues besides parent and blockers: a duplicate to its original, and issues related in both directions. |
 | `store/issues.rs` | What an issue has besides its text: its parent, labels, claim, whether it was closed, and its comments. |
 | `store/changes.rs` | Changes: a branch offered for merging, with its pull request, checks and review. |
+| `store/taking.rs` | What a server knows of who took an issue: a person's logins on the forges, the logins an issue is assigned to, why an assignment failed, and a repository's settings for working with others. |
 | `store/attempts.rs` | Attempts: the runs a card was tried with at once, how each fared, which was picked and why, and the rounds of which none passed. |
 | `store/runs.rs` | Runs: an agent's work in a harness, from its start to its end. |
 | `store/workflows.rs` | Workflow runs and the runs of each node of them, with their value, input and output redacted before they are stored. |
@@ -746,6 +748,7 @@ At the top:
 | `server/fake_github.rs` | For the tests only: a fake GitHub with one repository, and a server that polls it. |
 | `server/fake_gitlab.rs` | For the tests only: a fake GitLab with one project, a server that polls it, and the tests of the GitLab forge through it. |
 | `server/fake_forgejo.rs` | For the tests only: a fake Forgejo with one repository, a server that polls it, and the tests of the Forgejo forge through it. |
+| `server/taking_tests.rs` | For the tests only: working with people on other servers, against the fake GitHub. |
 | `server/api/mod.rs` | The desktop API: the state it needs, the token check, the router that merges the routes of its parts, how a failure becomes a status, and `GET /v1/health`. |
 | `server/api/cards.rs` | The snapshot of every board, issues, cards and their changes (edit, approve, block, unblock, delete, retry, merge, reject), a card's runs and history. |
 | `server/api/planning.rs` | The routes that set a card's priority and due date. |
@@ -797,6 +800,7 @@ At the top:
 | `server/api/preferences.rs` | A person's preferences: reading them and replacing them. |
 | `server/api/favourites.rs` | A person's pins and recent places: listing both, pinning, reordering and removing a pin, noting a place opened, and forgetting the places they can no longer see. |
 | `server/api/people.rs` | The people and their access tokens: listing people, an owner adding one with their first token, making, listing and revoking tokens. |
+| `server/api/logins.rs` | `GET` and `PUT /v1/logins`: a person's logins on the forges. |
 | `server/api/roles/mod.rs` | The role each route of the desktop API needs, and whether the Moebius agent's run token may use it: the table the reference repeats, and the check `authenticate` makes with it. |
 | `server/api/roles/tests.rs` | For the tests only: the role table against the reference and the routes of the code, and every route called as a viewer, a member, an owner and the Moebius agent. |
 | `server/api/web.rs` | The web app embedded from `web/dist` and served at `/` without a token, with `index.html` for any path that is no file, or a page that says it was not built. |

@@ -64,6 +64,7 @@ impl Engine {
                 let mut started = Vec::new();
                 let mut failure = None;
                 let mut limited = false;
+                let mut left_alone = None;
                 outside_script(&clock, || {
                     for index in 0..n {
                         let variant = Variant {
@@ -82,7 +83,23 @@ impl Engine {
                                 break;
                             }
                         }
-                        let run = super::may_start(&app, &card_copy)
+                        let may = match super::may_take(&app, &card_copy) {
+                            Err(crate::board::StartError::LeftAlone(why)) => {
+                                left_alone = Some(why);
+                                break;
+                            }
+                            other => other,
+                        };
+                        // The person the attempts are for becomes the issue's assignee before the first starts; when another
+                        // server took it first, nothing starts (ADR 0027).
+                        if started.is_empty() && !app.take_issue(&card_copy, None) {
+                            left_alone =
+                                Some(app.left_alone(&card_copy).ok().flatten().unwrap_or_else(
+                                    || "taken by someone on another server".into(),
+                                ));
+                            break;
+                        }
+                        let run = may
                             .and_then(|()| {
                                 runs.start(
                                     &app,
@@ -111,6 +128,11 @@ impl Engine {
                 });
                 if let Some(first) = started.first() {
                     fx.borrow_mut().started_run = Some(*first);
+                }
+                if let (Some(why), true) = (left_alone, started.is_empty()) {
+                    // Someone else took the issue, or this server's agents do not take it: it waits here.
+                    fx.borrow_mut().waiting = Some(why);
+                    return Ok(started);
                 }
                 if limited && failure.is_none() {
                     // As many attempts as there are free slots start; the card waits when none does.

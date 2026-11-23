@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 use super::{Result, Store, now};
 
 const CHANGE_COLUMNS: &str = "id, repository_id, card_id, run_id, branch, state, pull_request, checks, review, \
-     head, published_at, checks_head, failed_checks, check_output, harness_repository";
+     head, published_at, checks_head, failed_checks, check_output, harness_repository, outside_author, taken_from, reviewed_head";
 
 fn change_from_row(r: &rusqlite::Row) -> rusqlite::Result<Change> {
     Ok(Change {
@@ -25,6 +25,9 @@ fn change_from_row(r: &rusqlite::Row) -> rusqlite::Result<Change> {
         failed_checks: r.get(12)?,
         check_output: r.get(13)?,
         harness_repository: r.get(14)?,
+        outside_author: r.get(15)?,
+        taken_from: r.get(16)?,
+        reviewed_head: r.get(17)?,
     })
 }
 
@@ -56,6 +59,26 @@ pub struct Change {
     pub check_output: Option<String>,
     /// Whether the change belongs to the harness configuration repository, which is no repository of Moebius.
     pub harness_repository: bool,
+    /// The forge login of the person who opened the pull request, when it is not Moebius's own change: someone on
+    /// another server opened it for an issue they took, and the card follows it (ADR 0027).
+    #[serde(default)]
+    pub outside_author: Option<String>,
+    /// The column the card was in when it began to follow the outside pull request, where it goes back to when the
+    /// request is closed without a merge.
+    #[serde(default)]
+    pub taken_from: Option<String>,
+    /// The head of a followed pull request when the Reviewer was last asked to read it: a review of the card counts only
+    /// while the request's head is still this commit.
+    #[serde(default)]
+    pub reviewed_head: Option<String>,
+}
+
+impl Change {
+    /// Whether a review of the card counts for this change as it is now. For Moebius's own change it does; for a pull
+    /// request someone else opened it counts only while the request's head is the commit the Reviewer read.
+    pub fn review_is_current(&self) -> bool {
+        self.outside_author.is_none() || self.reviewed_head == self.head
+    }
 }
 
 impl Store {
@@ -134,6 +157,9 @@ impl Store {
             failed_checks: None,
             check_output: None,
             harness_repository,
+            outside_author: None,
+            taken_from: None,
+            reviewed_head: None,
         })
     }
 

@@ -21,6 +21,10 @@ pub enum ForgejoError {
         status: reqwest::StatusCode,
         body: String,
     },
+    #[error(
+        "Forgejo did not assign {0}: the login is not a collaborator who can be assigned issues"
+    )]
+    NotAssignable(String),
 }
 
 /// An issue as Forgejo lists it.
@@ -44,6 +48,29 @@ pub struct Issue {
     /// When the issue last changed, in the form Forgejo always writes it, so that it compares as text.
     #[serde(default)]
     pub(crate) updated_at: Option<String>,
+    /// The people the issue is assigned to.
+    #[serde(default)]
+    pub assignees: Option<Vec<User>>,
+}
+
+/// The branch a pull request is against.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+pub struct Base {
+    #[serde(rename = "ref")]
+    pub branch: String,
+}
+
+/// An open pull request as the list of them has it: who opened it and what it says, which names the issues it closes.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+pub struct ListedPull {
+    pub number: i64,
+    pub base: Base,
+    #[serde(default)]
+    pub title: String,
+    #[serde(default)]
+    pub body: Option<String>,
+    pub user: User,
+    pub head: Head,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
@@ -425,6 +452,123 @@ impl Forgejo {
         .await
     }
 
+    /// Adds `login` to the people issue `number` of `repo` is assigned to, keeping the others. Forgejo replaces the
+    /// assignees it is given, so the issue is read first, and the issue it answers with must carry the login.
+    pub async fn assign_issue(
+        &self,
+        repo: &str,
+        number: i64,
+        login: &str,
+    ) -> Result<Vec<String>, ForgejoError> {
+        let issue: Issue = self
+            .repo_call(repo, Method::GET, &format!("/issues/{number}"), None)
+            .await?;
+        let mut logins: Vec<String> = issue
+            .assignees
+            .unwrap_or_default()
+            .into_iter()
+            .map(|a| a.login)
+            .collect();
+        if !logins.iter().any(|l| l.eq_ignore_ascii_case(login)) {
+            logins.push(login.to_string());
+        }
+        let request = json!({ "assignees": logins });
+        let changed: Issue = self
+            .repo_call(
+                repo,
+                Method::PATCH,
+                &format!("/issues/{number}"),
+                Some(&request),
+            )
+            .await?;
+        let assignees: Vec<String> = changed
+            .assignees
+            .unwrap_or_default()
+            .into_iter()
+            .map(|a| a.login)
+            .collect();
+        if assignees.iter().any(|a| a.eq_ignore_ascii_case(login)) {
+            Ok(assignees)
+        } else {
+            Err(ForgejoError::NotAssignable(login.to_string()))
+        }
+    }
+
+    /// Takes `login` off the people issue `number` of `repo` is assigned to.
+    pub async fn unassign_issue(
+        &self,
+        repo: &str,
+        number: i64,
+        login: &str,
+    ) -> Result<(), ForgejoError> {
+        let issue: Issue = self
+            .repo_call(repo, Method::GET, &format!("/issues/{number}"), None)
+            .await?;
+        let logins: Vec<String> = issue
+            .assignees
+            .unwrap_or_default()
+            .into_iter()
+            .map(|a| a.login)
+            .filter(|l| !l.eq_ignore_ascii_case(login))
+            .collect();
+        self.repo_do(
+            repo,
+            Method::PATCH,
+            &format!("/issues/{number}"),
+            Some(&json!({ "assignees": logins })),
+        )
+        .await
+    }
+
+    /// Whether `login` may write to `repo`: a collaborator with the write or admin permission.
+    pub async fn can_write(&self, repo: &str, login: &str) -> Result<bool, ForgejoError> {
+        #[derive(Deserialize)]
+        struct Permission {
+            permission: String,
+        }
+        match self
+            .repo_call::<Permission>(
+                repo,
+                Method::GET,
+                &format!("/collaborators/{login}/permission"),
+                None,
+            )
+            .await
+        {
+            Ok(found) => Ok(matches!(
+                found.permission.as_str(),
+                "admin" | "owner" | "write"
+            )),
+            Err(ForgejoError::Status { status, .. })
+                if status == reqwest::StatusCode::NOT_FOUND =>
+            {
+                Ok(false)
+            }
+            Err(e) => Err(e),
+        }
+    }
+
+    /// The open pull requests of `repo`, from all pages.
+    pub async fn open_pull_requests(&self, repo: &str) -> Result<Vec<ListedPull>, ForgejoError> {
+        let mut all = Vec::new();
+        for page in 1.. {
+            let listed: Vec<ListedPull> = self
+                .repo_call(
+                    repo,
+                    Method::GET,
+                    &format!("/pulls?state=open&limit=50&page={page}"),
+                    None,
+                )
+                .await?;
+            let last = listed.len() < 50;
+            all.extend(listed);
+            if last {
+                break;
+            }
+        }
+        Ok(all)
+    }
+
     pub async fn pull_request(&self, repo: &str, number: i64) -> Result<PullRequest, ForgejoError> {
         self.repo_call(repo, Method::GET, &format!("/pulls/{number}"), None)
             .await
@@ -458,8 +602,13 @@ impl Forgejo {
         repo: &str,
         number: i64,
         message: &str,
+        head: Option<&str>,
     ) -> Result<String, ForgejoError> {
-        let request = json!({ "Do": "merge", "MergeTitleField": message });
+        let mut request = json!({ "Do": "merge", "MergeTitleField": message });
+        // Forgejo refuses the merge when the head is not the one the person looked at.
+        if let Some(head) = head {
+            request["head_commit_id"] = json!(head);
+        }
         let response = self
             .call(
                 Method::POST,

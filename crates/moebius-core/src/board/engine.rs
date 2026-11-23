@@ -125,6 +125,11 @@ impl Engine {
         if card.held.is_some() || self.app.runs_paused()?.is_some() {
             return Ok(Step::default());
         }
+        // The card follows a pull request someone else opened: that person does the work, and the card waits in review
+        // for the owner (ADR 0027).
+        if self.app.follows_outside_request(&card)? {
+            return Ok(Step::default());
+        }
         let column = self
             .kanban
             .columns

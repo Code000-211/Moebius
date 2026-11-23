@@ -244,6 +244,14 @@ export function cardIcon(card: Card, status: CardStatus): StatusState {
   }
 }
 
+/**
+ * The person whose work a card is that is none of this server's people: who opened the pull request it follows, else who
+ * took the issue on another server; none when the card is this server's own.
+ */
+export function elsewhereBy(card: Card): string | null {
+  return card.change?.outside_author ?? card.taken_by ?? null;
+}
+
 /** What a run is doing, in a word: "coding", "reviewing"; a purpose this does not know is said as it is. */
 function doingWords(purpose: string): string {
   const p = purpose.toLowerCase();
@@ -284,7 +292,20 @@ export function cardActivity(
     };
   }
   if (status === "stuck") return { text: "Stuck", tone: "needs-you" };
+  // A pull request someone on another server opened, which the card follows: the owner is asked to review it.
+  const author = card.change?.outside_author;
+  if (status === "needs-you" && author) {
+    return { text: `Review @${author}'s pull request`, tone: "needs-you", hint: waiting };
+  }
   if (status === "needs-you") return { text: waiting, tone: "needs-you" };
+  if (author) return { text: `Pull request by @${author}`, tone: "quiet" };
+  if (card.taken_by) {
+    return {
+      text: `Taken by @${card.taken_by}`,
+      tone: "quiet",
+      hint: "Someone on another server took this issue; this server leaves it alone",
+    };
+  }
   if (status === "blocked") {
     const numbers = card.blocked_by.map((n) => `#${n}`);
     return {

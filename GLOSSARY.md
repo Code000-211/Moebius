@@ -371,6 +371,10 @@ _Avoid_: document, article, note
 A person a card is given to; whether an agent still works on the card is up to the column's script.
 _Avoid_: owner, claimer, responsible
 
+**Taken by**:
+What a card says when its issue is assigned on the forge to someone who is none of this server's people, such as a person with a server of their own: this server leaves the card alone until the assignee is removed.
+_Avoid_: claimed, locked
+
 **Priority**:
 How soon a card should be done: `urgent`, `high`, `medium`, `low` or `none`. Kept as the card's `priority:<name>` label,
 so the forge shows it, and the board starts urgent cards first.

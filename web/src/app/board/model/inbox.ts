@@ -9,6 +9,8 @@ export const STUCK = "stuck";
 export const CHANGE_CLOSED = "change_closed";
 export const READY_TO_MERGE = "ready_to_merge";
 export const APPROVE_ISSUE = "approve_issue";
+/** A pull request someone on another server opened for an issue they took: the card follows it and the owner may review and merge it. */
+export const OUTSIDE_CHANGE = "outside_change";
 /** What an outside issue that waits for a person's approval is called, on every row, card and button of the app. */
 export const WAITING_FOR_APPROVAL = "Waiting for approval";
 
@@ -19,6 +21,8 @@ export function waitingWords(kind: string | undefined): string {
       return WAITING_FOR_APPROVAL;
     case READY_TO_MERGE:
       return "Ready to merge";
+    case OUTSIDE_CHANGE:
+      return "Pull request to review";
     case CHANGE_CLOSED:
       return "Closed without a merge";
     default:

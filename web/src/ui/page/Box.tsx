@@ -18,6 +18,7 @@ export function Box({
   className,
   testId,
   padded = true,
+  strong = false,
 }: {
   /** What the box holds, said plainly. A link or a count may sit inside it, so it is not only text. */
   title?: ReactNode;
@@ -30,6 +31,8 @@ export function Box({
   testId?: string;
   /** Off when the content brings its own rows edge to edge, as a list does. */
   padded?: boolean;
+  /** A heading that reads as the title of a section of the page rather than as a quiet label above its content. */
+  strong?: boolean;
 }) {
   const headingId = useId();
   return (
@@ -41,7 +44,13 @@ export function Box({
       {(title || aside || actions) && (
         <header className="mb-3 flex flex-wrap items-baseline justify-between gap-3">
           {title && (
-            <h2 id={headingId} className="m-0 text-base font-medium text-secondary">
+            <h2
+              id={headingId}
+              className={cn(
+                "m-0",
+                strong ? "text-lg font-semibold text-text" : "text-base font-medium text-secondary",
+              )}
+            >
               {title}
             </h2>
           )}

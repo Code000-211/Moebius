@@ -278,6 +278,13 @@ impl Repos {
         git_with_config(clone, &args, &auth_config(auth)).map(drop)
     }
 
+    /// Fetches one `refspec` from `origin` (a pull request's head into a local branch, say), with `auth` as an extra
+    /// HTTP header if the remote needs one.
+    pub fn fetch_ref(&self, clone: &Path, auth: Option<&str>, refspec: &str) -> Result<()> {
+        let args = ["fetch", "--quiet", "origin", refspec];
+        git_with_config(clone, &args, &auth_config(auth)).map(drop)
+    }
+
     /// The branches the repository at `url` has, asked with `git ls-remote` from `dir`; an empty repository has none,
     /// and one that cannot be reached is an error.
     pub fn remote_branches(

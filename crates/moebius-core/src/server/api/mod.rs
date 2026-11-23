@@ -42,6 +42,7 @@
 //! - `session`: signing in from a browser with a cookie, and the one-time codes that open the web app signed in.
 //! - `people`: the people of the organisation, and the access tokens they sign in with.
 //! - `favourites`: what a person pins to the sidebar and what they opened lately, kept for them on the server.
+//! - `logins`: a person's logins on the forges, kept for them so that taking an issue assigns them there.
 //! - `preferences`: what a person chose for themselves in the web app, kept for them on the server.
 //! - `roles`: the role of the organisation each route needs, and whether an agent's run token may use it.
 //! - `web`: the web app itself, served at `/` without a token.
@@ -77,6 +78,7 @@ mod issues;
 mod jira;
 mod kinds;
 mod lessons;
+mod logins;
 mod milestones;
 mod notices;
 mod outgoing;
@@ -290,6 +292,7 @@ pub fn router(state: ApiState) -> Router {
         .merge(session::routes())
         .merge(people::routes())
         .merge(favourites::routes())
+        .merge(logins::routes())
         .merge(preferences::routes())
         .fallback(web::fallback)
         .layer(middleware::from_fn_with_state(state.clone(), authenticate))

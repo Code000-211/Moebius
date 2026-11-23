@@ -23,7 +23,7 @@ These pages are for people and agents who change how Moebius behaves without cha
 reads them too: they are its `moebius` skill.
 
 - [The guide](guide/README.md): one task per page, such as column scripts, the Kanban, rules, agents, extensions,
-  plugins, the command line and the desktop API. Every example in it is run by a test.
+  plugins, the command line, the desktop API and working with people on other servers. Every example in it is run by a test.
 - [The reference](reference/): the exact contracts, one page each:
   [column scripts](reference/column-scripts.md), [rules](reference/rules.md),
   [configuration](reference/configuration.md), [command line](reference/cli.md),

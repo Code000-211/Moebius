@@ -27,7 +27,8 @@ script that compares `card.column` with `"Ready"` must compare it with `"Not sta
 The board engine runs the script of a card's column for every card on every tick (`board.tick_ms`, default 2 seconds).
 After a script moved the card, it runs the script of the new column at once, and so on until a script leaves the card
 where it is (at most twelve more runs in one tick). A card in `Done` is skipped once every judgement
-made for it has an outcome.
+made for it has an outcome. A card that follows a pull request someone else opened (see [Working with people on other
+servers](desktop-api.md#working-with-people-on-other-servers)) has no script run while that request is open, as a held card has none.
 
 A tick leaves a card alone when its last script did nothing (the card stayed in its column and no run started), the
 card has no open change, nothing at all was written to the store since that script began (a card, label, run, change,
@@ -73,6 +74,7 @@ end
 | `card.merged` | boolean | True when a change of the card was merged. A card is in `Done` because its change was merged, or because its issue was closed (by a person, a script or the forge), which is when this is false. |
 | `card.labels` | table (array of strings) | The issue's labels, in order; empty when it has none. |
 | `card.claimed_by` | string or nil | Who claimed the issue (`person`, `person:<handle>`, `agent:<name>` or a name a session gave), or nil. |
+| `card.taken_by` | string or nil | The forge login the issue is assigned to when that is none of this server's people's logins on that forge (compared without regard to case), without the `@`: someone on another server took the issue. nil otherwise. Read-only. `moebius.start_run` and `moebius.start_runs` start nothing for such a card, see below. |
 | `card.assignees` | table (array of strings) | The handles of the people the card is given to (see [Assignees](desktop-api.md#assignees)), without the `@`, in the order the people were added; empty (never nil) when it is no one's. A person who was disabled after being assigned stays in the list. Read-only. |
 | `card.priority` | string | How soon the card should be done: `urgent`, `high`, `medium`, `low` or `none`; never nil. It is the card's `priority:` label (see [Priority and due date](desktop-api.md#priority-and-due-date)). Read-only. |
 | `card.due` | string or nil | The day the card is due as `YYYY-MM-DD` (it sorts as text), from its `due:` label; nil when it has none. Read-only. |
@@ -159,7 +161,7 @@ has a blocking finding with evidence and `approve` otherwise; the review is `cha
 `card.review.findings` holds the blocking findings of both under the heading `Standards (...)` or `Spec (...)`, each
 with `Evidence:`. Judgement calls never send the card back; `card.review.judgements` holds them under the same headings.
 
-`moebius.start_run(agent, purpose, note, runner)` returns the run's id (a number), or nil when `run_limit` runs of cards are going: it then starts no run and the card waits with `the run limit is reached`, so a script that has nothing more to do returns at once (`if moebius.start_run(...) == nil then return end`) and is run again when a run ends. Only runs of cards count; chats and workflow runs do not.
+`moebius.start_run(agent, purpose, note, runner)` returns the run's id (a number), or nil when `run_limit` runs of cards are going: it then starts no run and the card waits with `the run limit is reached`, so a script that has nothing more to do returns at once (`if moebius.start_run(...) == nil then return end`) and is run again when a run ends. It also returns nil and starts nothing, with no error, for a card this server leaves alone: one whose `card.taken_by` is set, which waits with `taken by @<login>`, or, in a repository whose `agents_take` is `labelled` (see [`PUT /v1/repositories/{id}`](desktop-api.md#put-v1repositoriesid)), one whose issue lacks the label, that nobody of this server took and that has no run yet, which waits with `waiting for the label "<label>" (this repository's agents take only labelled issues nobody took)`. When it starts a run, the person it is for is assigned to the issue on the forge (see [Working with people on other servers](desktop-api.md#working-with-people-on-other-servers)). Only runs of cards count; chats and workflow runs do not.
 : Starts a run of the agent named `agent` (an `[agents.<name>]` table of the configuration) for this card in a new
 worktree on a new branch `moebius/run-<id>`. The branch starts at the branch of the card's latest successful `code`
 run, so the run sees the work so far, or at the repository's default branch when the card has none. `purpose` is any
@@ -310,7 +312,7 @@ a model class (see [router](router.md)), used in turn, the first for the first a
 of the agent's own `model`; `note`, text added to the prompt of every attempt as `moebius.start_run` adds its note;
 `runner`, the name of a runner, as for `moebius.start_run`. The attempts are recorded as one group, in `card.attempts`.
 The call returns once the runs are started. Raises an error for another `n`, and for the errors of
-`moebius.start_run`, but attempts start only while the run limit has a free slot: as many as fit, and none (an empty array, the card waiting with `the run limit is reached`) when none does. When one run cannot be started after others were, the error names the runs that were started, and
+`moebius.start_run`, but attempts start only while the run limit has a free slot: as many as fit, and none (an empty array, the card waiting with `the run limit is reached`) when none does. For a card this server leaves alone (see `moebius.start_run`) it starts none and returns an empty array, the card waiting with the same reason. When one run cannot be started after others were, the error names the runs that were started, and
 they stay attempts of the card. The harness refuses a model it cannot give (`this harness cannot choose the model of
 a run`). The time this call takes does not count against the time limit.
 
@@ -449,7 +451,7 @@ configuration and no repository, and it stores and starts nothing.
 | `--title` | `A card to check the script with` | The card's `title`. |
 | `--author` | `person:owner` | The card's `author`. `card.trusted` is true only for a person (`person:<handle>`, or `person` on a record from before people), as on a repository without a forge. |
 
-The made-up card has `id` and `number` 1, an empty `body`, `blocked_by`, `children` and `labels` empty, no `parent` or `claimed_by`, `assignees` empty, `priority` `none`, no `due`, no `estimate`, `kind` nil, `fields` empty, `merged` false, `rounds`, `reviews` and `tokens` 0, and
+The made-up card has `id` and `number` 1, an empty `body`, `blocked_by`, `children` and `labels` empty, no `parent`, `claimed_by` or `taken_by`, `assignees` empty, `priority` `none`, no `due`, no `estimate`, `kind` nil, `fields` empty, `merged` false, `rounds`, `reviews` and `tokens` 0, and
 `stopped` and `test_first` false, and `attempts` empty. It has no `note`, `change`, `run`, `review` or `selection`. The `moebius` table has every constant and function of
 this page, but records its calls instead of acting:
 

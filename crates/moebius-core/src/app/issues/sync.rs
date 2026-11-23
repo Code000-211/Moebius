@@ -280,6 +280,7 @@ impl App {
             self.forge_saw(card, "labels", &text(&labels))?;
         }
 
+        self.sync_forge_assignees(card, issue)?;
         self.sync_blockers(card, &issue.body, issue.blocked_by.as_deref())?;
         self.sync_comments(card, issue)
     }
