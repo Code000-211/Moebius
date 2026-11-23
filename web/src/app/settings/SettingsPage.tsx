@@ -32,6 +32,7 @@ import {
 import { AreaTitle, Code, Section, ValueRow } from "./parts";
 import { RestartBanner } from "./RestartBanner";
 import { WebhooksBox } from "./Webhooks";
+import { WikiBox } from "./WikiBox";
 
 type Outcome = { tone: "ok" | "error"; text: string } | null;
 
@@ -133,6 +134,7 @@ function SettingsForm({ initial }: { initial: ServerSettings }) {
             </Section>
           ))}
           <WebhooksBox />
+          <WikiBox />
           <ThisServer
             info={info.data}
             pending={info.isPending}

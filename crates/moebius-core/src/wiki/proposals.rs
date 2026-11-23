@@ -126,15 +126,19 @@ impl Wiki {
                 &["rev-parse", "--verify", &format!("{branch}^{{commit}}")],
             )
             .map_err(|_| AppError::NotFound(format!("the branch {branch} of the proposal")))?;
-            let header = app.git_auth(&self.url)?;
+            let url = self.url();
+            let header = match &url {
+                Some(url) => app.git_auth(url)?,
+                None => None,
+            };
             let title = item.title.trim_start_matches("Wiki: ");
             let default = self.repos.default_branch(&self.path)?;
             self.repos
                 .merge(&self.path, &tip, &format!("Merge the proposal: {title}"))?;
-            if let Err(e) = self
-                .repos
-                .push(&self.path, &default, header.as_deref(), false)
-            {
+            if let Err(e) = url.as_ref().map_or(Ok(()), |_| {
+                self.repos
+                    .push(&self.path, &default, header.as_deref(), false)
+            }) {
                 if let Some(before) = &before {
                     let _ = git(&self.path, &["reset", "--hard", "--quiet", before]);
                 }
@@ -318,7 +322,12 @@ mod tests {
         let app = App::new(store, host, &dir.join("data"));
         let origin = bare_origin(dir);
         push_from_elsewhere(dir, &origin, "Setup.md", "# Setup\n");
-        let wiki = Wiki::open(&app, &origin.to_string_lossy(), &dir.join("data/wiki")).unwrap();
+        let wiki = Wiki::open(
+            &app,
+            Some(&origin.to_string_lossy()),
+            &dir.join("data/wiki"),
+        )
+        .unwrap();
         (app, wiki, origin)
     }
 

@@ -1,6 +1,13 @@
 //! The wiki (see [`crate::wiki`]): its pages listed, read, written, moved and deleted, and a page's history. A page is
-//! named by its path without `.md`; every route answers `409` while the server has no `[wiki]`.
+//! named by its path without `.md`; every route but the status answers `409`, with the reason, while the server could
+//! not open its wiki. A wiki with no `[wiki] url` is kept on this server only.
 //!
+//! - `GET /v1/wiki/status`: how the wiki is kept, `{state, url?, problem?}`, `state` being `local` (on this server
+//!   only), `remote` (in the git repository `url`, which has no user name and password here) or `unavailable` (see
+//!   `problem`).
+//! - `PUT /v1/wiki/repository` `{url}`: an owner connects a git repository to a wiki kept on this server only, with no
+//!   restart: it must be reachable and either empty (the wiki's history is pushed to it) or hold pages while the wiki
+//!   has none; `409` when both have pages. Writes `[wiki] url`. Answers the status.
 //! - `GET /v1/wiki/pages`: every page, `[{path, name}]`, sorted by path.
 //! - `GET /v1/wiki/pages/{*path}`: a page, `?at=<commit>` for an older version of it.
 //! - `PUT /v1/wiki/pages/{*path}` `{text, message?, base?}`: writes a page, making it if it is not there; with `base`
@@ -18,7 +25,7 @@
 use axum::extract::{Path as UrlPath, Query, State};
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
-use axum::routing::{get, post};
+use axum::routing::{get, post, put};
 use axum::{Extension, Json, Router};
 use serde::Deserialize;
 
@@ -49,6 +56,8 @@ pub(super) fn routes() -> Router<ApiState> {
         .route("/v1/wiki/search", get(search))
         .route("/v1/wiki/links/{*path}", get(links))
         .route("/v1/wiki/cards/{key}", get(card_pages))
+        .route("/v1/wiki/status", get(status))
+        .route("/v1/wiki/repository", put(connect))
         .route("/v1/wiki/refresh", post(refresh))
         .route("/v1/wiki/proposals", post(propose))
         .route("/v1/wiki/proposals/{id}/merge", post(merge_proposal))
@@ -339,7 +348,79 @@ mod tests {
         let token = state.token.to_string();
         let (status, body) = call("GET", &addr, &token, "/v1/wiki/pages", None).await;
         assert_eq!(status, Status::CONFLICT);
-        assert!(body.to_string().contains("[wiki]"), "{body}");
+        assert!(body.to_string().contains("no wiki"), "{body}");
+    }
+
+    #[tokio::test]
+    async fn the_status_tells_how_the_wiki_is_kept_and_an_owner_connects_a_repository() {
+        let (dir, state, addr) = start().await;
+        let token = state.token.to_string();
+        let (status, body) = call("GET", &addr, &token, "/v1/wiki/status", None).await;
+        assert_eq!(status, Status::OK);
+        assert_eq!(body["state"], "unavailable");
+        let wiki = Wiki::open(&state.app, None, &dir.path().join(".moebius/wiki")).unwrap();
+        state.app.set_wiki(Arc::new(wiki));
+        let lea = state
+            .app
+            .store
+            .add_person("lea", "Lea Roth", Role::Member)
+            .unwrap();
+        let member = format!("{}{:064}", super::super::TOKEN_PREFIX, 4);
+        state
+            .app
+            .store
+            .add_access_token(lea.id, "test", &member)
+            .unwrap();
+
+        // Pages are made at once, with no repository.
+        let (status, _) = call(
+            "PUT",
+            &addr,
+            &member,
+            "/v1/wiki/pages/Onboarding",
+            Some(json!({ "text": "Welcome.\n" })),
+        )
+        .await;
+        assert_eq!(status, Status::OK);
+        let (_, body) = call("GET", &addr, &member, "/v1/wiki/status", None).await;
+        assert_eq!(
+            body,
+            json!({"state": "local", "url": null, "problem": null})
+        );
+
+        let origin = bare_origin(dir.path());
+        let url = json!({ "url": origin.to_string_lossy() });
+        let (status, _) = call(
+            "PUT",
+            &addr,
+            &member,
+            "/v1/wiki/repository",
+            Some(url.clone()),
+        )
+        .await;
+        assert_eq!(status, Status::FORBIDDEN, "a member does not connect it");
+        let (status, body) = call(
+            "PUT",
+            &addr,
+            &token,
+            "/v1/wiki/repository",
+            Some(url.clone()),
+        )
+        .await;
+        assert_eq!(status, Status::OK, "{body}");
+        assert_eq!(body["state"], "remote");
+        assert_eq!(body["url"], origin.to_string_lossy().as_ref());
+        let (status, body) = call("PUT", &addr, &token, "/v1/wiki/repository", Some(url)).await;
+        assert_eq!(status, Status::CONFLICT, "{body}");
+        let (status, body) = call(
+            "PUT",
+            &addr,
+            &token,
+            "/v1/wiki/repository",
+            Some(json!({"url": ""})),
+        )
+        .await;
+        assert_eq!(status, Status::UNPROCESSABLE_ENTITY, "{body}");
     }
 
     #[tokio::test]
@@ -348,7 +429,7 @@ mod tests {
         let origin = bare_origin(dir.path());
         let wiki = Wiki::open(
             &state.app,
-            &origin.to_string_lossy(),
+            Some(&origin.to_string_lossy()),
             &dir.path().join("data/wiki"),
         )
         .unwrap();
@@ -438,7 +519,7 @@ mod tests {
         let origin = bare_origin(dir.path());
         let wiki = Wiki::open(
             &state.app,
-            &origin.to_string_lossy(),
+            Some(&origin.to_string_lossy()),
             &dir.path().join("data/wiki"),
         )
         .unwrap();
@@ -501,7 +582,7 @@ mod tests {
         let origin = bare_origin(dir.path());
         let wiki = Wiki::open(
             &state.app,
-            &origin.to_string_lossy(),
+            Some(&origin.to_string_lossy()),
             &dir.path().join("data/wiki"),
         )
         .unwrap();
@@ -630,7 +711,7 @@ mod tests {
         push_from_elsewhere(dir.path(), &origin, "Setup.md", "# Setup\n");
         let wiki = Wiki::open(
             &state.app,
-            &origin.to_string_lossy(),
+            Some(&origin.to_string_lossy()),
             &dir.path().join("data/wiki"),
         )
         .unwrap();
@@ -725,7 +806,7 @@ mod tests {
         let origin = bare_origin(dir.path());
         let wiki = Wiki::open(
             &state.app,
-            &origin.to_string_lossy(),
+            Some(&origin.to_string_lossy()),
             &dir.path().join("data/wiki"),
         )
         .unwrap();
@@ -779,7 +860,7 @@ mod tests {
         let origin = bare_origin(dir.path());
         let wiki = Wiki::open(
             &state.app,
-            &origin.to_string_lossy(),
+            Some(&origin.to_string_lossy()),
             &dir.path().join("data/wiki"),
         )
         .unwrap();
@@ -958,4 +1039,26 @@ mod tests {
         let (_, listed) = call("GET", &addr, &agent, "/v1/wiki/pages", None).await;
         assert_eq!(listed, json!([{"path": "Home", "name": "Home"}]));
     }
+}
+
+async fn status(State(state): State<ApiState>) -> Json<crate::wiki::Status> {
+    Json(state.app.wiki_status())
+}
+
+/// What `PUT /v1/wiki/repository` takes.
+#[derive(Debug, Deserialize)]
+struct Repository {
+    url: String,
+}
+
+async fn connect(
+    State(state): State<ApiState>,
+    Extension(by): Extension<Actor>,
+    Json(repository): Json<Repository>,
+) -> Result<Json<crate::wiki::Status>, ApiError> {
+    let live = state.config.clone();
+    blocking(&state.app, move |app| {
+        live.connect_wiki(app, &by, &repository.url)
+    })
+    .await
 }

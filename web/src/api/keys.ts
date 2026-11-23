@@ -40,6 +40,7 @@ export const keys = {
   /** Everything read from the wiki starts with this, so `wiki_changed` makes all of it stale. */
   wiki: ["wiki"] as const,
   wikiPages: ["wiki", "pages"] as const,
+  wikiStatus: ["wiki", "status"] as const,
   wikiPage: (path: string, at: string | null) => ["wiki", "page", path, at] as const,
   wikiHistory: (path: string) => ["wiki", "history", path] as const,
   wikiSearch: (query: string) => ["wiki", "search", query] as const,

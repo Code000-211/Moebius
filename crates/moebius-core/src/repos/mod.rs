@@ -278,6 +278,23 @@ impl Repos {
         git_with_config(clone, &args, &auth_config(auth)).map(drop)
     }
 
+    /// The branches the repository at `url` has, asked with `git ls-remote` from `dir`; an empty repository has none,
+    /// and one that cannot be reached is an error.
+    pub fn remote_branches(
+        &self,
+        dir: &Path,
+        url: &str,
+        auth: Option<&str>,
+    ) -> Result<Vec<String>> {
+        let args = ["ls-remote", "--heads", "--", url];
+        let listed = git_with_config(dir, &args, &auth_config(auth))?;
+        Ok(listed
+            .lines()
+            .filter_map(|line| line.split_once("refs/heads/"))
+            .map(|(_, name)| name.to_string())
+            .collect())
+    }
+
     /// The URL of the clone's remote `origin`.
     pub fn origin_url(&self, clone: &Path) -> Result<String> {
         git(clone, &["remote", "get-url", "origin"])

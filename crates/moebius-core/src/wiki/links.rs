@@ -590,7 +590,12 @@ mod tests {
             let host = Arc::new(Host::new(Duration::from_secs(5)));
             let app = App::new(store, host, &dir.join("data"));
             let origin = bare_origin(dir);
-            let wiki = Wiki::open(&app, &origin.to_string_lossy(), &dir.join("data/wiki")).unwrap();
+            let wiki = Wiki::open(
+                &app,
+                Some(&origin.to_string_lossy()),
+                &dir.join("data/wiki"),
+            )
+            .unwrap();
             (app, wiki, origin)
         }
 

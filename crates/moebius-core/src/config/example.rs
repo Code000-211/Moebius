@@ -230,8 +230,9 @@ program = "claude"
 # url = "https://github.com/acme/harness-configuration"
 # mcp_env = ["DOCS_TOKEN"]               # the environment variables mcp.toml may take values from, as ${NAME}
 
-# The wiki: a git repository of Markdown pages, the organisation's at the top and a project's in projects/<key>/,
-# cloned to data_dir/wiki. An edit on the Wiki page is a commit by its person, pushed to it.
+# The wiki: Markdown pages, the organisation's at the top and a project's in projects/<key>/. Without a url they are a
+# git repository of their own in data_dir/wiki, which works at once: an edit on the Wiki page is a commit by its person.
+# Name a git repository to keep them there too; an owner can also connect one on the Wiki page, which writes this.
 # [wiki]
 # url = "https://github.com/acme/wiki"
 

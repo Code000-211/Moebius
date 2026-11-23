@@ -1,5 +1,8 @@
 # The wiki is a git repository
 
+> Amended by [0026](0026-the-wiki-works-before-it-has-a-remote.md): `[wiki] url` is optional, and a wiki without one is a
+> repository on the server that a git repository can be connected to later.
+
 Teams keep what they know beside their work: how a service is built, a runbook, who is on call. A project
 ([0019](0019-a-project-is-a-board-over-any-repositories.md)) is to hold that as a wiki, the organisation's pages and a
 folder per project, which people read and edit on the Wiki page and agents read when they work on a card. This record

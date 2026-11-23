@@ -325,6 +325,24 @@ mod tests {
     }
 
     #[test]
+    fn a_table_that_is_not_in_the_file_is_made_after_the_tables_that_are_not_into_one_of_them() {
+        // The comments after the last key of `[harness]` are the start of the next table's text, not part of `[harness]`.
+        let text = "run_limit = 2\n\n[harness]\nurl = \"/srv/h.git\"\nmcp_env = [\"A\"]\n\n# The wiki, if there is one.\n# [wiki]\n# url = \"/w\"\n\n# Agents.\n# [agents.Coder]\n";
+        let edited = edit(text, &changes(json!({"wiki.url": "/srv/wiki.git"}), &[])).unwrap();
+        let config = parse(&edited).unwrap();
+        assert_eq!(config.wiki_url.as_deref(), Some("/srv/wiki.git"));
+        assert_eq!(config.harness_url.as_deref(), Some("/srv/h.git"));
+        assert_eq!(config.mcp_env, ["A"]);
+        let harness = edited.find("[harness]").unwrap();
+        let wiki = edited.find("\n[wiki]").unwrap();
+        assert!(harness < wiki, "{edited}");
+        assert!(
+            !edited[harness..wiki].contains("url = \"/srv/wiki.git\""),
+            "{edited}"
+        );
+    }
+
+    #[test]
     fn a_removed_table_or_key_is_gone_and_one_that_is_not_there_is_ignored() {
         let text = "run_limit = 2\n\n[teacher]\nmodel = \"m\"\n\n[board]\ntick_ms = 100\nround_limit = 2\n\n[[router.upstreams]]\nprotocol = \"openai\"\nbase_url = \"http://a\"\n\n[[router.upstreams]]\nprotocol = \"anthropic\"\nbase_url = \"http://b\"\n";
         let edited = edit(

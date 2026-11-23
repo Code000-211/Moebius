@@ -117,6 +117,8 @@ keep their rows: the role is checked before the `410`.
 | `GET /v1/wiki/search` | viewer | yes |
 | `GET /v1/wiki/links/{*path}` | viewer | yes |
 | `GET /v1/wiki/cards/{key}` | viewer | yes |
+| `GET /v1/wiki/status` | viewer | yes |
+| `PUT /v1/wiki/repository` | owner | no |
 | `POST /v1/wiki/refresh` | member | yes |
 | `POST /v1/wiki/proposals` | member | yes |
 | `POST /v1/wiki/proposals/{id}/merge` | member | no |
@@ -1021,8 +1023,30 @@ removed.
 ### The wiki
 
 The wiki ([ADR 0022](../adr/0022-the-wiki-is-a-git-repository.md)) is a git repository of Markdown pages that the
-server clones from `[wiki] url` (see [configuration](configuration.md#wiki)) and keeps in step with its `origin`. Every
-route here answers `409` (`the server has no wiki: set [wiki] url in moebius.toml`) while the server has none.
+server keeps at `<data_dir>/wiki`: a repository of its own, or, with `[wiki] url` (see
+[configuration](configuration.md#wiki)), a clone kept in step with its `origin` ([ADR
+0026](../adr/0026-the-wiki-works-before-it-has-a-remote.md)). Without a `url` every route works and nothing is pushed or
+followed (`POST /v1/wiki/refresh` does nothing). Every route but the two below answers `409` with the reason
+(`the server has no wiki: <why>`) while the server started without a wiki, as when its `url` could not be cloned.
+
+### `GET /v1/wiki/status`
+
+How the wiki is kept: `{"state", "url", "problem"}`. `state` is `local` (on this server only), `remote` (in the git
+repository `url`, shown without a user name and password) or `unavailable` (the server started without a wiki, for the
+`problem`). `url` is null unless `remote`, and `problem` null unless `unavailable`.
+
+### `PUT /v1/wiki/repository`
+
+An owner (a person, not an agent) connects the git repository `{"url"}` to a wiki kept on this server only, with no
+restart. The server asks the repository for its branches (`422` when it cannot be reached or the address is blank). An
+empty repository gets the wiki's history pushed to it (`409` when it refuses the push). A repository that has pages
+becomes the wiki when this one has none. When both have pages it is accepted only if this wiki's history extends
+the repository's (it is a copy of an earlier state of it, as after a failed earlier attempt or when the wiki was
+cloned from it before its `[wiki] url` was removed), and is brought up to date; otherwise `409`: Moebius never merges
+two histories. A request that fails after the wiki was connected, as when `moebius.toml` cannot be written, puts the
+wiki back as it was, so it can be made again. `409` too when the wiki is kept in a repository already. Then `wiki.url` is written to `moebius.toml` and the
+wiki follows the repository and pushes to it; edits are pushed from then on. A server that started without a wiki opens
+it from the repository. Response: the status, as above. Recorded as the action `connect_wiki`.
 
 A page is named by its **path**, its file's path in the repository without `.md`: `Handbook`, `Team/On call`. The
 organisation's pages are at the top; a project's are in `projects/<key>/`, the folder of its [key](#projects), such as
@@ -3386,12 +3410,13 @@ same five, in the order a person takes them. Response:
   OAuth, `<url> logs in with OAuth.` followed by the warning about the provider's terms. `moebius doctor` writes them
   after the steps.
 - `pending` lists what waits and holds nobody back from a first card, in the shape of a step with `done` false. Today
-  that is one item, with the key `workflow`, for each workflow file in the server-wide `workflows/` folder that the
+  that is an item with the key `workflow` for each workflow file in the server-wide `workflows/` folder that the
   [migration to projects](harness-configuration.md#workflows-of-a-project) could not move: the title is `Move the
   workflow <name> to a project`, the detail says why (no project exists yet, only private projects exist for a workflow
   that names no repository, the file cannot be read, or its project has a workflow of that name already). It is tried
-  again at every start, so the item goes when the cause does. `moebius doctor` writes the pending items after the
-  warnings.
+  again at every start, so the item goes when the cause does. A wiki the server could not open at start is one more,
+  with the key `wiki` and the title `Open the wiki`; the detail gives the reason. `moebius doctor` writes the pending
+  items after the warnings.
 
 ### `GET /v1/plugins`
 

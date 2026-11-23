@@ -48,6 +48,7 @@ export function StartPage() {
     onSettled: () => void queryClient.invalidateQueries({ queryKey: keys.start }),
   });
   const steps = answer.data?.steps ?? [];
+  const pending = answer.data?.pending ?? [];
   const next = steps.find((step) => !step.done);
   const warnings = answer.data?.warnings ?? [];
   // A warning is an error the server reports with the steps; each is told once, by a toast.
@@ -128,6 +129,30 @@ export function StartPage() {
             );
           })}
         </ol>
+      )}
+      {pending.length > 0 && (
+        <section aria-label="Waiting" className="mt-6 flex flex-col">
+          <h3 className="m-0 px-4 pb-2 text-base font-semibold text-text">Waiting</h3>
+          <ul className="m-0 flex list-none flex-col p-0">
+            {pending.map((step) => (
+              <li
+                key={`${step.key}:${step.title}`}
+                data-testid="start-pending"
+                className="flex min-h-9 items-center gap-2.5 border-b border-hairline px-4 py-2 text-base"
+              >
+                <span className="flex min-w-0 flex-1 flex-col">
+                  <span className="break-words font-medium text-text">{step.title}</span>
+                  <span className="break-words text-sm text-muted">{step.detail}</span>
+                </span>
+                {step.key === "wiki" && (
+                  <Button asChild size="sm" variant="secondary">
+                    <Link to="/wiki">Open Wiki</Link>
+                  </Button>
+                )}
+              </li>
+            ))}
+          </ul>
+        </section>
       )}
     </>
   );

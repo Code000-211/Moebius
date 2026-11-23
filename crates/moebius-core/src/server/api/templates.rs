@@ -316,7 +316,7 @@ mod tests {
         let origin = bare_origin(dir.path());
         let wiki = Wiki::open(
             &state.app,
-            &origin.to_string_lossy(),
+            Some(&origin.to_string_lossy()),
             &dir.path().join("data/wiki"),
         )
         .unwrap();

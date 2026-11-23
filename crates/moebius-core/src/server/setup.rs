@@ -211,7 +211,8 @@ pub struct Start {
     pub warnings: Vec<String>,
     /// What waits for something to be done, though it holds nobody back from a first card: a server-wide workflow
     /// file that no project can take yet (key `workflow`, its name in the title and why in the detail; ADR 0025). Each
-    /// is `done: false`, and none is counted in `done`.
+    /// is `done: false`, and none is counted in `done`. The same holds for key `wiki`, a wiki the server could not open
+    /// at start, with the reason in the detail (ADR 0026).
     #[serde(default)]
     pub pending: Vec<StartStep>,
 }
@@ -301,6 +302,7 @@ pub async fn start(
     agents: &[AgentInfo],
     repositories: usize,
     awaiting_a_project: Vec<(String, String)>,
+    wiki_problem: Option<String>,
 ) -> Start {
     let program = config.pi_bolt.clone();
     let pi_bolt = tokio::task::spawn_blocking(move || pi_bolt_runs(&program))
@@ -357,6 +359,15 @@ pub async fn start(
             )
         })
         .collect();
+    // A wiki that could not be opened holds nobody back from a first card, but its pages are out of reach until it is.
+    let wiki = wiki_problem.into_iter().map(|problem| StartStep {
+        key: "wiki".into(),
+        title: "Open the wiki".into(),
+        done: false,
+        detail: format!(
+            "The server started without its wiki: {problem}. Fix [wiki] url in moebius.toml, or connect a repository on the Wiki page."
+        ),
+    });
     let pending = awaiting_a_project
         .into_iter()
         .map(|(workflow, reason)| StartStep {
@@ -367,6 +378,7 @@ pub async fn start(
                 "The file workflows/{workflow}.toml stays where it is: {reason}. It is tried again at every start."
             ),
         })
+        .chain(wiki)
         .collect();
     Start {
         done: steps.iter().all(|s| s.done),
@@ -419,13 +431,34 @@ mod tests {
             (Flow::Code, true, TERMS_WARNING.to_string())
         );
         assert!(!models.upstreams[0].api_key_set);
-        let start = start(&config, AvailableModels::default(), &[], 0, vec![]).await;
+        let start = start(&config, AvailableModels::default(), &[], 0, vec![], None).await;
         assert_eq!(
             start.warnings,
             [format!(
                 "https://api.example.com logs in with OAuth. {TERMS_WARNING}"
             )]
         );
+    }
+
+    #[tokio::test]
+    async fn a_wiki_that_could_not_be_opened_waits_in_the_start_and_holds_nothing_back() {
+        let config = Config::parse(
+            "[pi_bolt]\nprogram = \"/nonexistent/pi-bolt\"\n",
+            Path::new("/srv"),
+            Path::new("/srv/moebius.toml"),
+        )
+        .unwrap();
+        let said = Some("cannot clone the wiki: no route".to_string());
+        let without = start(&config, AvailableModels::default(), &[], 0, vec![], None).await;
+        let with = start(&config, AvailableModels::default(), &[], 0, vec![], said).await;
+        assert!(without.pending.is_empty());
+        assert_eq!(with.done, without.done);
+        assert_eq!(with.steps, without.steps);
+        let [wiki] = &with.pending[..] else {
+            panic!("{:?}", with.pending)
+        };
+        assert_eq!((wiki.key.as_str(), wiki.done), ("wiki", false));
+        assert!(wiki.detail.contains("cannot clone the wiki: no route"));
     }
 
     #[test]

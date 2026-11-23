@@ -57,3 +57,14 @@ export interface PageLinks {
   links: { pages: PageLink[]; cards: CardRef[] };
   backlinks: { pages: PageInfo[]; cards: CardRef[] };
 }
+
+/**
+ * `GET /v1/wiki/status`: how the server keeps its wiki. `local` is a repository on the server only, `remote` one that
+ * is pushed to and followed from the git repository `url` (without a user name and password), `unavailable` a wiki the
+ * server could not open at start, for the `problem`.
+ */
+export interface WikiStatus {
+  state: "local" | "remote" | "unavailable";
+  url: string | null;
+  problem: string | null;
+}
