@@ -1,23 +1,33 @@
 /**
  * The tree at the left of the Wiki page: the organisation's pages, then a folder for each project under its name, each
- * folder opened or closed with a click, and "New page" at the foot of a group to write one there. The chosen page is
- * marked and the folders above it are open, so that a page reached by its address shows where it sits.
+ * folder (a category of its pages, with how many it holds) opened or closed with a click, and "New page" at the foot of
+ * a group to write one there. The chosen page is marked and the folders above it are open, so that a page reached by its
+ * address shows where it sits; while labels filter the tree every category that is left is open. The project's Wiki tab
+ * draws only its own group (`organisation={false}`).
  */
 import { CaretDownIcon, CaretRightIcon, FileTextIcon, PlusIcon } from "@phosphor-icons/react";
 import { useState } from "react";
 import { cn } from "../../ui/lib/cn";
 import { foldersOf, PROJECTS, type WikiTree as Tree, type TreeNode } from "./model";
 
+const NO_MATCH = "No page has these labels.";
+
 export function WikiTree({
   tree,
   chosen,
   canWrite,
+  organisation = true,
+  filtered = false,
   onChoose,
   onNew,
 }: {
   tree: Tree;
   chosen: string | null;
   canWrite: boolean;
+  /** Whether the organisation's own group is drawn. */
+  organisation?: boolean;
+  /** Whether labels narrow the tree, which opens its categories and changes what an empty group says. */
+  filtered?: boolean;
   onChoose: (path: string) => void;
   /** Starts a new page in the folder, empty at the top. */
   onNew: (folder: string) => void;
@@ -25,7 +35,7 @@ export function WikiTree({
   // A folder is open when it was opened, or when the chosen page is in it.
   const [toggled, setToggled] = useState<Record<string, boolean>>({});
   const above = new Set(chosen ? foldersOf(chosen) : []);
-  const isOpen = (path: string) => toggled[path] ?? above.has(path);
+  const isOpen = (path: string) => toggled[path] ?? (filtered || above.has(path));
   const toggle = (path: string) => setToggled((now) => ({ ...now, [path]: !isOpen(path) }));
   const rows = (nodes: TreeNode[], depth: number) =>
     nodes.map((node) => (
@@ -41,13 +51,15 @@ export function WikiTree({
     ));
   return (
     <nav aria-label="Pages of the wiki" className="flex flex-col gap-3">
-      <Group label="Organisation" onNew={canWrite ? () => onNew("") : undefined}>
-        {tree.organisation.length === 0 ? (
-          <p className="m-0 px-3 text-sm text-muted">No page yet.</p>
-        ) : (
-          rows(tree.organisation, 0)
-        )}
-      </Group>
+      {organisation && (
+        <Group label="Organisation" onNew={canWrite ? () => onNew("") : undefined}>
+          {tree.organisation.length === 0 ? (
+            <p className="m-0 px-3 text-sm text-muted">{filtered ? NO_MATCH : "No page yet."}</p>
+          ) : (
+            rows(tree.organisation, 0)
+          )}
+        </Group>
+      )}
       {tree.projects.map((project) => {
         const folder = `${PROJECTS}/${project.key}`;
         return (
@@ -57,7 +69,7 @@ export function WikiTree({
             onNew={canWrite ? () => onNew(folder) : undefined}
           >
             {project.nodes.length === 0 ? (
-              <p className="m-0 px-3 text-sm text-muted">No page yet.</p>
+              <p className="m-0 px-3 text-sm text-muted">{filtered ? NO_MATCH : "No page yet."}</p>
             ) : (
               rows(project.nodes, 0)
             )}
@@ -155,6 +167,7 @@ function Row({
       >
         <Caret className="size-[15px] shrink-0 text-muted" aria-hidden />
         <span className="min-w-0 truncate">{node.name}</span>
+        <span className="ml-auto shrink-0 text-xs tabular-nums text-muted">{node.count}</span>
       </button>
       {open && (
         // biome-ignore lint/a11y/noRedundantRoles: preflight takes the bullets off, and WebKit then drops the list

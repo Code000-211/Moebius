@@ -88,7 +88,9 @@ describe("the Wiki page", () => {
     // Moved to another folder, it keeps its history.
     await page.getByRole("button", { name: "Move" }).click();
     const dialog = page.getByRole("dialog", { name: "Move the page" });
-    await dialog.getByLabel("Path").fill("Handbook/On call");
+    await dialog.getByLabel("Category", { exact: true }).click();
+    await page.getByRole("menuitemradio", { name: "+ New category" }).click();
+    await dialog.getByLabel("Name of the new category").fill("Handbook");
     await dialog.getByRole("button", { name: "Move" }).click();
     await page.waitForURL(/page=Handbook%2FOn\+call/);
     await page.getByRole("button", { name: "History" }).click();
@@ -227,7 +229,7 @@ describe("the Wiki page", () => {
     // A rename keeps the link working.
     await onCall.getByRole("button", { name: "Move" }).click();
     const dialog = page.getByRole("dialog", { name: "Move the page" });
-    await dialog.getByLabel("Path").fill("Team/Rota");
+    await dialog.getByLabel("Name", { exact: true }).fill("Rota");
     await dialog.getByRole("button", { name: "Move" }).click();
     await page.waitForURL(/page=Team%2FRota/);
     await page

@@ -16,7 +16,7 @@ use std::sync::LazyLock;
 use regex::Regex;
 use serde::Serialize;
 
-use super::pages::{info, name_of};
+use super::pages::name_of;
 use super::{PageInfo, Seen, Wiki, file_of, project_key};
 use crate::app::{App, AppError, Result};
 use crate::decide::Actor;
@@ -320,7 +320,7 @@ impl Wiki {
     }
 
     /// The text of the page `path`, if it is there.
-    fn read(&self, path: &str) -> Option<String> {
+    pub(super) fn read(&self, path: &str) -> Option<String> {
         let file = file_of(path).ok()?;
         std::fs::read_to_string(self.inside(&file).ok()?).ok()
     }
@@ -398,7 +398,7 @@ impl Wiki {
                 .iter()
                 .any(|link| resolve(&paths, source, &link.target).as_deref() == Some(path));
             if leads_here {
-                pages.push(info(source.clone()));
+                pages.push(self.info_of(source.clone()));
             }
         }
         let mut cards = Vec::new();
@@ -439,7 +439,7 @@ impl Wiki {
             .wiki_links_to(WIKI_CARD, &format!("{project}-{number}"))?
             .into_iter()
             .filter(|source| seen.page(app, source))
-            .map(info)
+            .map(|source| self.info_of(source))
             .collect())
     }
 }

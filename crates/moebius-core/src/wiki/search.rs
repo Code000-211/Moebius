@@ -59,7 +59,12 @@ impl Wiki {
                 project: project_key(&info.path).map(str::to_string),
                 path: info.path,
                 title: info.name,
-                body: page.text,
+                // The labels are found like words of the text; the front matter itself is not shown in a snippet.
+                body: if page.labels.is_empty() {
+                    page.body
+                } else {
+                    format!("{}\n{}", page.labels.join(" "), page.body)
+                },
             });
         }
         app.store.replace_wiki_index(&head, &indexed)?;

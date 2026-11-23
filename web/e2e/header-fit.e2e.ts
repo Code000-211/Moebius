@@ -178,9 +178,9 @@ describe.skipIf(usesRealServer)("a one-row page header at every width", () => {
     expect(names.length).toBeGreaterThan(0);
     const last = names[names.length - 1] ?? "";
     // The last tab is the first to go, and is reached from the menu like from the row.
-    expect(last).toMatch(/Milestones|Intake/);
+    expect(last).toMatch(/Wiki|Intake/);
     await items.last().click();
-    await page.waitForURL(/\/projects\/1\/(milestones|intake)$/);
+    await page.waitForURL(/\/projects\/1\/(wiki|intake)$/);
     // The chosen tab, hidden, shows in More as the chosen one.
     await expect.poll(() => more.getAttribute("aria-selected")).toBe("true");
     await expect.poll(() => more.textContent()).toContain(last.replace(/\d+$/, "").trim());

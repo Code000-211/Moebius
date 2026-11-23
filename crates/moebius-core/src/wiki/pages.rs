@@ -3,7 +3,7 @@
 
 use serde::Serialize;
 
-use super::{EMAIL_DOMAIN, Wiki, file_of, literal, page_of};
+use super::{EMAIL_DOMAIN, Wiki, file_of, labels, literal, page_of};
 use crate::app::{AppError, Result};
 use crate::repos::{git, kept};
 
@@ -14,6 +14,8 @@ pub struct PageInfo {
     pub path: String,
     /// The last part of the path, which the page is called by.
     pub name: String,
+    /// The page's labels, from the front matter of its file; none for a page without any.
+    pub labels: Vec<String>,
 }
 
 /// A page as it is, or as one version had it.
@@ -21,8 +23,12 @@ pub struct PageInfo {
 pub struct PageView {
     pub path: String,
     pub name: String,
-    /// The Markdown text.
+    /// The page's file as it is, front matter included: what the editor shows and saves.
     pub text: String,
+    /// The text without its front matter: what is drawn.
+    pub body: String,
+    /// The labels in the front matter.
+    pub labels: Vec<String>,
     /// The last commit that changed the page, as of the version read.
     pub version: Version,
 }
@@ -64,7 +70,7 @@ impl Wiki {
             .lines()
             .filter(|file| self.inside(file).is_ok())
             .filter_map(page_of)
-            .map(info)
+            .map(|path| self.info_of(path))
             .collect();
         pages.sort_by(|a, b| a.path.cmp(&b.path));
         Ok(pages)
@@ -109,6 +115,8 @@ impl Wiki {
         Ok(PageView {
             path: path.to_string(),
             name: name_of(path).to_string(),
+            body: labels::body(&text).to_string(),
+            labels: labels::labels_of(&text),
             text,
             version,
         })
@@ -174,10 +182,18 @@ fn git_text(path: &std::path::Path, blob: &str) -> crate::repos::Result<String> 
     Ok(String::from_utf8_lossy(&bytes).into_owned())
 }
 
-pub(super) fn info(path: String) -> PageInfo {
-    PageInfo {
-        name: name_of(&path).to_string(),
-        path,
+impl Wiki {
+    /// The page `path` as the list shows it, with the labels of its file as it is now; the turn held.
+    pub(super) fn info_of(&self, path: String) -> PageInfo {
+        let labels = self
+            .read(&path)
+            .map(|text| labels::labels_of(&text))
+            .unwrap_or_default();
+        PageInfo {
+            name: name_of(&path).to_string(),
+            path,
+            labels,
+        }
     }
 }
 

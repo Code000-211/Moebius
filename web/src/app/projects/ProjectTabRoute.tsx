@@ -1,6 +1,6 @@
 /**
- * `/projects/:projectId/workflows|cycles|milestones|intake` (and `cycles/:cycleId`): a tab of a project. Workflows,
- * Cycles, Milestones and Intake are the tabs' own pages, each drawing the project's header.
+ * `/projects/:projectId/workflows|cycles|milestones|wiki|intake` (and `cycles/:cycleId`): a tab of a project. Workflows,
+ * Cycles, Milestones, Wiki and Intake are the tabs' own pages, each drawing the project's header.
  * An id that is no project says so, and so does the Intake address of a project that takes no requests.
  */
 import { useQuery } from "@tanstack/react-query";
@@ -18,6 +18,7 @@ import { CyclesTab } from "../cycles/CyclesTab";
 import { IntakeTab } from "../intake/IntakeTab";
 import { MilestonesTab } from "../milestones/MilestonesTab";
 import type { ProjectTab } from "../pages";
+import { WikiTab } from "../wiki/WikiTab";
 import { WorkflowsTab } from "../workflows/WorkflowsTab";
 import { boardRepositoryOf } from "./model";
 import { ProjectHeader } from "./ProjectHeader";
@@ -84,6 +85,8 @@ export function ProjectTabRoute({ tab }: { tab: ProjectTab }) {
         />
       ) : tab === "milestones" ? (
         <MilestonesTab key={project.id} project={project} onTerminal={onTerminal} />
+      ) : tab === "wiki" ? (
+        <WikiTab key={project.id} project={project} onTerminal={onTerminal} />
       ) : tab === "intake" ? (
         <IntakeTab key={project.id} project={project} onTerminal={onTerminal} />
       ) : (

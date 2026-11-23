@@ -218,6 +218,7 @@ describe("the board page", () => {
       "Workflows",
       "Cycles",
       "Milestones",
+      "Wiki",
     ]);
     // A tab is in the address, the same header stays, and Board comes back at the board's address.
     await tabs.getByRole("tab", { name: "Workflows" }).click();

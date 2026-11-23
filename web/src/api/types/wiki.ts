@@ -4,6 +4,8 @@
 export interface PageInfo {
   path: string;
   name: string;
+  /** The page's labels, from the front matter of its file. */
+  labels: string[];
 }
 
 /** A commit that changed a page. */
@@ -25,7 +27,11 @@ export interface Version {
 export interface WikiPageView {
   path: string;
   name: string;
+  /** The page's file as it is, front matter included: what the editor shows and saves. */
   text: string;
+  /** The text without its front matter: what is drawn. */
+  body: string;
+  labels: string[];
   version: Version;
 }
 

@@ -1,5 +1,5 @@
 /**
- * The search box above the wiki's tree and what it finds (`GET /v1/wiki/search`): the pages whose title or text has the
+ * The search box above the wiki's tree and what it finds (`GET /v1/wiki/search`): the pages whose title, labels or text have the
  * words typed, the best first, each with its name, its folder and the line around the match. While something is typed
  * the matches stand in the place of the tree; a click opens the page and clears the box. The query is sent a moment
  * after the last key, so typing does not ask the server for every letter.
@@ -55,16 +55,19 @@ export function WikiSearchBox({
 
 export function WikiSearchResults({
   query,
+  project,
   onOpen,
 }: {
   query: string;
+  /** A project's key, to find only its pages. */
+  project?: string;
   onOpen: (path: string) => void;
 }) {
   const toast = useToast();
   const settled = useSettled(query.trim());
   const found = useQuery({
-    queryKey: keys.wikiSearch(settled),
-    queryFn: () => searchWiki(settled),
+    queryKey: keys.wikiSearch(settled, project),
+    queryFn: () => searchWiki(settled, project),
     enabled: settled !== "",
     retry: false,
   });

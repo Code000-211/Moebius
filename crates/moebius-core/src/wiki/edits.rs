@@ -297,7 +297,8 @@ mod tests {
             wiki.pages().unwrap(),
             [super::super::PageInfo {
                 path: "Team/On call".into(),
-                name: "On call".into()
+                name: "On call".into(),
+                labels: vec![]
             }]
         );
     }

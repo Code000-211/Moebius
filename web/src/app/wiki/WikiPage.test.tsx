@@ -26,9 +26,9 @@ function show(role: string, path: string) {
       const body = url.includes("/v1/wiki/links/")
         ? { links: { pages: [], cards: [] }, backlinks: { pages: [], cards: [] } }
         : /\/v1\/wiki\/pages\/Home/.test(url)
-          ? { path: "Home", name: "Home", text: TEXT, version }
+          ? { path: "Home", name: "Home", text: TEXT, body: TEXT, labels: [], version }
           : url.includes("/v1/wiki/pages")
-            ? [{ path: "Home", name: "Home" }]
+            ? [{ path: "Home", name: "Home", labels: [] }]
             : [];
       return { ok: true, status: 200, text: async () => JSON.stringify(body) };
     }),

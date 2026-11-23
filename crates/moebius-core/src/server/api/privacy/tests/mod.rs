@@ -757,14 +757,15 @@ async fn events_of_a_private_project_reach_its_members_only() {
 /// The routes with a parameter that the check does not guard, each because what it names belongs to no project:
 /// a person, a token, a pin, the harness configuration, a package, a plugin, a setting, a port (filtered by its
 /// run), a Retro's day (whose view is filtered), a takeover of the decision model, a replay (listed by its run) or
-/// a workflow, by name, a kind of issues or a template of the organisation, a person's own notice, a wiki page, its links or the pages that link to a card (a private project's pages and cards are
+/// a workflow, by name, a kind of issues or a template of the organisation, a person's own notice, a wiki page, its labels, its links or the pages that link to a card (a private project's pages and cards are
 /// left out by the wiki's own handlers); or that checks what it names in its own handler (a card by its key, a milestone of the
 /// organisation, whose cards are counted and listed with `App::may_see_project`).
-const UNGUARDED: [&str; 32] = [
+const UNGUARDED: [&str; 33] = [
     "/v1/cards/by-key/",
     "/v1/templates/",
     "/v1/kinds/",
     "/v1/wiki/pages/",
+    "/v1/wiki/labels/",
     "/v1/wiki/history/",
     "/v1/wiki/links/",
     "/v1/wiki/cards/",

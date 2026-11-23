@@ -9,7 +9,7 @@ import {
   wikiAddress,
 } from "./links";
 
-const page = (path: string) => ({ path, name: path.split("/").at(-1) ?? path });
+const page = (path: string) => ({ path, name: path.split("/").at(-1) ?? path, labels: [] });
 
 describe("links in a page's text", () => {
   it("makes a link to the page a name leads to, and leaves the rest as written", () => {
