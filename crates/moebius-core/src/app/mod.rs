@@ -399,6 +399,12 @@ impl App {
         *self.wiki_problem.lock().unwrap_or_else(|e| e.into_inner()) = None;
     }
 
+    /// Takes the wiki away again, for `problem`: what undoes opening it when connecting a repository failed.
+    pub fn clear_wiki(&self, problem: Option<String>) {
+        *self.wiki.write().unwrap_or_else(|e| e.into_inner()) = None;
+        *self.wiki_problem.lock().unwrap_or_else(|e| e.into_inner()) = problem;
+    }
+
     /// Tells the core why the server has no wiki.
     pub fn set_wiki_problem(&self, problem: String) {
         *self.wiki_problem.lock().unwrap_or_else(|e| e.into_inner()) = Some(problem);

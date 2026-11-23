@@ -1040,8 +1040,11 @@ repository `url`, shown without a user name and password) or `unavailable` (the 
 An owner (a person, not an agent) connects the git repository `{"url"}` to a wiki kept on this server only, with no
 restart. The server asks the repository for its branches (`422` when it cannot be reached or the address is blank). An
 empty repository gets the wiki's history pushed to it (`409` when it refuses the push). A repository that has pages
-becomes the wiki when this one has none, and is refused with `409` when both have pages: Moebius never merges two
-histories. `409` too when the wiki is kept in a repository already. Then `wiki.url` is written to `moebius.toml` and the
+becomes the wiki when this one has none. When both have pages it is accepted only if this wiki's history extends
+the repository's (it is a copy of an earlier state of it, as after a failed earlier attempt or when the wiki was
+cloned from it before its `[wiki] url` was removed), and is brought up to date; otherwise `409`: Moebius never merges
+two histories. A request that fails after the wiki was connected, as when `moebius.toml` cannot be written, puts the
+wiki back as it was, so it can be made again. `409` too when the wiki is kept in a repository already. Then `wiki.url` is written to `moebius.toml` and the
 wiki follows the repository and pushes to it; edits are pushed from then on. A server that started without a wiki opens
 it from the repository. Response: the status, as above. Recorded as the action `connect_wiki`.
 

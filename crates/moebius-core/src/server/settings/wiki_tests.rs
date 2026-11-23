@@ -262,3 +262,160 @@ fn the_wiki_url_set_through_the_settings_is_used_after_a_restart_and_says_so() {
     );
     assert_eq!(server.app.wiki_status().state, State::Local);
 }
+
+/// Connects as `connect_wiki` does, but the file cannot be written afterwards: it is made a directory once the wiki is
+/// connected, which is what the write then fails on.
+fn connect_but_fail_to_write(server: &Server, dir: &Path, url: &Path) -> AppError {
+    let file = dir.join("moebius.toml");
+    let text = std::fs::read_to_string(&file).unwrap();
+    let error = server
+        .live
+        .connect_wiki_with(
+            &server.app,
+            &Actor::first_owner(),
+            &url.to_string_lossy(),
+            |app, wiki_dir, url| {
+                let connected = crate::wiki::connect(app, wiki_dir, url)?;
+                std::fs::remove_file(&file).unwrap();
+                std::fs::create_dir(&file).unwrap();
+                Ok(connected)
+            },
+        )
+        .expect_err("the file could not be written");
+    std::fs::remove_dir(&file).unwrap();
+    std::fs::write(&file, text).unwrap();
+    error
+}
+
+#[test]
+fn a_connection_whose_file_cannot_be_written_is_undone_and_the_same_request_succeeds_after() {
+    let dir = tempfile::tempdir().unwrap();
+    let server = server(dir.path(), "");
+    let wiki = server.app.wiki().unwrap();
+    wiki.write_page(&server.app, &ada(), "Ours", "Our page.", None)
+        .unwrap();
+    let origin = bare_origin(dir.path());
+    connect_but_fail_to_write(&server, dir.path(), &origin);
+    assert_eq!(server.app.wiki_status().state, State::Local);
+    assert_eq!(wiki.url(), None);
+    assert_eq!(server.live.get().wiki_url, None);
+    assert!(
+        git(&dir.path().join(".moebius/wiki"), &["remote"])
+            .unwrap()
+            .is_empty(),
+        "origin was left"
+    );
+    // The history was pushed before the file failed; the same repository is accepted again, since it holds this wiki.
+    let status = connect(&server, &origin).unwrap();
+    assert_eq!(status.state, State::Remote);
+    wiki.write_page(&server.app, &ada(), "More", "More.", None)
+        .unwrap();
+    assert_eq!(
+        git(&origin, &["log", "--format=%s", "main"]).unwrap(),
+        "Add More\nAdd Ours"
+    );
+}
+
+#[test]
+fn an_adopted_repository_is_given_back_when_the_file_cannot_be_written() {
+    let dir = tempfile::tempdir().unwrap();
+    let server = server(dir.path(), "");
+    let origin = bare_origin(dir.path());
+    push_from_elsewhere(dir.path(), &origin, "Theirs.md", "Their page.\n");
+    connect_but_fail_to_write(&server, dir.path(), &origin);
+    assert_eq!(server.app.wiki_status().state, State::Local);
+    let wiki = server.app.wiki().unwrap();
+    assert!(wiki.pages().unwrap().is_empty(), "the pages were kept");
+    assert!(!dir.path().join(".moebius/wiki.previous").exists());
+    let status = connect(&server, &origin).unwrap();
+    assert_eq!(status.state, State::Remote);
+    assert_eq!(wiki.page("Theirs", None).unwrap().text, "Their page.\n");
+    assert!(!dir.path().join(".moebius/wiki.previous").exists());
+}
+
+#[test]
+fn a_wiki_opened_for_a_connection_that_fails_to_be_written_is_closed_again() {
+    let dir = tempfile::tempdir().unwrap();
+    let missing = dir.path().join("nowhere.git");
+    let server = server(
+        dir.path(),
+        &format!("[wiki]\nurl = {:?}\n", missing.display().to_string()),
+    );
+    let origin = bare_origin(dir.path());
+    connect_but_fail_to_write(&server, dir.path(), &origin);
+    assert_eq!(server.app.wiki_status().state, State::Unavailable);
+    assert_eq!(connect(&server, &origin).unwrap().state, State::Remote);
+}
+
+#[test]
+fn a_repository_that_was_the_origin_before_the_url_was_removed_can_be_connected_again() {
+    let dir = tempfile::tempdir().unwrap();
+    let origin = bare_origin(dir.path());
+    let url = format!("[wiki]\nurl = {:?}\n", origin.display().to_string());
+    {
+        let server = server(dir.path(), &url);
+        let wiki = server.app.wiki().unwrap();
+        wiki.write_page(&server.app, &ada(), "Ours", "Our page.", None)
+            .unwrap();
+    }
+    // The person takes `[wiki] url` out: the clone keeps its origin, and is a wiki of its own again.
+    let server = server(dir.path(), "");
+    assert_eq!(server.app.wiki_status().state, State::Local);
+    server
+        .app
+        .wiki()
+        .unwrap()
+        .write_page(&server.app, &ada(), "Later", "Later.", None)
+        .unwrap();
+    assert_eq!(connect(&server, &origin).unwrap().state, State::Remote);
+    assert_eq!(
+        git(&origin, &["log", "--format=%s", "main"]).unwrap(),
+        "Add Later\nAdd Ours"
+    );
+    // A repository whose history this one does not extend is still refused.
+    let other = dir.path().join("other.git");
+    git(
+        dir.path(),
+        &["init", "--quiet", "--bare", "-b", "main", "other.git"],
+    )
+    .unwrap();
+    push_from_elsewhere(dir.path(), &other, "Theirs.md", "Their page.\n");
+    let second = tempfile::tempdir().unwrap();
+    let local = self::server(second.path(), "");
+    local
+        .app
+        .wiki()
+        .unwrap()
+        .write_page(&local.app, &ada(), "Ours", "Our page.", None)
+        .unwrap();
+    assert!(matches!(
+        connect(&local, &other),
+        Err(AppError::Conflict(_))
+    ));
+}
+
+#[test]
+fn a_server_without_a_wiki_answers_a_repository_with_pages_of_its_own_with_a_conflict() {
+    let dir = tempfile::tempdir().unwrap();
+    {
+        let server = server(dir.path(), "");
+        server
+            .app
+            .wiki()
+            .unwrap()
+            .write_page(&server.app, &ada(), "Ours", "Our page.", None)
+            .unwrap();
+    }
+    let origin = bare_origin(dir.path());
+    push_from_elsewhere(dir.path(), &origin, "Theirs.md", "Their page.\n");
+    // The file names a repository whose pages this wiki does not have: the server starts without a wiki.
+    let server = server(
+        dir.path(),
+        &format!("[wiki]\nurl = {:?}\n", origin.display().to_string()),
+    );
+    assert_eq!(server.app.wiki_status().state, State::Unavailable);
+    let Err(error) = connect(&server, &origin) else {
+        panic!("both have pages and the repository was connected");
+    };
+    assert!(matches!(error, AppError::Conflict(_)), "{error:?}");
+}

@@ -299,6 +299,18 @@ impl Live {
     /// connected; a repository that cannot be reached or has pages of its own is refused with the file as it was. The
     /// wiki uses it at once, with no restart.
     pub fn connect_wiki(&self, app: &App, by: &Actor, url: &str) -> Result<crate::wiki::Status> {
+        self.connect_wiki_with(app, by, url, crate::wiki::connect)
+    }
+
+    /// `connect_wiki` with the way the repository is connected given. Whatever fails after the wiki is connected, as the
+    /// file that cannot be written, puts the wiki back as it was, so that the same request can be made again.
+    pub(super) fn connect_wiki_with(
+        &self,
+        app: &App,
+        by: &Actor,
+        url: &str,
+        connect: impl FnOnce(&App, &Path, &str) -> Result<crate::wiki::Connected>,
+    ) -> Result<crate::wiki::Status> {
         let _writing = self.writing.lock().unwrap_or_else(|e| e.into_inner());
         let url = url.trim();
         let changes = Changes {
@@ -306,19 +318,29 @@ impl Live {
             ..Changes::default()
         };
         let dir = self.get().wiki_dir();
-        self.write_changes(
+        let mut connected = None;
+        let saved = self.write_changes(
             app,
             by,
             &changes,
             ("connect_wiki", Confirm::default()),
             || {
-                crate::wiki::connect(app, &dir, url)?;
+                connected = Some(connect(app, &dir, url)?);
                 Ok(BTreeMap::from([(
                     "repository".to_string(),
                     crate::server::setup::without_credentials(url),
                 )]))
             },
-        )?;
+        );
+        if let Err(error) = saved {
+            if let Some(connected) = connected {
+                connected.undo(app);
+            }
+            return Err(error);
+        }
+        if let Some(connected) = connected {
+            connected.keep();
+        }
         let mut running = (*self.get()).clone();
         running.wiki_url = Some(url.to_string());
         *self.current.write().unwrap_or_else(|e| e.into_inner()) = Arc::new(running);

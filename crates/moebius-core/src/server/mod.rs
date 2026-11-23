@@ -347,6 +347,7 @@ impl Server {
                 app.set_wiki(wiki);
             }
             Err(problem) => {
+                let problem = problem.to_string();
                 // Everyone reads why, so the address goes without its user name and password.
                 let problem = match &config.wiki_url {
                     Some(url) => problem.replace(url.as_str(), &setup::without_credentials(url)),

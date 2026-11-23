@@ -35,7 +35,7 @@ pub use links::{Backlinks, CardRef, Links, PageLink, PageLinks};
 pub use pages::{PageInfo, PageView, Version};
 pub use prompt::for_card;
 pub use proposals::WIKI_PROPOSAL;
-pub use repository::{State, Status, connect};
+pub use repository::{Connected, State, Status, connect};
 pub use search::{SEARCH_LIMIT, SearchHit};
 pub use sight::Seen;
 

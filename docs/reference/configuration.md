@@ -96,7 +96,7 @@ kept here have pages) does not stop the server: it starts without a wiki, and `G
 
 | Key | Type | Default | Meaning and validation |
 |---|---|---|---|
-| `wiki.url` | string | none | The git URL of the repository, cloned to `<data_dir>/wiki` when the server starts (a clone that is there already is used as it is), fetched every 30 seconds and before every edit, and pushed to by edits through the API. Not blank when set. It may be empty: the first page is its first commit. With `[github]`, an `https://github.com/...` URL uses the App's token, as for `[harness]`. Without it the wiki is kept on this server only. A wiki that was kept on this server only and finds a `url` here at start is connected to it as `PUT /v1/wiki/repository` does. Changed through `PUT /v1/settings` it is used after a restart, and the answer says so. |
+| `wiki.url` | string | none | The git URL of the repository, cloned to `<data_dir>/wiki` when the server starts (a clone that is there already is used as it is), fetched every 30 seconds and before every edit, and pushed to by edits through the API. Not blank when set. It may be empty: the first page is its first commit. With `[github]`, an `https://github.com/...` URL uses the App's token, as for `[harness]`. Without it the wiki is kept on this server only, and a clone that still has an `origin` from before the `url` was removed follows and pushes nothing. A wiki that was kept on this server only and finds a `url` here at start is connected to it as `PUT /v1/wiki/repository` does. Changed through `PUT /v1/settings` it is used after a restart, and the answer says so. |
 
 ## The clock
 
