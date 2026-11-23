@@ -42,6 +42,7 @@ const GIT_TIME: Duration = Duration::from_secs(30);
 /// How much of any git command's output is read, in bytes, whatever is asked.
 const GIT_OUTPUT_AT_MOST: usize = 2_000_000;
 /// How much address space a git command may take, in kilobytes (on Unix).
+#[cfg(unix)]
 const GIT_MEMORY_KB: u64 = 2_097_152;
 
 /// Why a pull request cannot be given to the Reviewer.
