@@ -114,7 +114,7 @@ pub(super) struct RawHarness {
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(super) struct RawWiki {
-    pub(super) url: String,
+    pub(super) url: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]

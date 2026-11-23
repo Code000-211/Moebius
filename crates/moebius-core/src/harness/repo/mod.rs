@@ -90,7 +90,7 @@ impl HarnessRepo {
     /// Fetches `origin`, fast-forwards the default branch to it and reads the agents again if that changed anything.
     pub fn refresh(&self, app: &App) -> Result<()> {
         let mut read_at = self.lock();
-        kept::follow_origin(app, &self.repos, &self.url, &self.path)?;
+        kept::follow_origin(app, &self.repos, Some(&self.url), &self.path)?;
         let head = git(&self.path, &["rev-parse", "HEAD"])?;
         if head != *read_at {
             self.read(app, &mut read_at, head);

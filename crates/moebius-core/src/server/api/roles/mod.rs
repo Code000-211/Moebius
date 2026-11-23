@@ -90,6 +90,8 @@ pub(super) const ROUTES: &[(&str, &str, Access)] = &[
     ("GET", "/v1/wiki/search", VIEWER),
     ("GET", "/v1/wiki/links/{*path}", VIEWER),
     ("GET", "/v1/wiki/cards/{key}", VIEWER),
+    ("GET", "/v1/wiki/status", VIEWER),
+    ("PUT", "/v1/wiki/repository", OWNER_PERSON),
     ("POST", "/v1/wiki/refresh", MEMBER),
     ("POST", "/v1/wiki/proposals", MEMBER),
     ("POST", "/v1/wiki/proposals/{id}/merge", MEMBER_PERSON),

@@ -116,6 +116,12 @@ export function createWikiFake(send: Send, pagesA: PagesAFake, templates: Templa
   /** Every page that ever was, by its path now, with its versions oldest first. */
   const pages = new Map<string, Version[]>();
   let commits = 0;
+  /** How the wiki is kept (`GET /v1/wiki/status`): on the server only until an owner connects a repository. */
+  let kept: { state: string; url: string | null; problem: string | null } = {
+    state: "local",
+    url: null,
+    problem: null,
+  };
   let clock = 1_790_000_000;
   const commit = () => {
     commits += 1;
@@ -194,6 +200,27 @@ export function createWikiFake(send: Send, pagesA: PagesAFake, templates: Templa
       if (!path.startsWith("/v1/wiki/")) return false;
       const method = request.method ?? "GET";
       const query = new URL(request.url ?? "/", "http://x").searchParams;
+      if (path === "/v1/wiki/status" && method === "GET") {
+        answer(response, 200, kept);
+        return true;
+      }
+      if (path === "/v1/wiki/repository" && method === "PUT") {
+        // What the server refuses: an address it cannot reach, and a repository that has pages while the wiki has.
+        const { url } = JSON.parse(await readBody(request)) as { url: string };
+        if (url.includes("nowhere")) {
+          return refuse(response, 422, "the repository cannot be reached: no such repository");
+        }
+        if (url.includes("full") && [...pages.keys()].some((each) => current(each))) {
+          return refuse(
+            response,
+            409,
+            "both this wiki and the repository have pages, and Moebius does not merge them",
+          );
+        }
+        kept = { state: "remote", url, problem: null };
+        answer(response, 200, kept);
+        return true;
+      }
       if (path === "/v1/wiki/pages" && method === "GET") {
         const listed = [...pages.keys()]
           .filter((each) => current(each))

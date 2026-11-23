@@ -8,7 +8,8 @@
  * `projects/<KEY>/`, whose categories and labels are the only ones offered. What is open is in the address:
  * `?page=<path>`, with `&view=edit` or `&view=history`, `&at=<commit>` for an older version, and `?new=<folder>` for a new
  * page, so a page can be linked to and reloaded. The labels chosen to filter the tree are the workspace's own and are
- * forgotten on leaving. The pages come from the wiki's repository (`/v1/wiki/`), and `wiki_changed` reads them again
+ * forgotten on leaving. For an owner a notice above the columns says where the pages are kept and offers a git
+ * repository (`WikiRepositoryNotice`), also in a project's tab. The pages come from the wiki's repository (`/v1/wiki/`), and `wiki_changed` reads them again
  * when anyone edits one or the server brings what was pushed to the repository from elsewhere.
  */
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -29,6 +30,7 @@ import { LabelFilter } from "./LabelFilter";
 import { buildTree, labelsInUse, PROJECTS, pagesOfGroup, withLabels } from "./model";
 import { NewPage } from "./NewPage";
 import { TextColumn } from "./TextColumn";
+import { WikiRepositoryNotice } from "./WikiRepository";
 import { WikiSearchBox, WikiSearchResults } from "./WikiSearch";
 import { TemplatesDialog } from "./WikiTemplates";
 import { WikiTree } from "./WikiTree";
@@ -98,9 +100,10 @@ export function WikiWorkspace({
     return (
       <>
         {header(controls)}
+        <WikiRepositoryNotice />
         <Empty
-          title="No wiki yet"
-          body="The wiki is a git repository of Markdown pages. Name one under [wiki] url in moebius.toml, and the server keeps its pages here."
+          title="The wiki is not open"
+          body={sayError(pages.error, "The server could not open its wiki.")}
         />
       </>
     );
@@ -109,6 +112,7 @@ export function WikiWorkspace({
   return (
     <div className="flex h-full min-h-0 flex-col">
       {header(controls)}
+      <WikiRepositoryNotice />
       {pages.isError && (
         <Notice
           tone="error"

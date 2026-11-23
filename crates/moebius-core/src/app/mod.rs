@@ -62,7 +62,7 @@ pub use packages::{
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicBool;
-use std::sync::{Arc, Mutex, OnceLock};
+use std::sync::{Arc, Mutex, OnceLock, RwLock};
 use std::time::Duration;
 
 use moebius_plugin_api::Host;
@@ -256,8 +256,11 @@ pub struct App {
     forges: BTreeMap<&'static str, Box<dyn Forge>>,
     /// The harness configuration repository's clone, once the server has opened it.
     harness_repo: OnceLock<Arc<HarnessRepo>>,
-    /// The wiki's clone, once the server has opened it.
-    wiki: OnceLock<Arc<crate::wiki::Wiki>>,
+    /// The wiki's repository, once the server has opened it; it is replaced when a person connects one that the
+    /// server could not open at start.
+    wiki: RwLock<Option<Arc<crate::wiki::Wiki>>>,
+    /// Why the server has no wiki, when it could not open it at start.
+    wiki_problem: Mutex<Option<String>>,
     /// What starts the chats of the server, once it has a harness.
     runs: OnceLock<Arc<dyn Runs>>,
     /// Where the server and the web app run (see `whereabouts`).
@@ -330,7 +333,8 @@ impl App {
             close_retry: Duration::from_secs(600),
             forges,
             harness_repo: OnceLock::new(),
-            wiki: OnceLock::new(),
+            wiki: RwLock::default(),
+            wiki_problem: Mutex::default(),
             runs: OnceLock::new(),
             whereabouts: Default::default(),
         }
@@ -389,16 +393,44 @@ impl App {
         })
     }
 
-    /// Tells the core which clone is the wiki.
+    /// Tells the core which repository is the wiki, which clears what it said about having none.
     pub fn set_wiki(&self, wiki: Arc<crate::wiki::Wiki>) {
-        let _ = self.wiki.set(wiki);
+        *self.wiki.write().unwrap_or_else(|e| e.into_inner()) = Some(wiki);
+        *self.wiki_problem.lock().unwrap_or_else(|e| e.into_inner()) = None;
     }
 
-    /// The wiki; a conflict when the server has none.
-    pub fn wiki(&self) -> Result<&Arc<crate::wiki::Wiki>> {
-        self.wiki.get().ok_or_else(|| {
-            AppError::Conflict("the server has no wiki: set [wiki] url in moebius.toml".into())
+    /// Takes the wiki away again, for `problem`: what undoes opening it when connecting a repository failed.
+    pub fn clear_wiki(&self, problem: Option<String>) {
+        *self.wiki.write().unwrap_or_else(|e| e.into_inner()) = None;
+        *self.wiki_problem.lock().unwrap_or_else(|e| e.into_inner()) = problem;
+    }
+
+    /// Tells the core why the server has no wiki.
+    pub fn set_wiki_problem(&self, problem: String) {
+        *self.wiki_problem.lock().unwrap_or_else(|e| e.into_inner()) = Some(problem);
+    }
+
+    /// The wiki; a conflict, with the reason, when the server could not open it.
+    pub fn wiki(&self) -> Result<Arc<crate::wiki::Wiki>> {
+        let wiki = self.wiki.read().unwrap_or_else(|e| e.into_inner()).clone();
+        wiki.ok_or_else(|| {
+            let problem = self.wiki_problem.lock().unwrap_or_else(|e| e.into_inner());
+            AppError::Conflict(match &*problem {
+                Some(problem) => format!("the server has no wiki: {problem}"),
+                None => "the server has no wiki".into(),
+            })
         })
+    }
+
+    /// How the wiki is kept: on this server only, in a git repository too, or not at all.
+    pub fn wiki_status(&self) -> crate::wiki::Status {
+        let wiki = self.wiki.read().unwrap_or_else(|e| e.into_inner()).clone();
+        let problem = self
+            .wiki_problem
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .clone();
+        crate::wiki::Status::of(wiki.as_deref(), problem)
     }
 
     /// Makes `forge` available to the repositories that name it.

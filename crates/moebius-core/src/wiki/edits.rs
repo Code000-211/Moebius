@@ -177,13 +177,14 @@ impl Wiki {
         write: impl FnOnce() -> Result<()>,
     ) -> Result<()> {
         let author = by.git();
+        let url = self.url();
         let change = kept::Change {
             files,
             message,
             author: Some(&author),
         };
         if let Some(commit) =
-            kept::commit_pushed(app, &self.repos, &self.url, &self.path, &change, write)?
+            kept::commit_pushed(app, &self.repos, url.as_deref(), &self.path, &change, write)?
         {
             self.changed(app, commit);
         }
@@ -254,7 +255,12 @@ mod tests {
     fn opened(dir: &Path) -> (App, Wiki, std::path::PathBuf) {
         let app = app(dir);
         let origin = bare_origin(dir);
-        let wiki = Wiki::open(&app, &origin.to_string_lossy(), &dir.join("data/wiki")).unwrap();
+        let wiki = Wiki::open(
+            &app,
+            Some(&origin.to_string_lossy()),
+            &dir.join("data/wiki"),
+        )
+        .unwrap();
         (app, wiki, origin)
     }
 

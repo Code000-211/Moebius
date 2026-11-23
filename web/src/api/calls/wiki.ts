@@ -1,6 +1,13 @@
 /** The calls of the Wiki page: the pages, one page (or an older version of it), its history, and writing, moving and deleting one. */
 import { del, get, isApiError, post, put } from "../http";
-import type { PageInfo, PageLinks, Version, WikiHit, WikiPageView } from "../types/wiki";
+import type {
+  PageInfo,
+  PageLinks,
+  Version,
+  WikiHit,
+  WikiPageView,
+  WikiStatus,
+} from "../types/wiki";
 
 /** A page's path in a URL: each part percent-encoded, the slashes kept. */
 export function pageUrl(path: string): string {
@@ -97,4 +104,17 @@ export function wikiLinks(path: string): Promise<PageLinks> {
 /** The pages that link to the card named `key`, such as `WEB-12`. */
 export function wikiCardPages(key: string): Promise<PageInfo[]> {
   return get<PageInfo[]>(`/v1/wiki/cards/${encodeURIComponent(key)}`);
+}
+
+/** How the wiki is kept: on this server only, in a git repository too, or not opened at all. */
+export function wikiStatus(): Promise<WikiStatus> {
+  return get<WikiStatus>("/v1/wiki/status");
+}
+
+/**
+ * An owner connects the git repository `url` to a wiki kept on this server only. The server checks it is reachable and
+ * empty (the history is pushed to it) or holds pages while the wiki has none, and refuses when both have pages.
+ */
+export function connectWiki(url: string): Promise<WikiStatus> {
+  return put<WikiStatus>("/v1/wiki/repository", { url });
 }

@@ -28,7 +28,11 @@ pub fn clone_unless_there(
 
 /// Fetches `origin` and fast-forwards the checked-out branch to it. A branch `origin` does not have yet, as in an
 /// empty repository, is left alone.
-pub fn follow_origin(app: &App, repos: &Repos, url: &str, path: &Path) -> Result<()> {
+/// A clone kept without a `url` has no `origin`, so there is nothing to follow.
+pub fn follow_origin(app: &App, repos: &Repos, url: Option<&str>, path: &Path) -> Result<()> {
+    let Some(url) = url else {
+        return Ok(());
+    };
     let header = app.git_auth(url)?;
     repos.fetch(path, header.as_deref())?;
     let upstream = format!("origin/{}", repos.default_branch(path)?);
@@ -56,11 +60,12 @@ pub struct Change<'a> {
 /// Makes what `write` does to the files of `change` a commit on the checked-out branch and pushes it to `origin`.
 /// Whatever fails before the push is through, the working tree and the branch are as they were, and a push `origin`
 /// refused is a conflict, with any key in git's message redacted. The new commit is given; a change that changed
-/// nothing makes none. A branch without a commit yet takes this one as its first.
+/// nothing makes none. A branch without a commit yet takes this one as its first. A clone with no `url` has no
+/// `origin`: the commit is all there is to it.
 pub fn commit_pushed(
     app: &App,
     repos: &Repos,
-    url: &str,
+    url: Option<&str>,
     path: &Path,
     change: &Change,
     write: impl FnOnce() -> Result<()>,
@@ -81,7 +86,10 @@ pub fn commit_pushed(
         let _ = git(path, &clean);
         error
     };
-    let header = app.git_auth(url)?;
+    let header = match url {
+        Some(url) => app.git_auth(url)?,
+        None => None,
+    };
     write().map_err(undo)?;
     let mut add = vec!["add", "-A", "--"];
     add.extend(change.files);
@@ -94,9 +102,11 @@ pub fn commit_pushed(
     let author = change.author.map(|author| format!("--author={author}"));
     commit.extend(author.as_deref());
     git(path, &commit).map_err(|e| undo(e.into()))?;
-    repos
-        .push(path, &branch, header.as_deref(), false)
-        .map_err(|e| undo(refused(e)))?;
+    if url.is_some() {
+        repos
+            .push(path, &branch, header.as_deref(), false)
+            .map_err(|e| undo(refused(e)))?;
+    }
     Ok(head(path))
 }
 

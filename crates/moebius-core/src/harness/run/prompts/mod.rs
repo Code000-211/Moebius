@@ -618,7 +618,7 @@ mod tests {
         push_from_elsewhere(dir.path(), &origin, "Unlinked.md", "Not for this card.\n");
         let wiki = Wiki::open(
             &app,
-            &origin.to_string_lossy(),
+            Some(&origin.to_string_lossy()),
             &dir.path().join("data/wiki"),
         )
         .unwrap();
@@ -671,7 +671,7 @@ mod tests {
         push_from_elsewhere(dir.path(), &origin, "Plans.md", "Public plans.\n");
         let wiki = Wiki::open(
             &app,
-            &origin.to_string_lossy(),
+            Some(&origin.to_string_lossy()),
             &dir.path().join("data/wiki"),
         )
         .unwrap();

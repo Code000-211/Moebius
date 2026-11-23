@@ -67,8 +67,10 @@ what went wrong and tries out fixes, and the ones that worked wait in the inbox.
   poll of that repository run at once. The poll stays the source of truth and goes on at its pace (ADR 0012, amending
   ADR 0003).
 
-- **The wiki** (ADR 0022), optional: the organisation's pages, Markdown files in a git repository named by `[wiki] url`
-  that the server clones to `<data_dir>/wiki` and keeps as it keeps the harness configuration repository. The
+- **The wiki** (ADR 0022, ADR 0026): the organisation's pages, Markdown files in a git repository at `<data_dir>/wiki`.
+  Without `[wiki] url` it is a repository of its own on the server that works at once; an owner connects a git
+  repository from the Wiki page, which pushes the history to it. With one, the server keeps the clone as it keeps the
+  harness configuration repository. The
   organisation's pages are at the top and a project's in `projects/<key>/`. An edit on the Wiki page or through
   `/v1/wiki/` is a commit by its person pushed to `origin`, undone when the push fails; a page's history follows it
   through renames and moves, and what was pushed from elsewhere is read after the next refresh. A code run's prompt holds the pages its issue links to

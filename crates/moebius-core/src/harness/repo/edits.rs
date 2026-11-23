@@ -272,8 +272,14 @@ impl HarnessRepo {
             message,
             author: None,
         };
-        let Some(head) =
-            kept::commit_pushed(app, &self.repos, &self.url, &self.path, &change, write)?
+        let Some(head) = kept::commit_pushed(
+            app,
+            &self.repos,
+            Some(&self.url),
+            &self.path,
+            &change,
+            write,
+        )?
         else {
             return Ok(None);
         };
