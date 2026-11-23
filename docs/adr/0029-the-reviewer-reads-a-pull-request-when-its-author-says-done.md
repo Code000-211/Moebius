@@ -24,9 +24,9 @@ server merge what the Reviewer approves. A pull request is somebody else's code,
   the poll last read are green. Pending checks, or checks not yet read after a push, wait; red checks are answered on the pull
   request and nothing is reviewed. Comments on the pull request itself are not read: the poll reads the comments of
   issues, and a second place to read would double what [0028](0028-helpers-take-issues-with-commands-in-comments.md) built.
-- **At most three rounds per pull request, one per head.** A round counts once its run started. A fourth `/done` is
+- **At most three rounds per pull request, one per head.** A round counts once its run started, whatever came of it. A fourth `/done` is
   answered that a person will look, and the owner gets an Inbox item (`review_rounds_spent`). A head with a round is not
-  read again. A round that ended without a verdict, or whose head moved before the verdict was used, does not count.
+  read again. A head that ended with a verdict is not read again; one whose round ended without a verdict, or went stale, may be read again, and each such round has counted toward the three, so the author cannot spend runs for ever.
 - **The Reviewer answers in a structure.** Its answer ends with one JSON object: `verdict`, `summary` and `comments` of
   `path`, `line` and `body`. Anything else is no verdict, and no verdict never approves. The card's own review reads the
   same object. The server checks each comment against the diff of the request: a comment on a line the diff shows is a

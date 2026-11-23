@@ -814,10 +814,10 @@ impl App {
                 Path::new(&repository.path),
                 &["rev-parse", &repository.base_ref()],
             )?;
-            let reviewed = self
-                .store
-                .change_reviewed_base(change.id)?
-                .unwrap_or_default();
+            let reviewed = round.base.clone();
+            if reviewed.is_empty() {
+                return Ok(Err("no base commit is recorded for the round".into()));
+            }
             match super::review_context::effect_unchanged(repository, &reviewed, &tip, &round.head)
             {
                 Ok(true) => {}
@@ -839,6 +839,15 @@ impl App {
                 }
                 Err(e) => return Ok(Err(format!("the merge could not be checked: {e}"))),
             }
+        }
+        // The checks above took time: the owner's hold, pause and setting are read once more, right before the forge is
+        // asked to merge.
+        if !self.may_act(card.id)? {
+            return Ok(Err("agents are paused, or the card is held".into()));
+        }
+        if !self.repository(repository.id)?.merge_reviewed {
+            self.hand_to_owner(card, change, "")?;
+            return Ok(Err("merging approved pull requests was turned off".into()));
         }
         let merged = self.merge_one(
             &by,

@@ -49,6 +49,9 @@ pub struct ExternalReview {
     pub id: i64,
     pub change_id: i64,
     pub head: String,
+    /// The tip of the default branch the round's head was read merged into; empty until the round starts.
+    #[serde(skip)]
+    pub base: String,
     pub round: i64,
     pub run_id: Option<i64>,
     pub state: String,
@@ -61,11 +64,12 @@ pub struct ExternalReview {
     pub at: i64,
 }
 
-/// The states in which a round counts: it started, and its head was read.
+/// The states in which a head counts as read, so that it is not read again: a round that ended with a verdict, or has
+/// its run going.
 const COUNTED: &str = "('starting', 'running', 'approved', 'posting', 'posted', 'merged')";
 
 const COLUMNS: &str =
-    "id, change_id, head, round, run_id, state, verdict, summary, comments, url, at";
+    "id, change_id, head, round, run_id, state, verdict, summary, comments, url, at, base";
 
 fn read(r: &rusqlite::Row) -> rusqlite::Result<ExternalReview> {
     let comments: String = r.get(8)?;
@@ -81,6 +85,7 @@ fn read(r: &rusqlite::Row) -> rusqlite::Result<ExternalReview> {
         comments: serde_json::from_str(&comments).unwrap_or_default(),
         url: r.get(9)?,
         at: r.get(10)?,
+        base: r.get(11)?,
     })
 }
 
@@ -188,12 +193,12 @@ impl Store {
             .optional()?)
     }
 
-    /// How many rounds of the change started and were not thrown away.
+    /// How many rounds of the change started a run, whatever came of them: one that went stale, failed or was never
+    /// answered cost a run too, so no author can have the Reviewer read a pull request for ever. A round that is
+    /// starting counts, since its run is being made.
     pub fn external_review_rounds(&self, change_id: i64) -> Result<i64> {
         Ok(self.read().query_row(
-            &format!(
-                "SELECT COUNT(*) FROM external_reviews WHERE change_id = ?1 AND state IN {COUNTED}"
-            ),
+            "SELECT COUNT(*) FROM external_reviews WHERE change_id = ?1 AND (run_id IS NOT NULL OR state = 'starting')",
             [change_id],
             |r| r.get(0),
         )?)
@@ -313,11 +318,11 @@ mod tests {
             .unwrap();
         let read = store.external_review(first).unwrap().unwrap();
         assert_eq!(read.comments[0].line, 3);
-        // A thrown-away round counts for nothing.
+        // A thrown-away round has cost its run all the same, but its head may be read again.
         store
             .set_external_review_state(first, "stale", None)
             .unwrap();
-        assert_eq!(store.external_review_rounds(change.id).unwrap(), 0);
+        assert_eq!(store.external_review_rounds(change.id).unwrap(), 1);
         assert!(!store.external_review_of_head(change.id, "bbb").unwrap());
     }
 }

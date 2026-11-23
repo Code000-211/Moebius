@@ -937,3 +937,109 @@ async fn a_pull_request_that_cannot_be_read_whole_is_not_reviewed_and_the_owner_
         "the owner is asked"
     );
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn the_hold_pause_and_setting_are_read_again_right_before_the_forge_is_asked_to_merge() {
+    // The owner holds the card while the merge is being prepared: nothing is merged.
+    let (f, card, _) = ready().await;
+    approved_and_waiting(&f, &card).await;
+    f.checks_are("completed", "success");
+    let (store, id) = (f.server.app.store.clone(), card.id);
+    // The poll reads the pull request first; the merge asks for its branch after.
+    *f.fake.on_pull_read.lock().unwrap() = Some((
+        1,
+        Box::new(move || {
+            store.hold_card(id, "person", Some("wait")).unwrap();
+        }),
+    ));
+    f.server.poll_github().await;
+    assert!(f.merged_requests().is_empty(), "held meanwhile");
+
+    // The owner turns the setting off meanwhile: the owner is asked, nothing is merged.
+    let (g, card, _) = ready().await;
+    approved_and_waiting(&g, &card).await;
+    g.checks_are("completed", "success");
+    let (store, repository) = (g.server.app.store.clone(), g.repository.id);
+    *g.fake.on_pull_read.lock().unwrap() = Some((
+        1,
+        Box::new(move || {
+            store
+                .set_repository_merge_reviewed(repository, false)
+                .unwrap();
+        }),
+    ));
+    g.server.poll_github().await;
+    assert!(
+        g.merged_requests().is_empty(),
+        "the setting was turned off meanwhile"
+    );
+    assert_eq!(g.card(1).unwrap().column, columns::READY_TO_MERGE);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn an_earlier_approval_is_merged_against_the_base_it_was_reviewed_on() {
+    let (f, card, _) = ready().await;
+    approved_and_waiting(&f, &card).await;
+    // Another round overwrote what the change remembers as its reviewed base; this round's own base is what counts.
+    let change = f.server.app.followed_change(&card).unwrap().unwrap();
+    f.server
+        .app
+        .store
+        .set_change_reviewed_base(change.id, "0123456789abcdef0123456789abcdef01234567")
+        .unwrap();
+    f.checks_are("completed", "success");
+    f.server.poll_github().await;
+    tick(&f, &card).await;
+    assert_eq!(f.merged_requests().len(), 1);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn every_round_that_started_a_run_counts_whatever_became_of_it() {
+    // The author pushes during each run, so each round goes stale; the fourth `/done` is refused all the same.
+    let (f, card, _) = ready().await;
+    f.author_says_done().await;
+    for round in 1..=3 {
+        let runs = f.reviews_of(&card);
+        assert_eq!(runs.len(), round, "round {round}");
+        push_to_the_pull_request(&f);
+        f.checks_are("completed", "success");
+        f.server.poll_github().await;
+        f.reviewer_ends(
+            &card,
+            &runs[round - 1],
+            &said("approve", "Fine.", json!([])),
+        )
+        .await;
+        f.author_says_done().await;
+    }
+    assert_eq!(f.reviews_of(&card).len(), 3, "no fourth run");
+    let change = f.server.app.followed_change(&card).unwrap().unwrap();
+    let rounds = f.server.app.store.external_reviews(change.id).unwrap();
+    assert!(
+        rounds.iter().take(3).all(|r| r.state == "stale"),
+        "{rounds:?}"
+    );
+    assert!(
+        f.server
+            .app
+            .store
+            .has_open_inbox_item(card.id, ROUNDS_SPENT)
+            .unwrap()
+            || f.on_the_issue()
+                .iter()
+                .any(|t| t.contains("a person will look")),
+        "the owner is asked"
+    );
+
+    // Rounds that gave no verdict count too.
+    let (g, card, _) = ready().await;
+    g.author_says_done().await;
+    for round in 1..=3 {
+        let runs = g.reviews_of(&card);
+        assert_eq!(runs.len(), round, "round {round}");
+        g.reviewer_ends(&card, &runs[round - 1], "I could not decide.")
+            .await;
+        g.author_says_done().await;
+    }
+    assert_eq!(g.reviews_of(&card).len(), 3, "no fourth run");
+}

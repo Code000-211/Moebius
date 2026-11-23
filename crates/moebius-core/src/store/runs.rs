@@ -40,6 +40,9 @@ pub struct Run {
     /// Whether the owner shared the chat, so that other people read it (`POST /v1/chats/{id}/share`).
     #[serde(default)]
     pub shared: bool,
+    /// Whether the run reads a pull request someone else opened and has no tools (see `App::is_restricted_review`).
+    #[serde(skip)]
+    pub restricted: bool,
 }
 
 impl Run {
@@ -79,6 +82,7 @@ fn run_from_row(r: &rusqlite::Row) -> rusqlite::Result<Run> {
         workflow_run_id: r.get(15)?,
         owner_id: r.get(16)?,
         shared: r.get(17)?,
+        restricted: r.get(18)?,
     })
 }
 
@@ -115,6 +119,7 @@ impl Store {
             workflow_run_id: None,
             owner_id: None,
             shared: false,
+            restricted: false,
         })
     }
 
@@ -125,7 +130,7 @@ impl Store {
     ) -> Result<Vec<Run>> {
         self.rows(&format!(
             "SELECT id, card_id, agent, harness, purpose, status, worktree, started_at, ended_at, summary, repository_id,
-                harness_repository, origin, runner, title, workflow_run_id, owner_id, shared
+                harness_repository, origin, runner, title, workflow_run_id, owner_id, shared, restricted
              FROM runs WHERE {clause} ORDER BY id"
         ), [param], run_from_row)
     }
@@ -162,7 +167,7 @@ impl Store {
     pub fn runs_for_board(&self, repository_id: i64, except_column: &str) -> Result<Vec<Run>> {
         self.rows(
             "SELECT r.id, r.card_id, r.agent, r.harness, r.purpose, r.status, r.worktree, r.started_at, r.ended_at,
-                    r.summary, r.repository_id, r.harness_repository, r.origin, r.runner, r.title, r.workflow_run_id, r.owner_id, r.shared
+                    r.summary, r.repository_id, r.harness_repository, r.origin, r.runner, r.title, r.workflow_run_id, r.owner_id, r.shared, r.restricted
              FROM runs r JOIN cards c ON c.id = r.card_id
              WHERE c.repository_id = ?1 AND c.column_name <> ?2 AND r.purpose <> 'trial' ORDER BY r.id",
             params![repository_id, except_column],
@@ -224,13 +229,13 @@ impl Store {
         self.rows(
             "SELECT r.id, r.card_id, r.agent, r.harness, r.purpose, r.status, r.worktree, r.started_at, r.ended_at,
                     r.summary, r.repository_id, r.harness_repository, r.origin, r.runner, r.title, r.workflow_run_id,
-                    r.owner_id, r.shared,
+                    r.owner_id, r.shared, r.restricted,
                     COALESCE((SELECT SUM(u.input_tokens + u.output_tokens) FROM usage u WHERE u.run_id = r.id), 0)
              FROM runs r
              WHERE r.ended_at IS NOT NULL AND r.card_id IS NOT NULL AND r.purpose <> 'trial'
              ORDER BY r.ended_at DESC, r.id DESC LIMIT ?1",
             params![limit],
-            |r| Ok((run_from_row(r)?, r.get(18)?)),
+            |r| Ok((run_from_row(r)?, r.get(19)?)),
         )
     }
 

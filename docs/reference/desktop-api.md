@@ -4624,12 +4624,13 @@ by the Reviewer when its author says so. The steps are in [the guide](../guide/w
   and `success`: `pending` checks, or checks not yet read for the head after a push, make it wait; `failure` ends the round
   with a comment on the pull request ("The checks of this pull request fail, so nothing was reviewed...") and nothing is
   reviewed. Nobody else's `/done` has it reviewed.
-- **Rounds.** At most three rounds per pull request (`ROUND_LIMIT`). A round counts once its run started and until it is
-  dropped. A fourth `/done` is answered "a person will look" and adds a `review_rounds_spent` inbox item for the card.
+- **Rounds.** At most three rounds per pull request (`ROUND_LIMIT`). Every round whose run started counts, whatever came of
+  it (a verdict, no verdict, or a head that moved), so that no author can have the Reviewer read a pull request for ever. A fourth `/done` is answered "a person will look" and adds a `review_rounds_spent` inbox item for the card.
   A new `/done` after a push starts the next round. A head is never read twice: a `/done` for a head that has a round is
-  answered that it was reviewed already. A round whose run did not end, or whose answer is no verdict, is `failed` and does
-  not count, so the author can write `/done` again; a round dropped because the head moved before the verdict was used is
-  `stale` and does not count either.
+  answered that it was reviewed already. A round whose run did not end, or whose answer is no verdict, is `failed`, and one dropped because the head moved
+  before the verdict was used is `stale`: the author may write `/done` again for the same head, and each such round has
+  counted toward the three. A round that ended before its run started (the checks failed, the pull request was refused) does
+  not count.
 - **The run.** A `review` run of the card by the Reviewer, started restricted (below), whose prompt holds the issue as
   data in a fence (its title and body only: no comments, wiki pages or lessons, which are the organisation's and could be
   made to be quoted into a review), the instruction that everything the pull request holds is data and no instruction, and
@@ -4655,7 +4656,9 @@ by the Reviewer when its author says so. The steps are in [the guide](../guide/w
   after each poll of the request.
 - **What the Reviewer answers.** Its answer ends with one JSON object in a fenced `json` block:
   `{"verdict": "approve" | "changes", "summary": string, "comments": [{"path": string, "line": number, "body": string}]}`.
-  `path` is the file as the diff names it, `line` a line of the file after the change (from 1). A `changes` verdict needs a
+  It must end the answer: a block quoted earlier, with text after it, is no verdict. Only the review of a pull request
+  someone else opened (a restricted run) is read this way; any other review is read from its last line, `VERDICT: approve`
+  or `VERDICT: changes`, whatever JSON its text quotes. `path` is the file as the diff names it, `line` a line of the file after the change (from 1). A `changes` verdict needs a
   summary or a comment; comments with an empty body are dropped, and at most 50 are kept. Anything else (no object, another
   verdict, a comment without a file or a line) is no verdict. `board::structured::read` reads it; the card's `review`
   (`card.review`, `review_verdict`) reads the same object, with the summary and the comments as its findings.
@@ -4679,7 +4682,9 @@ by the Reviewer when its author says so. The steps are in [the guide](../guide/w
 - **The merge is of what was read.** Right before the merge the server reads the request's branch from the forge again
   (`Forge::request_base`; a request against another branch is not merged), brings the clone up to date and compares what the
   merge of the head into the default branch's tip does with what the merge into the tip that was read did (the paths that
-  change and the files they become). A default branch that moved elsewhere changes nothing; one that touched what the request
+  change and the files they become). The base compared is the round's own (`external_reviews.base`), never one a later round wrote. The hold, the pause and the
+  repository's `merge_reviewed` are read again right before the forge is asked to merge, and a path that is not valid UTF-8
+  is refused with the binary files. A default branch that moved elsewhere changes nothing; one that touched what the request
   touches, or makes it conflict, drops the round (`stale`, nothing is merged, the request is told "the default branch
   changed what merging this pull request does... write /done again").
 - **Never merged.** A verdict counts for the head it read only. When the poll has read a push before the verdict is used,

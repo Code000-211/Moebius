@@ -41,29 +41,32 @@ struct Comment {
     body: String,
 }
 
-/// The last fenced `json` block of `text`, or else the last line that starts a JSON object and runs to the end.
+/// The last fenced `json` block of `text` when it ends the answer (nothing but blank lines after it), or else the last
+/// line that starts a JSON object and runs to the end. A block quoted earlier, with more text after it, is no verdict.
 fn last_object(text: &str) -> Option<String> {
-    let mut found = None;
+    let lines: Vec<&str> = text.lines().collect();
+    let mut found: Option<(String, usize)> = None;
     let mut open: Option<Vec<&str>> = None;
-    for line in text.lines() {
+    for (i, line) in lines.iter().enumerate() {
         let trimmed = line.trim();
         match (&mut open, trimmed) {
             (None, t) if t.starts_with("```json") || t == "```JSON" => open = Some(Vec::new()),
             (Some(body), "```") => {
-                found = Some(body.join("\n"));
+                found = Some((body.join("\n"), i));
                 open = None;
             }
             (Some(body), _) => body.push(line),
             _ => {}
         }
     }
-    found.or_else(|| {
-        let lines: Vec<&str> = text.lines().collect();
-        (0..lines.len())
-            .rev()
-            .find(|&i| lines[i].trim_start().starts_with('{'))
-            .map(|i| lines[i..].join("\n"))
-    })
+    if let Some((body, closed)) = found {
+        let ends_the_answer = lines[closed + 1..].iter().all(|l| l.trim().is_empty());
+        return ends_the_answer.then_some(body);
+    }
+    (0..lines.len())
+        .rev()
+        .find(|&i| lines[i].trim_start().starts_with('{'))
+        .map(|i| lines[i..].join("\n"))
 }
 
 /// The structured review at the end of `answer`: none when there is no JSON object, it is not a verdict of `approve`

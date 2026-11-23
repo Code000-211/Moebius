@@ -304,9 +304,16 @@ fn changes_of(clone: &Path, base: &str, merged: &str) -> Result<Vec<Changed>, Co
     let mut tokens = out.bytes.split(|b| *b == 0).filter(|t| !t.is_empty());
     while let Some(meta) = tokens.next() {
         let meta = String::from_utf8_lossy(meta);
-        let path = tokens
-            .next()
-            .map(|p| String::from_utf8_lossy(p).into_owned());
+        // A path that is not text cannot be looked up again by name, so what it holds would never be read: refused.
+        let path = match tokens.next().map(std::str::from_utf8) {
+            Some(Ok(path)) => Some(path.to_string()),
+            Some(Err(_)) => {
+                return Err(ContextError::Unreadable(
+                    "it changes a file whose path is not valid UTF-8".into(),
+                ));
+            }
+            None => None,
+        };
         let mut fields = meta.trim_start_matches(':').split_whitespace();
         let (_old_mode, mode, _old, sha) =
             (fields.next(), fields.next(), fields.next(), fields.next());
@@ -1073,6 +1080,24 @@ mod tests {
             error.to_string().contains("its diff is more than"),
             "{error}"
         );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_path_that_is_not_valid_utf8_is_refused() {
+        use std::os::unix::ffi::OsStrExt;
+        let (dir, clone) = repository();
+        git(&clone, &["checkout", "--quiet", "-b", "moebius/pr-7"]).unwrap();
+        let name = std::ffi::OsStr::from_bytes(b"caf\xe9.txt");
+        std::fs::write(clone.join(name), "the whole of it\n").unwrap();
+        git(&clone, &["add", "."]).unwrap();
+        commit(&clone, "a latin-1 name");
+        let head = git(&clone, &["rev-parse", "HEAD"]).unwrap();
+        git(&clone, &["checkout", "--quiet", "main"]).unwrap();
+        let p = follow(dir, clone, head);
+        let error = p.app.review_context(&p.card).unwrap_err();
+        assert!(matches!(error, ContextError::Unreadable(_)), "{error}");
+        assert!(error.to_string().contains("UTF-8"), "{error}");
     }
 
     #[test]

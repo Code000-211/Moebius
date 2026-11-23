@@ -19,6 +19,9 @@ use crate::store::{Card, Change, Repository, Run};
 
 /// A GitHub with one repository, `acme/widgets`: its issues, the ETag they are served with and the
 /// `If-None-Match` of every request for them.
+/// Reads to let pass, and what to do at the next one.
+pub(super) type PullHook = (usize, Box<dyn FnOnce() + Send>);
+
 pub(super) struct FakeGitHub {
     pub(super) issues: Mutex<(String, Vec<Value>)>,
     pub(super) asked: Mutex<Vec<Option<String>>>,
@@ -59,6 +62,8 @@ pub(super) struct FakeGitHub {
     pub(super) state_writes: Mutex<Vec<(u64, String)>>,
     /// The reviews it was asked to write on pull request 7.
     pub(super) review_posts: Mutex<Vec<Value>>,
+    /// What it does once, as it is asked for pull request 7 after that many reads: a person changing a setting while a merge is being made.
+    pub(super) on_pull_read: Mutex<Option<PullHook>>,
     /// Whether it refuses a review that has comments on lines, as GitHub does for a line the diff does not have.
     pub(super) refuse_line_comments: std::sync::atomic::AtomicBool,
     /// Whether it answers a review, or a merge, with a server error, as a forge does for a moment.
@@ -179,6 +184,7 @@ pub(super) async fn fake_github() -> (String, Arc<FakeGitHub>) {
         posted: Mutex::new(Vec::new()),
         state_writes: Mutex::new(Vec::new()),
         review_posts: Mutex::new(Vec::new()),
+        on_pull_read: Mutex::new(None),
         refuse_line_comments: std::sync::atomic::AtomicBool::new(false),
         fail_reviews: std::sync::atomic::AtomicBool::new(false),
         fail_merges: std::sync::atomic::AtomicBool::new(false),
@@ -432,6 +438,20 @@ pub(super) async fn fake_github() -> (String, Arc<FakeGitHub>) {
                         return StatusCode::NOT_FOUND.into_response();
                     }
                     assert_eq!(number, 7);
+                    let hook = {
+                        let mut waiting = fake.on_pull_read.lock().unwrap();
+                        match waiting.take() {
+                            Some((0, hook)) => Some(hook),
+                            Some((skip, hook)) => {
+                                *waiting = Some((skip - 1, hook));
+                                None
+                            }
+                            None => None,
+                        }
+                    };
+                    if let Some(hook) = hook {
+                        hook();
+                    }
                     axum::Json(fake.pulls.lock().unwrap().pull.clone()).into_response()
                 },
             )
