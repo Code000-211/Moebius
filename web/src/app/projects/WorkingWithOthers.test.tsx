@@ -53,7 +53,9 @@ describe("the repository's working with others", () => {
     expect(screen.getByRole("button", { name: "Agents take" }).textContent).toContain(
       "All approved issues",
     );
-    expect((screen.getByRole("button", { name: "Save" }) as HTMLButtonElement).disabled).toBe(true);
+    expect(
+      (screen.getByRole("button", { name: "Save settings" }) as HTMLButtonElement).disabled,
+    ).toBe(true);
     // The hint says whose server should mark the issues.
     expect(screen.getByText(/Only the server of the person who owns the repository/)).toBeTruthy();
   });
@@ -71,7 +73,7 @@ describe("the repository's working with others", () => {
         name: /Only issues labelled "Go" and not assigned/,
       }),
     );
-    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save settings" }));
     await waitFor(() => expect(fetcher).toHaveBeenCalled());
     const [url, init] = fetcher.mock.calls[0] as unknown as [string, RequestInit];
     expect([url, init.method]).toEqual(["/v1/repositories/4", "PUT"]);
@@ -87,7 +89,7 @@ describe("the repository's working with others", () => {
     );
     expect((screen.getByLabelText("Label") as HTMLInputElement).value).toBe("Go");
     fireEvent.change(screen.getByLabelText("Label"), { target: { value: "x" } });
-    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save settings" }));
     await screen.findByText(/Couldn't save this/);
   });
 });

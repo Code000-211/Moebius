@@ -99,11 +99,14 @@ describe.skipIf(usesRealServer)("working with others", () => {
     await box.waitFor();
     await box.getByLabel("Mark ready issues on GitHub").click();
     await box.getByLabel("Label").fill("Go");
-    await box.getByRole("button", { name: "Save" }).click();
-    await page.waitForFunction(() => true);
-    await expect
-      .poll(() => server.board?.requests.find((r) => r.path === "/v1/repositories/1")?.body)
-      .toEqual({ mark_ready: true, ready_label: "Go", agents_take: "all" });
+    await box.getByRole("button", { name: "Save settings" }).click();
+    // Saved: the box has what was sent, so there is nothing left to save.
+    await page.waitForFunction(() =>
+      document
+        .querySelector('[data-testid="working-with-others"] button[type="submit"]')
+        ?.hasAttribute("disabled"),
+    );
+    expect(await box.getByLabel("Label").inputValue()).toBe("Go");
   });
 
   it("keeps the person's login on GitHub in the Profile", async () => {

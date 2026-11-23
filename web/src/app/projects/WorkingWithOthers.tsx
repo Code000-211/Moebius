@@ -99,7 +99,7 @@ export function WorkingWithOthers({ repository }: { repository: Repository }) {
         </Field>
         <div className="flex gap-2">
           <Button type="submit" size="sm" disabled={!changed || trimmed === "" || save.isPending}>
-            {save.isPending ? "Saving" : "Save"}
+            {save.isPending ? "Saving" : "Save settings"}
           </Button>
         </div>
         {save.isError && (

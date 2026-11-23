@@ -350,6 +350,8 @@ export function createPagesAFake(send: Send, board: BoardFake): PagesAFake {
   let repositories: Repository[] = [];
   const removed = new Set<number>();
   const trusted = new Map<number, string[]>();
+  /** What each repository keeps for working with others (`mark_ready`, `ready_label`, `agents_take`). */
+  const working = new Map<number, Record<string, unknown>>();
   /** The values of the sandbox plugin's app settings. */
   let appValues: Record<string, string> = {};
   const appSettings = () => ({
@@ -632,6 +634,7 @@ export function createPagesAFake(send: Send, board: BoardFake): PagesAFake {
   const repositoryView = (repo: Repository): Repository => ({
     ...repo,
     trusted: trusted.get(repo.id) ?? repo.trusted,
+    ...working.get(repo.id),
   });
 
   /** The projects made with `POST /v1/projects`, which have no repository. */
@@ -1218,6 +1221,17 @@ export function createPagesAFake(send: Send, board: BoardFake): PagesAFake {
         const part = repository[2];
         if (!part && method === "PUT") {
           if (found.forge === "none") return fail(response, 422, "the repository is on no forge");
+          if (body.trusted === undefined) {
+            const kept = Object.fromEntries(
+              ["mark_ready", "ready_label", "agents_take"]
+                .filter((key) => key in body)
+                .map((key) => [key, body[key]]),
+            );
+            working.set(id, { ...working.get(id), ...kept });
+            const view = repositoryView(found);
+            send({ kind: "repository_updated", data: view });
+            return ok(response, view);
+          }
           const list = (Array.isArray(body.trusted) ? (body.trusted as string[]) : []).map((l) =>
             l.trim(),
           );

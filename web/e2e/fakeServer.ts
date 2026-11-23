@@ -362,7 +362,7 @@ export async function startFakeServer(): Promise<FakeServer> {
     }
     const person = people.find((p) => p.id === asker);
     // The logins of a person and the settings a repository keeps for working with others belong to the board's fake.
-    if (path === "/v1/logins" || (path === "/v1/repositories/1" && method === "PUT")) {
+    if (path === "/v1/logins") {
       const body = method === "GET" ? undefined : JSON.parse((await readBody(request)) || "{}");
       const answer = board.handle(method, path, body);
       if (answer) return json(response, answer.body);
