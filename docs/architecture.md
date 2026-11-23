@@ -806,6 +806,7 @@ At the top:
 | `server/settings/edit.rs` | A change applied to the file's text with `toml_edit`, its comments and order kept. |
 | `server/settings/keys.rs` | Every key with its default and whether it takes effect at once, and their values without passwords. |
 | `server/settings/live.rs` | The configuration the running server reads: a change saved and its live keys applied, the agents and rules moved into a new harness configuration repository, and the restart. |
+| `server/settings/wiki_tests.rs` | For the tests only: the wiki of a whole server, started with and without `[wiki] url` and with one that cannot be cloned, and a git repository connected while it runs. |
 | `server/settings/secrets.rs` | The API keys kept in `secrets.toml`, and the keys the upstreams and the decision model are given. |
 | `server/outgoing.rs` | Outgoing webhooks: listens to the bus, picks the hooks that want an event's kind and may see its project (a private project's events go only to a hook that names it), posts it signed with HMAC-SHA256, retries with backoff, and gives up with a `webhook_failed` item in the inbox. |
 | `server/webhooks.rs` | Webhooks from the forges (ADR 0012): the check of a delivery against the secret of its forge (HMAC-SHA256 or token, in constant time), and the wake-up that makes the poll of a forge run at once. |
@@ -1001,7 +1002,8 @@ At the top:
 
 | Module | What it is for |
 |---|---|
-| `wiki/mod.rs` | The wiki's clone (a kept clone, `repos/kept.rs`): opened, refreshed with `wiki_changed` when that brought commits, the names of pages and the folder of a project's, and the person an edit is by. |
+| `wiki/mod.rs` | The wiki's repository (a kept clone, `repos/kept.rs`, with no `origin` until one is connected): refreshed with `wiki_changed` when that brought commits, the names of pages and the folder of a project's, and the person an edit is by. |
+| `wiki/repository.rs` | Where the wiki's repository is: opened at start (a clone of `[wiki] url`, or a repository of its own with none), connected to a git repository while the server runs (history pushed to an empty one, a repository with pages adopted when the wiki has none, both having pages refused), and the status the Wiki page shows. |
 | `wiki/pages.rs` | Reading the wiki: the list of pages, a page as it is or as a commit of its history left it, and its history through renames and moves. |
 | `wiki/proposals.rs` | An agent's edit of a page: a branch of the clone with one commit that waits in the inbox as a `wiki_proposal` and reaches the pages, and `origin`, only when a person merges it. |
 | `wiki/prompt.rs` | The pages a card's issue links to with `[[Page name]]`, as the section of a run's prompt that holds them. |

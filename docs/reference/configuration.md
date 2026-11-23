@@ -87,12 +87,16 @@ old skill and extension files and the rules file are left where they were.
 ## `[wiki]`
 
 The wiki ([ADR 0022](../adr/0022-the-wiki-is-a-git-repository.md)): a git repository of Markdown pages, the
-organisation's at the top and a project's in `projects/<key>/`. The table is optional; without it the Wiki page says the
-server has none and the routes of `/v1/wiki/` answer `409`.
+organisation's at the top and a project's in `projects/<key>/`. The table and its `url` are optional ([ADR
+0026](../adr/0026-the-wiki-works-before-it-has-a-remote.md)): without a `url` the wiki is a git repository of its own at
+`<data_dir>/wiki`, made when the server first starts, with no `origin`; edits are commits and nothing is pushed, and
+every route works. An owner connects a git repository later on the Wiki page or in Settings (`PUT /v1/wiki/repository`),
+which writes `wiki.url` and uses it at once. A `url` that cannot be used (it cannot be cloned, or both it and the wiki
+kept here have pages) does not stop the server: it starts without a wiki, and `GET /v1/wiki/status` says why.
 
 | Key | Type | Default | Meaning and validation |
 |---|---|---|---|
-| `wiki.url` | string | required | The git URL of the repository, cloned to `<data_dir>/wiki` when the server starts (a clone that is there already is used as it is), fetched every 30 seconds and before every edit, and pushed to by edits through the API. Not blank. It may be empty: the first page is its first commit. With `[github]`, an `https://github.com/...` URL uses the App's token, as for `[harness]`. |
+| `wiki.url` | string | none | The git URL of the repository, cloned to `<data_dir>/wiki` when the server starts (a clone that is there already is used as it is), fetched every 30 seconds and before every edit, and pushed to by edits through the API. Not blank when set. It may be empty: the first page is its first commit. With `[github]`, an `https://github.com/...` URL uses the App's token, as for `[harness]`. Without it the wiki is kept on this server only. A wiki that was kept on this server only and finds a `url` here at start is connected to it as `PUT /v1/wiki/repository` does. Changed through `PUT /v1/settings` it is used after a restart, and the answer says so. |
 
 ## The clock
 

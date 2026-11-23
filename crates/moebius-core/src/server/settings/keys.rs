@@ -35,6 +35,7 @@ const KEYS: &[Key] = &[
     key("rules_file", "\"rules.md\"", false),
     key("harness.mcp_env", "[]", false),
     key("harness.url", "", false),
+    key("wiki.url", "", false),
     key("trial_window.start", "\"00:00\"", true),
     key("trial_window.end", "\"06:00\"", true),
     key("trial.token_factor", "1.5", true),
@@ -93,6 +94,7 @@ const KEYS: &[Key] = &[
 /// The keys whose value is, or holds, a URL that may have a user name and password in it.
 const URLS: &[&str] = &[
     "harness.url",
+    "wiki.url",
     "decision_model.url",
     "router.upstreams",
     "gitlab.url",

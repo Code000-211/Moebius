@@ -219,7 +219,7 @@ pub struct Config {
     pub harness_url: Option<String>,
     /// The environment variables `mcp.toml` may take values from.
     pub mcp_env: Vec<String>,
-    /// The wiki's repository to clone, if the server has a wiki.
+    /// The git repository the wiki is kept in; without one the wiki is a repository of its own in `wiki_dir`.
     pub wiki_url: Option<String>,
     pub github: Option<GitHubConfig>,
     /// The GitLab, if repositories on one are polled.
@@ -255,7 +255,7 @@ impl Config {
         self.data_dir.join("harness")
     }
 
-    /// Where the wiki's repository is cloned.
+    /// Where the wiki's repository is: a clone of `wiki_url`, or a repository of its own without one.
     pub fn wiki_dir(&self) -> PathBuf {
         self.data_dir.join("wiki")
     }
@@ -313,7 +313,8 @@ impl Config {
         if raw
             .wiki
             .as_ref()
-            .is_some_and(|wiki| wiki.url.trim().is_empty())
+            .and_then(|wiki| wiki.url.as_deref())
+            .is_some_and(|url| url.trim().is_empty())
         {
             return Err(ConfigError::WikiUrl);
         }
@@ -480,7 +481,7 @@ impl Config {
                 None => Some(base.join(raw.rules_file.unwrap_or_else(|| "rules.md".into()))),
             },
             harness_url: raw.harness.as_ref().map(|harness| harness.url.clone()),
-            wiki_url: raw.wiki.map(|wiki| wiki.url),
+            wiki_url: raw.wiki.and_then(|wiki| wiki.url),
             mcp_env: raw
                 .harness
                 .map(|harness| harness.mcp_env)

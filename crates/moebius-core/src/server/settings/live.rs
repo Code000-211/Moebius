@@ -52,7 +52,9 @@ struct Targets {
 pub struct Live {
     /// What the server started with; the keys that need a restart stay as they were here.
     started: Config,
-    started_raw: toml::Table,
+    /// What the file said at start, as far as the server uses it: the keys that need a restart are compared with it.
+    /// `wiki.url` is brought up to date when the wiki is connected, since the server uses it from then on.
+    started_raw: Mutex<toml::Table>,
     current: RwLock<Arc<Config>>,
     secrets: Secrets,
     /// The polls the forges' webhooks wake.
@@ -78,7 +80,7 @@ impl Live {
             webhooks: Webhooks::default(),
             current: RwLock::new(Arc::new(config.clone())),
             started: config,
-            started_raw,
+            started_raw: Mutex::new(started_raw),
             writing: Mutex::new(()),
             targets: None,
             launchers: LauncherSlot::default(),
@@ -125,10 +127,14 @@ impl Live {
         &self.webhooks
     }
 
+    fn started_raw(&self) -> std::sync::MutexGuard<'_, toml::Table> {
+        self.started_raw.lock().unwrap_or_else(|e| e.into_inner())
+    }
+
     /// What `GET /v1/settings` answers: the file and the value of every key in it.
     pub fn view(&self) -> Result<SettingsView> {
         let (_, raw) = read_raw(&self.started.file)?;
-        let restart_keys = restart_keys(&self.started_raw, &raw);
+        let restart_keys = restart_keys(&self.started_raw(), &raw);
         Ok(SettingsView {
             file: self.started.file.display().to_string(),
             values: values(&raw),
@@ -234,7 +240,7 @@ impl Live {
         app.record_action(by, action, None, None, context, "")?;
         self.apply(app, config, upstreams, turned);
         let raw = toml::from_str(&edited).unwrap_or_default();
-        let restart_keys = restart_keys(&self.started_raw, &raw);
+        let restart_keys = restart_keys(&self.started_raw(), &raw);
         Ok(Saved {
             restart_needed: !restart_keys.is_empty(),
             restart_keys,
@@ -286,6 +292,43 @@ impl Live {
                 ]))
             },
         )
+    }
+
+    /// A person connects the git repository `url` to the wiki, which until then is kept on this server only (see
+    /// `crate::wiki::connect`). The server checks the repository first and writes `[wiki] url` only when the wiki is
+    /// connected; a repository that cannot be reached or has pages of its own is refused with the file as it was. The
+    /// wiki uses it at once, with no restart.
+    pub fn connect_wiki(&self, app: &App, by: &Actor, url: &str) -> Result<crate::wiki::Status> {
+        let _writing = self.writing.lock().unwrap_or_else(|e| e.into_inner());
+        let url = url.trim();
+        let changes = Changes {
+            set: BTreeMap::from([("wiki.url".to_string(), Value::String(url.to_string()))]),
+            ..Changes::default()
+        };
+        let dir = self.get().wiki_dir();
+        self.write_changes(
+            app,
+            by,
+            &changes,
+            ("connect_wiki", Confirm::default()),
+            || {
+                crate::wiki::connect(app, &dir, url)?;
+                Ok(BTreeMap::from([(
+                    "repository".to_string(),
+                    crate::server::setup::without_credentials(url),
+                )]))
+            },
+        )?;
+        let mut running = (*self.get()).clone();
+        running.wiki_url = Some(url.to_string());
+        *self.current.write().unwrap_or_else(|e| e.into_inner()) = Arc::new(running);
+        let mut started = self.started_raw();
+        if let Ok((_, raw)) = read_raw(&self.started.file)
+            && let Some(wiki) = raw.get("wiki")
+        {
+            started.insert("wiki".into(), wiki.clone());
+        }
+        Ok(app.wiki_status())
     }
 
     /// Takes the live keys of `new` into the running configuration and gives them to the parts that use them.

@@ -222,6 +222,7 @@ Search, templates and the Jira import have a screen as well as a route, so a per
 | Route | In the web app |
 |---|---|
 | `GET /v1/wiki/search` | The search box above the tree on the **Wiki** page: the matches stand in the place of the tree, each with the line around the match. |
+| `GET /v1/wiki/status`, `PUT /v1/wiki/repository` | The notice above the tree of the **Wiki** page ("The pages are kept on this server only", for an owner) and **Use a git repository…** in it, and the **Wiki** box of **Settings**. |
 | `GET /v1/templates`, `PUT` and `DELETE /v1/templates/pages/{name}` | **Templates** in the header of the Wiki page: make, edit and delete page templates. |
 | `POST /v1/wiki/from-template` | **From a template** above the editor of a **New page**: pick a template and a name. |
 | `PUT` and `DELETE /v1/templates/issues/{kind}` | **Issue template** in each kind's box on the **Kinds** page (an owner's). |

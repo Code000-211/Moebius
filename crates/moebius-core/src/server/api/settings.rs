@@ -211,7 +211,15 @@ async fn start_steps(State(state): State<ApiState>) -> Result<axum::Json<setup::
         .0;
     let config = state.config.get();
     Ok(axum::Json(
-        setup::start(&config, available, &agents, repositories, awaiting).await,
+        setup::start(
+            &config,
+            available,
+            &agents,
+            repositories,
+            awaiting,
+            state.app.wiki_status().problem,
+        )
+        .await,
     ))
 }
 

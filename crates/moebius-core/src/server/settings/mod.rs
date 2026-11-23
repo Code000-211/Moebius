@@ -138,6 +138,9 @@ pub fn write_atomically(path: &Path, bytes: &[u8], private: bool) -> std::io::Re
     }
 }
 
+#[cfg(test)]
+mod wiki_tests;
+
 // Unix modes only; Windows has no modes (see `platform`).
 #[cfg(all(test, unix))]
 mod tests {

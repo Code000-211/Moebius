@@ -336,13 +336,26 @@ impl Server {
             )?)),
             None => None,
         };
-        if let Some(url) = &config.wiki_url {
-            let wiki = Arc::new(crate::wiki::Wiki::open(&app, url, &config.wiki_dir())?);
-            // The links between pages are made from the files the clone holds now.
-            if let Err(error) = wiki.index(&app) {
-                eprintln!("Moebius cannot index the wiki's links: {error}");
+        // A wiki that cannot be opened, as one whose repository cannot be reached, leaves the server running without it.
+        match crate::wiki::Wiki::open(&app, config.wiki_url.as_deref(), &config.wiki_dir()) {
+            Ok(wiki) => {
+                let wiki = Arc::new(wiki);
+                // The links between pages are made from the files the clone holds now.
+                if let Err(error) = wiki.index(&app) {
+                    eprintln!("Moebius cannot index the wiki's links: {error}");
+                }
+                app.set_wiki(wiki);
             }
-            app.set_wiki(wiki);
+            Err(problem) => {
+                // Everyone reads why, so the address goes without its user name and password.
+                let problem = match &config.wiki_url {
+                    Some(url) => problem.replace(url.as_str(), &setup::without_credentials(url)),
+                    None => problem,
+                };
+                let problem = crate::blobs::redact(&problem);
+                eprintln!("Moebius starts without a wiki: {problem}");
+                app.set_wiki_problem(problem);
+            }
         }
         if let Some(harness_repo) = &harness_repo {
             // This also gives older automations the workflow files that hold them from now on.

@@ -1,38 +1,41 @@
-//! The wiki (ADR 0022): the organisation's pages, Markdown files in a git repository the server clones to
-//! `<data_dir>/wiki` and keeps in step with its `origin` as it keeps the harness configuration repository (see
-//! [`crate::repos::kept`]). The organisation's pages are at the top and a project's under `projects/<key>/`; a page
+//! The wiki (ADR 0022, ADR 0026): the organisation's pages, Markdown files in a git repository at `<data_dir>/wiki`.
+//! Without a `[wiki] url` it is a repository of its own on this server; with one it is a clone the server keeps in
+//! step with its `origin` as it keeps the harness configuration repository (see [`crate::repos::kept`]). The organisation's pages are at the top and a project's under `projects/<key>/`; a page
 //! is named by its path without `.md`, such as `Onboarding/Setup` or `projects/WEB/Architecture`.
 //!
 //! An edit through the API is a commit by its person, pushed to `origin`; a push that fails undoes the commit, so the
-//! clone never drifts from `origin`. Before an edit, and on the server's refresh, the clone follows `origin`, so a
+//! clone never drifts from `origin`; a wiki without one is only committed. Before an edit, and on the server's refresh, the clone follows `origin`, so a
 //! page someone pushed there is read. Refreshing, reading and editing take turns.
 //!
 //! This module holds the clone and the names of pages; `pages` reads the pages and their history, `edits` writes,
 //! moves and deletes them, `proposals` keeps an agent's edit on a branch that waits in the inbox for a person to merge
 //! it, `prompt` gives a run the pages its card links to, `search` finds pages by their words, `sight` says which
 //! pages a person or run sees (a private project's pages are its members'), and `links` holds the links between pages
-//! and cards, which are made again from the files whenever the clone changes.
+//! and cards, which are made again from the files whenever the clone changes, and `repository` opens the clone and
+//! connects a wiki kept on this server to a git repository.
 
 mod edits;
 mod links;
 mod pages;
 mod prompt;
 mod proposals;
+mod repository;
 mod search;
 mod sight;
 
-use std::path::{Path, PathBuf};
-use std::sync::{Mutex, MutexGuard};
+use std::path::PathBuf;
+use std::sync::{Mutex, MutexGuard, RwLock};
 
 use crate::app::{App, AppError, Result};
 use crate::bus::Event;
 use crate::decide::Actor;
-use crate::repos::{Repos, git, kept};
+use crate::repos::{Repos, kept};
 
 pub use links::{Backlinks, CardRef, Links, PageLink, PageLinks};
 pub use pages::{PageInfo, PageView, Version};
 pub use prompt::for_card;
 pub use proposals::WIKI_PROPOSAL;
+pub use repository::{State, Status, connect};
 pub use search::{SEARCH_LIMIT, SearchHit};
 pub use sight::Seen;
 
@@ -45,7 +48,8 @@ const NAME_LIMIT: usize = 120;
 /// The wiki's clone.
 pub struct Wiki {
     path: PathBuf,
-    url: String,
+    /// The git repository the pages are pushed to and followed; none while they are kept on this server only.
+    url: RwLock<Option<String>>,
     repos: Repos,
     /// Held while the clone is read, refreshed or edited.
     turn: Mutex<()>,
@@ -94,23 +98,6 @@ impl Author {
 const EMAIL_DOMAIN: &str = "@moebius";
 
 impl Wiki {
-    /// Clones `url` to `path` unless it is there already. A clone that cannot be made is an error; one that is there
-    /// already is used as it is, so that the server starts without the network.
-    pub fn open(app: &App, url: &str, path: &Path) -> std::result::Result<Self, String> {
-        let repos = app.repos.clone();
-        kept::clone_unless_there(app, &repos, url, path)
-            .map_err(|e| format!("cannot clone the wiki: {e}"))?;
-        // A link committed to the wiki is checked out as a plain file from now on, so it never leads out of the clone.
-        git(path, &["config", "core.symlinks", "false"])
-            .map_err(|e| format!("cannot set up the wiki's clone: {e}"))?;
-        Ok(Self {
-            path: path.to_path_buf(),
-            url: url.to_string(),
-            repos,
-            turn: Mutex::default(),
-        })
-    }
-
     /// Fetches `origin` and fast-forwards the clone to it; when that changed the pages, `wiki_changed` is sent.
     pub fn refresh(&self, app: &App) -> Result<()> {
         let _turn = self.turn();
@@ -126,7 +113,7 @@ impl Wiki {
     /// Follows `origin`, telling the bus when that changed the pages. The caller holds the turn.
     fn follow(&self, app: &App) -> Result<()> {
         let before = kept::head(&self.path);
-        kept::follow_origin(app, &self.repos, &self.url, &self.path)?;
+        kept::follow_origin(app, &self.repos, self.url().as_deref(), &self.path)?;
         if let Some(commit) = kept::head(&self.path).filter(|now| Some(now) != before.as_ref()) {
             self.changed(app, commit);
         }

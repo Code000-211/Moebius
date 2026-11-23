@@ -45,6 +45,7 @@ import { buildTree, folderOf, headings, pathProblem } from "./model";
 import { PageEditor } from "./PageEditor";
 import { PageHistory } from "./PageHistory";
 import { Backlinks } from "./WikiBacklinks";
+import { WikiRepositoryNotice } from "./WikiRepository";
 import { WikiSearchBox, WikiSearchResults } from "./WikiSearch";
 import { FromTemplate, TemplatesDialog } from "./WikiTemplates";
 import { WikiTree } from "./WikiTree";
@@ -93,9 +94,10 @@ export function WikiPage() {
     return (
       <>
         {header}
+        <WikiRepositoryNotice />
         <Empty
-          title="No wiki yet"
-          body="The wiki is a git repository of Markdown pages. Name one under [wiki] url in moebius.toml, and the server keeps its pages here."
+          title="The wiki is not open"
+          body={sayError(pages.error, "The server could not open its wiki.")}
         />
       </>
     );
@@ -104,6 +106,7 @@ export function WikiPage() {
   return (
     <div className="flex h-full min-h-0 flex-col">
       {header}
+      <WikiRepositoryNotice />
       {pages.isError && (
         <Notice
           tone="error"
