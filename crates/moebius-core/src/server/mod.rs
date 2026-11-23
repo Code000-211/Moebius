@@ -24,6 +24,8 @@ pub mod ports;
 pub(crate) mod schedule;
 pub mod settings;
 pub mod setup;
+#[cfg(test)]
+mod taking_tests;
 pub mod webhooks;
 
 use std::net::SocketAddr;

@@ -401,6 +401,7 @@ impl App {
             .map(str::trim)
             .filter(|c| !c.is_empty())
             .map_or_else(|| by.decider(), str::to_string);
+        self.refuse_taken(&card)?;
         if !self.store.claim_card(card_id, &claimer)? {
             return Err(AppError::Conflict(format!(
                 "#{} is claimed by {} already",
@@ -411,8 +412,16 @@ impl App {
         if card.claimed_by.is_none() {
             self.bus.publish(Event::CardClaimed {
                 card: card_id,
-                by: claimer,
+                by: claimer.clone(),
             });
+        }
+        // A person's claim makes them the issue's assignee on the forge, so that other servers leave it alone.
+        let person = claimer
+            .strip_prefix(super::PERSON)
+            .and_then(|rest| rest.strip_prefix(':'))
+            .and_then(|handle| self.store.person_by_handle(handle).ok().flatten());
+        if let Some(person) = person {
+            self.take_issue(&card, Some(&person));
         }
         self.card(card_id)
     }

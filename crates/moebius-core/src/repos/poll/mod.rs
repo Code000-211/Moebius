@@ -15,7 +15,7 @@ use std::collections::BTreeMap;
 use std::future::Future;
 use std::sync::Arc;
 
-use crate::app::App;
+use crate::app::{App, OpenRequest};
 use crate::bus::Event;
 use crate::repos::forge::{Comment, ForgeError, Issue, Remembered};
 use crate::store::{Change, Repository};
@@ -75,6 +75,14 @@ pub trait Polled: Send + Sync {
     ) -> impl Future<Output = Option<Vec<i64>>> + Send;
     /// Forgets what the last call to `issues` saw, so that the next lists the issues again.
     fn forget_issues(&self, name: &str);
+    /// The open pull or merge requests of `name`, which the poll reads for the ones someone else opened for an issue (see
+    /// `App::follow_open_requests`); none for a forge that cannot list them.
+    fn open_requests(
+        &self,
+        _name: &str,
+    ) -> impl Future<Output = Result<Vec<OpenRequest>, ForgeError>> + Send {
+        async { Ok(Vec::new()) }
+    }
     /// What became of the pull or merge request `number` of `name`.
     fn request(
         &self,
@@ -125,7 +133,26 @@ async fn poll_repository<F: Polled>(
     let (refresh_app, refresh_repository) = (app.clone(), repository.clone());
     blocking(move || refresh_app.refresh(&refresh_repository)).await?;
     poll_issues(app, client, repository.clone(), name).await?;
-    poll_requests(app, client, &repository, name).await
+    poll_requests(app, client, &repository, name).await?;
+    poll_outside_requests(app, client, &repository, name).await?;
+    let app = app.clone();
+    blocking(move || app.mark_ready_issues(&repository)).await
+}
+
+/// Reads the open pull or merge requests of `repository` that someone else opened for an issue, and follows them (see
+/// `App::follow_open_requests`).
+async fn poll_outside_requests<F: Polled>(
+    app: &Arc<App>,
+    client: &F,
+    repository: &Repository,
+    name: &str,
+) -> Result<(), String> {
+    let requests = client
+        .open_requests(name)
+        .await
+        .map_err(|e| e.to_string())?;
+    let (app, repository) = (app.clone(), repository.clone());
+    blocking(move || app.follow_open_requests(&repository, &requests)).await
 }
 
 /// Runs a blocking call on the core off the async threads.
@@ -301,6 +328,7 @@ async fn poll_request<F: Polled>(
         Request::Closed => blocking(move || app.change_closed(&change)).await,
         Request::Open(status) => {
             blocking(move || {
+                app.refresh_followed(&change, &status.head)?;
                 app.record_change_status(
                     &change,
                     status.checks,

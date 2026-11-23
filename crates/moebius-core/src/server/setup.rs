@@ -212,7 +212,8 @@ pub struct Start {
     /// What waits for something to be done, though it holds nobody back from a first card: a server-wide workflow
     /// file that no project can take yet (key `workflow`, its name in the title and why in the detail; ADR 0025). Each
     /// is `done: false`, and none is counted in `done`. The same holds for key `wiki`, a wiki the server could not open
-    /// at start, with the reason in the detail (ADR 0026).
+    /// at start, with the reason in the detail (ADR 0026). Key `forge_login` is a forge with a repository that nobody of
+    /// this server has said their login on, so that taking an issue assigns no one there (ADR 0027).
     #[serde(default)]
     pub pending: Vec<StartStep>,
 }

@@ -56,6 +56,7 @@ mod research;
 mod retros;
 mod runs;
 mod shadows;
+mod taking;
 mod usage;
 mod views;
 mod wiki_links;
@@ -109,6 +110,7 @@ pub use research::{Budget, BudgetKind, Experiment, Research};
 pub use retros::{OwnEdits, Proposal, Retro, Trial};
 pub use runs::Run;
 pub use shadows::{NewShadow, ShadowStats, ShadowedOutcome, Takeover};
+pub use taking::{DEFAULT_READY_LABEL, LOGIN_FORGES};
 pub use usage::{
     ANSWERING, ActivityUsage, AgentUsage, ClassUsage, ModelUsage, NO_RUN, Scope, ToolWait, UNKNOWN,
     Usage, UsageTotals,
@@ -524,6 +526,7 @@ UPDATE cards SET moved_at = COALESCE((SELECT MAX(at) FROM card_moves WHERE card_
     projects::DELETED,
     workflows::MOVES,
     "ALTER TABLE person_preferences ADD COLUMN wrap_long_lines INTEGER NOT NULL DEFAULT 0;",
+    taking::SCHEMA,
 ];
 
 #[cfg(test)]

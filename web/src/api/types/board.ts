@@ -18,7 +18,16 @@ export interface Repository {
   files_of?: number | null;
   /** The project the repository's new issues land in, made with it. */
   home_project_id: number;
+  /** Whether the server keeps `ready_label` on the repository's issues that are approved and have no open blocker. */
+  mark_ready?: boolean;
+  /** The label of ready issues; "Ready for agent" until it is changed. */
+  ready_label?: string;
+  /** Which issues the repository's agents take: every approved one, or only those labelled and not taken. */
+  agents_take?: AgentsTake;
 }
+
+/** `all` approved issues, or `labelled` only those that carry the ready label and nobody else took. */
+export type AgentsTake = "all" | "labelled";
 
 export type RunStatus = "starting" | "running" | "waiting" | "succeeded" | "failed" | "stopped";
 
@@ -37,6 +46,8 @@ export interface CardChange {
   state: string;
   checks: "pending" | "success" | "failure" | "none";
   review_verdict: "approve" | "changes" | null;
+  /** The forge login of the person who opened the pull request the card follows; absent for Moebius's own change. */
+  outside_author?: string;
 }
 
 /** Why and by whom a card is held (blocked), and since when. */
@@ -96,6 +107,10 @@ export interface Card {
   claimed_by: string | null;
   /** The handles, without the `@`, of the people the card is given to, in the order the people were added. */
   assignees: string[];
+  /** The forge login, without the `@`, of someone on another server who took the issue; this server leaves it alone. */
+  taken_by?: string | null;
+  /** Why this server could not assign its person on the forge when they took the issue. */
+  assign_problem?: string | null;
   /** How soon the card should be done: the card's `priority:` label, `none` without one. */
   priority: Priority;
   /** The day the card is due as `YYYY-MM-DD`: the card's `due:` label, null without one. */
@@ -144,6 +159,10 @@ export interface Change {
   checks_head?: string | null;
   failed_checks?: string | null;
   check_output?: string | null;
+  /** The forge login of the person who opened the pull request when someone on another server did. */
+  outside_author?: string | null;
+  /** The column the card was in when it began to follow that pull request. */
+  taken_from?: string | null;
 }
 
 export interface Board {

@@ -33,6 +33,15 @@ pub(super) struct FakeGitHub {
     pub(super) scopes: Mutex<Option<String>>,
     /// Whether `GET /user` answers that the token's calls are limited for now (403 with no calls remaining).
     pub(super) limited: std::sync::atomic::AtomicBool,
+    /// The assignees it was asked to add, as issue number and login.
+    pub(super) assigned: Mutex<Vec<(u64, String)>>,
+    /// Whether it assigns the logins it is asked to; when not, it answers as GitHub does for one that is no
+    /// collaborator: with the issue as it was.
+    pub(super) assignable: std::sync::atomic::AtomicBool,
+    /// The labels it was asked to put on an issue, as the issue's number and the whole set.
+    pub(super) label_writes: Mutex<Vec<(u64, Vec<String>)>>,
+    /// The open pull requests `GET /pulls` lists.
+    pub(super) listed_pulls: Mutex<Vec<Value>>,
 }
 
 /// The access token the fake accepts at `GET /user`.
@@ -54,6 +63,15 @@ pub(super) struct Pulls {
 impl FakeGitHub {
     pub(super) fn set_issues(&self, etag: &str, issues: Vec<Value>) {
         *self.issues.lock().unwrap() = (etag.to_string(), issues);
+    }
+
+    /// Changes issue `number` as a write to it on GitHub does, so that the next poll lists it so.
+    pub(super) fn edit_issue(&self, number: u64, edit: impl FnOnce(&mut Value)) {
+        let mut issues = self.issues.lock().unwrap();
+        issues.0.push('+');
+        if let Some(found) = issues.1.iter_mut().find(|i| i["number"] == number) {
+            edit(found);
+        }
     }
 
     pub(super) fn asked(&self) -> Vec<Option<String>> {
@@ -94,6 +112,10 @@ pub(super) async fn fake_github() -> (String, Arc<FakeGitHub>) {
         credentials: Mutex::new(Vec::new()),
         scopes: Mutex::new(None),
         limited: std::sync::atomic::AtomicBool::new(false),
+        assigned: Mutex::new(Vec::new()),
+        assignable: std::sync::atomic::AtomicBool::new(true),
+        label_writes: Mutex::new(Vec::new()),
+        listed_pulls: Mutex::new(Vec::new()),
         pulls: Mutex::new(Pulls {
             opened: Vec::new(),
             updated: Vec::new(),
@@ -189,8 +211,72 @@ pub(super) async fn fake_github() -> (String, Arc<FakeGitHub>) {
             .post(|| async { (StatusCode::CREATED, axum::Json(json!({ "id": 501 }))) }),
         )
         .route(
-            "/repos/acme/widgets/pulls",
+            "/repos/acme/widgets/issues/{number}/assignees",
             post(
+                |State(fake): State<Arc<FakeGitHub>>,
+                 UrlPath(number): UrlPath<u64>,
+                 axum::Json(body): axum::Json<Value>| async move {
+                    let logins: Vec<String> = body["assignees"]
+                        .as_array()
+                        .unwrap()
+                        .iter()
+                        .map(|l| l.as_str().unwrap().to_string())
+                        .collect();
+                    let assignable = fake.assignable.load(std::sync::atomic::Ordering::SeqCst);
+                    if assignable {
+                        fake.assigned
+                            .lock()
+                            .unwrap()
+                            .extend(logins.iter().map(|l| (number, l.clone())));
+                        fake.edit_issue(number, |issue| {
+                            let assignees = issue["assignees"].as_array().cloned().unwrap_or_default();
+                            let mut assignees = assignees;
+                            assignees.extend(logins.iter().map(|l| json!({ "login": l })));
+                            issue["assignees"] = json!(assignees);
+                        });
+                    }
+                    let assignees: Vec<Value> = fake
+                        .assigned
+                        .lock()
+                        .unwrap()
+                        .iter()
+                        .filter(|(n, _)| *n == number)
+                        .map(|(_, login)| json!({ "login": login }))
+                        .collect();
+                    let mut answer = issue(number, "open", "leon", "");
+                    answer["assignees"] = json!(assignees);
+                    (StatusCode::CREATED, axum::Json(answer))
+                },
+            ),
+        )
+        .route(
+            "/repos/acme/widgets/issues/{number}/labels",
+            axum::routing::put(
+                |State(fake): State<Arc<FakeGitHub>>,
+                 UrlPath(number): UrlPath<u64>,
+                 axum::Json(body): axum::Json<Value>| async move {
+                    let labels: Vec<String> = body["labels"]
+                        .as_array()
+                        .unwrap()
+                        .iter()
+                        .map(|l| l.as_str().unwrap().to_string())
+                        .collect();
+                    let named: Vec<Value> = labels
+                        .iter()
+                        .map(|name: &String| json!({ "name": name }))
+                        .collect();
+                    fake.edit_issue(number, |issue| issue["labels"] = json!(named));
+                    fake.label_writes.lock().unwrap().push((number, labels));
+                    axum::Json(json!([]))
+                },
+            ),
+        )
+        .route(
+            "/repos/acme/widgets/pulls",
+            get(|State(fake): State<Arc<FakeGitHub>>| async move {
+                axum::Json(fake.listed_pulls.lock().unwrap().clone())
+            })
+            .post(
                 |State(fake): State<Arc<FakeGitHub>>, axum::Json(body): axum::Json<Value>| async move {
                     fake.pulls.lock().unwrap().opened.push(body);
                     (StatusCode::CREATED, axum::Json(json!({ "number": 7 })))

@@ -33,6 +33,25 @@ pub struct Repository {
     /// every repository a person added.
     #[serde(default)]
     pub files_of: Option<i64>,
+    /// Whether the server keeps the label `ready_label` on the repository's open issues that are approved and have no
+    /// open blocker (see `app::ready`).
+    #[serde(default)]
+    pub mark_ready: bool,
+    /// The label the server marks ready issues with.
+    #[serde(default = "default_ready_label")]
+    pub ready_label: String,
+    /// Which issues the repository's agents take: `all` approved ones, or `labelled` only those carrying `ready_label`
+    /// that nobody else took.
+    #[serde(default = "default_agents_take")]
+    pub agents_take: String,
+}
+
+fn default_ready_label() -> String {
+    super::taking::DEFAULT_READY_LABEL.into()
+}
+
+fn default_agents_take() -> String {
+    "all".into()
 }
 
 impl Repository {
@@ -128,6 +147,14 @@ pub struct Card {
     /// then those a person, the Moebius agent or a run asked for (see `card_repositories`).
     #[serde(default)]
     pub repositories: Vec<String>,
+    /// The forge login the issue is assigned to when that is none of this server's people: someone on another server
+    /// took it, and this server leaves it alone (ADR 0027). None while the issue is nobody's or a person's of this server.
+    #[serde(default)]
+    pub taken_by: Option<String>,
+    /// Why the server could not assign its person on the forge when they took the issue; none when it could, or
+    /// nobody took it here.
+    #[serde(default)]
+    pub assign_problem: Option<String>,
 }
 
 /// Why and by whom a card is held (blocked), and since when.
@@ -191,8 +218,7 @@ fn card_records_last(runs: &str, changes: &str, cards: &str) -> Vec<String> {
     ]
 }
 
-const REPOSITORY_COLUMNS: &str =
-    "id, name, path, forge, default_branch, github, trusted, project, home_project_id, files_of";
+const REPOSITORY_COLUMNS: &str = "id, name, path, forge, default_branch, github, trusted, project, home_project_id, files_of, mark_ready, ready_label, agents_take";
 
 fn repository_from_row(r: &rusqlite::Row) -> rusqlite::Result<Repository> {
     let trusted: String = r.get(6)?;
@@ -209,6 +235,9 @@ fn repository_from_row(r: &rusqlite::Row) -> rusqlite::Result<Repository> {
         project: r.get(7)?,
         home_project_id: r.get(8)?,
         files_of: r.get(9)?,
+        mark_ready: r.get(10)?,
+        ready_label: r.get(11)?,
+        agents_take: r.get(12)?,
     })
 }
 
@@ -298,6 +327,9 @@ impl Store {
             project: project.map(Into::into),
             home_project_id: home,
             files_of: None,
+            mark_ready: false,
+            ready_label: default_ready_label(),
+            agents_take: default_agents_take(),
         })
     }
 
@@ -613,6 +645,8 @@ impl Store {
             kind: None,
             fields: Default::default(),
             repositories: vec![repository_name],
+            taken_by: None,
+            assign_problem: None,
         })
     }
 
@@ -622,7 +656,7 @@ impl Store {
         params: impl rusqlite::Params,
     ) -> Result<Vec<Card>> {
         self.rows(&format!(
-            "SELECT id, repository_id, number, title, body, author, column_name, created_at, note, retried_after, confirmed, held_by, held_reason, held_at, parent, (closed OR column_name = 'Done'), claimed_by, (SELECT json_group_array(label) FROM (SELECT label FROM card_labels WHERE card_id = cards.id ORDER BY label)), {}, project_id, project_number, COALESCE((SELECT key FROM projects WHERE id = cards.project_id), ''), moved_at, archived_at, {}, {}, {} FROM cards WHERE {clause} ORDER BY id", super::assignees::CARD_ASSIGNEES, super::kinds::CARD_KIND, super::kinds::CARD_FIELDS, super::card_repositories::CARD_REPOSITORIES
+            "SELECT id, repository_id, number, title, body, author, column_name, created_at, note, retried_after, confirmed, held_by, held_reason, held_at, parent, (closed OR column_name = 'Done'), claimed_by, (SELECT json_group_array(label) FROM (SELECT label FROM card_labels WHERE card_id = cards.id ORDER BY label)), {}, project_id, project_number, COALESCE((SELECT key FROM projects WHERE id = cards.project_id), ''), moved_at, archived_at, {}, {}, {}, {}, assign_problem FROM cards WHERE {clause} ORDER BY id", super::assignees::CARD_ASSIGNEES, super::kinds::CARD_KIND, super::kinds::CARD_FIELDS, super::card_repositories::CARD_REPOSITORIES, super::taking::CARD_TAKEN_BY
         ), params, |r| {
             let labels: Vec<String> = serde_json::from_str(&r.get::<_, String>(17)?).map_err(|e| {
                 rusqlite::Error::FromSqlConversionFailure(
@@ -667,6 +701,8 @@ impl Store {
                 moved_at: r.get(22)?,
                 archived_at: r.get(23)?,
                 repositories: super::card_repositories::names(r, 26)?,
+                taken_by: r.get(28)?,
+                assign_problem: r.get(29)?,
             })
         })
     }

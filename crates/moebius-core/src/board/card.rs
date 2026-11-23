@@ -7,6 +7,8 @@
 //!   `App::counts_as_sub_issue`), its labels and who claimed it.
 //! - `card.assignees`: the handles of the people the card is given to, without the `@`, in the order the people were
 //!   added; an empty list when it is no one's.
+//! - `card.taken_by`: the forge login the issue is assigned to when that is none of this server's people (someone on
+//!   another server took it), without the `@`; nil otherwise. No run starts for such a card on this server.
 //! - `card.priority`, `card.due`: how soon the card should be done, as `urgent`, `high`, `medium`, `low` or `none` (a
 //!   string, never nil), and the day it is due as `YYYY-MM-DD` (nil when it has none). Both are the card's `priority:` and
 //!   `due:` labels.
@@ -155,6 +157,7 @@ impl Engine {
         t.set("labels", card.labels.clone())?;
         t.set("claimed_by", card.claimed_by.as_deref())?;
         t.set("assignees", card.assignees.clone())?;
+        t.set("taken_by", card.taken_by.as_deref())?;
         t.set("priority", card.priority.name())?;
         t.set("due", card.due.as_deref())?;
         t.set("kind", card.kind.as_deref())?;

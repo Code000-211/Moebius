@@ -21,6 +21,8 @@ pub enum GitLabError {
         status: reqwest::StatusCode,
         body: String,
     },
+    #[error("GitLab cannot assign {0}: the login is not a member of the project")]
+    NotAssignable(String),
 }
 
 /// An issue as GitLab lists it.
@@ -43,11 +45,27 @@ pub struct Issue {
     pub user_notes_count: i64,
     #[serde(default)]
     pub project_id: i64,
+    /// The people the issue is assigned to.
+    #[serde(default)]
+    pub assignees: Vec<User>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 pub struct User {
     pub username: String,
+}
+
+/// An open merge request as the list of them has it: who opened it and what it says, which names the issues it closes.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+pub struct ListedMergeRequest {
+    pub iid: i64,
+    #[serde(default)]
+    pub title: String,
+    #[serde(default)]
+    pub description: Option<String>,
+    pub author: User,
+    /// The commit at the head of the source branch.
+    pub sha: String,
 }
 
 /// A comment on an issue (a note) as GitLab lists it.
@@ -324,6 +342,79 @@ impl GitLab {
             Some(&request),
         )
         .await
+    }
+
+    /// Adds `login` to the people issue `number` of `project` is assigned to, keeping the others. GitLab assigns by
+    /// user id, which is looked up among the project's members: a login that is no member cannot be assigned.
+    pub async fn assign_issue(
+        &self,
+        project: &str,
+        number: i64,
+        login: &str,
+    ) -> Result<(), GitLabError> {
+        #[derive(Deserialize)]
+        struct Member {
+            id: i64,
+            username: String,
+        }
+        #[derive(Deserialize)]
+        struct Assigned {
+            #[serde(default)]
+            assignees: Vec<Member>,
+        }
+        let members: Vec<Member> = self
+            .project_call(
+                project,
+                Method::GET,
+                &format!("/members/all?query={login}&per_page=100"),
+                None,
+            )
+            .await?;
+        let Some(user) = members
+            .into_iter()
+            .find(|m| m.username.eq_ignore_ascii_case(login))
+        else {
+            return Err(GitLabError::NotAssignable(login.to_string()));
+        };
+        let issue: Assigned = self
+            .project_call(project, Method::GET, &format!("/issues/{number}"), None)
+            .await?;
+        let mut ids: Vec<i64> = issue.assignees.iter().map(|a| a.id).collect();
+        if ids.contains(&user.id) {
+            return Ok(());
+        }
+        ids.push(user.id);
+        self.project_do(
+            project,
+            Method::PUT,
+            &format!("/issues/{number}"),
+            Some(&json!({ "assignee_ids": ids })),
+        )
+        .await
+    }
+
+    /// The open merge requests of `project`, from all pages.
+    pub async fn open_merge_requests(
+        &self,
+        project: &str,
+    ) -> Result<Vec<ListedMergeRequest>, GitLabError> {
+        let mut all = Vec::new();
+        for page in 1.. {
+            let listed: Vec<ListedMergeRequest> = self
+                .project_call(
+                    project,
+                    Method::GET,
+                    &format!("/merge_requests?state=opened&per_page=100&page={page}"),
+                    None,
+                )
+                .await?;
+            let last = listed.len() < 100;
+            all.extend(listed);
+            if last {
+                break;
+            }
+        }
+        Ok(all)
     }
 
     /// Writes a comment on issue `number` in `project` and returns its id.

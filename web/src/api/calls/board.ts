@@ -142,6 +142,11 @@ export function merge(change: number): Promise<{ commit: string }> {
   return post<{ commit: string }>(`/v1/changes/${change}/merge`, {});
 }
 
+/** Has the Reviewer read a pull request someone else opened that a card follows; the answer is the run. */
+export function reviewChange(change: number): Promise<Run> {
+  return post<Run>(`/v1/changes/${change}/review`, {});
+}
+
 /** Sends a change back to coding, with the reason as the card's note; a run's change has no card. */
 export function reject(change: number, reason: string): Promise<Card | null> {
   return post<Card | null>(`/v1/changes/${change}/reject`, { reason });

@@ -95,6 +95,8 @@ keep their rows: the role is checked before the `410`.
 | `POST /v1/favourites` | viewer | no |
 | `PUT /v1/favourites/order` | viewer | no |
 | `DELETE /v1/favourites/{id}` | viewer | no |
+| `GET /v1/logins` | viewer | no |
+| `PUT /v1/logins` | viewer | no |
 | `GET /v1/preferences` | viewer | no |
 | `PUT /v1/preferences` | viewer | no |
 | `POST /v1/recent` | viewer | no |
@@ -230,6 +232,7 @@ keep their rows: the role is checked before the `410`.
 | `GET /v1/cards/{id}/history` | viewer | yes |
 | `POST /v1/changes/{id}/merge` | member | yes |
 | `POST /v1/changes/{id}/reject` | member | yes |
+| `POST /v1/changes/{id}/review` | member | no |
 | `GET /v1/changes/{id}/diff` | viewer | yes |
 | `POST /v1/runs/pause` | member | no |
 | `POST /v1/runs/resume` | member | no |
@@ -421,7 +424,7 @@ These objects appear in the responses. All ids are numbers; times are Unix secon
 GitLab, such as `group/project`, or the repository on Forgejo as `owner/repo`, or null) and `home_project_id` (the
 [project](#projects) its new issues land in, which was made with it) and `files_of` (the id of the project whose own
 files the repository holds, see [a project's own files](#a-projects-own-files), or null for every repository a person
-added).
+added), `mark_ready` (true when the server keeps the ready label on the repository's issues, default false), `ready_label` (the label, default `Ready for agent`) and `agents_take` (`all`, the default, or `labelled`); see [`PUT /v1/repositories/{id}`](#put-v1repositoriesid).
 
 `Card`: `id`, `repository_id`, `project_id` (the [project](#projects) whose board it is on), `number` (the number of its issue in its repository: the forge's number for an issue of a forge), `project_number` (its number in its project) and `project_key` (the key of its project), which together name it, `WEB-24`; `title`, `body`, `author`, `column`, `created_at`, `note` (why the card was sent
 back to coding, or null), `retried_after` (the id of the card's latest run when a person last retried it, or null) and
@@ -435,7 +438,7 @@ the people it is given to, without the `@`, in the order the people were added; 
 `YYYY-MM-DD`, or null) and `estimate` (points, or null); see [Priority and due date](#priority-and-due-date) and
 [Estimates](#estimates). `repositories` names the repositories the card works in, its own issue's first (see
 [`PUT /v1/cards/{id}/repositories`](#put-v1cardsidrepositories)). It also has `moved_at` (when the card last moved, was edited or was released from a hold, Unix seconds;
-scripts read it as `card.moved_at`) and `archived_at` (null, or when a column script archived the card with
+scripts read it as `card.moved_at`) and `taken_by` (null, or the forge login the issue is assigned to when that is none of this server's people's logins on that forge, compared without regard to case, without the `@`: someone on another server took the issue, see [Working with people on other servers](#working-with-people-on-other-servers)), `assign_problem` (null, or a sentence saying why this server could not assign the person who took the card on the forge) and `archived_at` (null, or when a column script archived the card with
 `moebius.archive`). An archived card is not on the board: the snapshot (`GET /v1/snapshot`) leaves it out, and a
 move (a person's, or the forge reopening its issue) brings it back. It stays in the store, in the issue list and in the
 analytics.
@@ -499,7 +502,7 @@ latest review's state in lower case, such as `approved`; on GitLab `approved` on
 latest review given that was not dismissed, with `REQUEST_CHANGES` as `changes_requested`; or null), `head` (the published commit), `published_at`, `checks_head` (the commit
 `checks` are for), `failed_checks` (the failing checks of a pull request, the failed jobs of a pipeline, or the failed
 statuses of a commit, one per line, or null) and `check_output` (the
-end of the output of the repository's own checks, or null). A change's `branch` is `moebius/card-<number>`, `moebius/chat-<run id>` for the work of a chat, which has no card, `moebius/workflow-run-<run id>` for the work of a workflow run, which has none either and names the run in `run_id`, or `research/<research id>-<name>` for a lever of a research, which has none either.
+end of the output of the repository's own checks, or null). A change's `branch` is `moebius/card-<number>`, `moebius/chat-<run id>` for the work of a chat, which has no card, `moebius/workflow-run-<run id>` for the work of a workflow run, which has none either and names the run in `run_id`, or `research/<research id>-<name>` for a lever of a research, which has none either. A change that follows a pull request someone else opened (see [Working with people on other servers](#working-with-people-on-other-servers)) has the branch `moebius/pr-<pull request number>`, kept in the clone, and two more fields: `outside_author` (the forge login of whoever opened the request) and `taken_from` (the column the card was in when it began to follow the request); both are null for every other change.
 
 `InboxItem`: `id`, `kind`, `card_id` (or null), `title`, `data` (an object that depends on the kind), `resolved_at` (null
 in the snapshot, which holds only open items), `at` and `assignees` (the handles of the people it is given to, like a
@@ -511,6 +514,7 @@ first: a merge of a card's changes stopped there, by `moebius.merge_change` or b
 of the card is merged, and the card stays where it is until its last change is merged, which resolves the item; the
 same change failing again keeps it, another stop replaces it) and
 `project_label` (`data.label`, `data.repository`; its `title` says the label names no project of the repository, and the card it is about stays where it is: see [the project label](#the-project-label)) and
+`outside_change` (`data.change`, `data.pull_request`, `data.author`, `data.repository`: the card follows a pull request someone else opened; resolved when the request is merged or closed; see [Working with people on other servers](#working-with-people-on-other-servers)) and
 `proposal` (`data.proposal`, `data.branch`, `data.trials`: an array of `{"card", "outcome", "reason"}` for the cards it
 addresses, and `data.regression`: the same for the cards of the regression set, empty when none was tried; its `title` is the
 proposal's and it has no card; a proposal for Moebius's own configuration has `data.kind` (`settings` or
@@ -682,6 +686,20 @@ routes are a person's own: a run token gets `403`. A `Preferences` is `{"show_th
 arriving is always open); `wrap_long_lines` is whether code blocks and long lines in chat answers, card threads and run
 pages wrap instead of scrolling sideways. Both are `false` for a person who chose nothing.
 
+### `GET /v1/logins`
+
+The logins of the person asking on the forges, which Settings, You, Profile shows as "Your login on GitHub", "Your login
+on GitLab" and "Your login on Forgejo": `{"github": string, "gitlab": string, "forgejo": string}`, the empty string where
+they said nothing. Taking an issue assigns that login on the forge (see [Working with people on other servers](#working-with-people-on-other-servers)).
+Only a person has logins: an agent's token is refused (`403`).
+
+### `PUT /v1/logins`
+
+Replaces the logins of the person asking. Request and response: the same object as `GET /v1/logins`; a key left out, or
+a blank value, means no login there. A leading `@` is removed, and a login is made of letters, digits and `-_.[]`.
+Errors: `422` a key that is none of `github`, `gitlab` and `forgejo`, or a login with other characters; `403` the request
+is an agent's.
+
 ### `GET /v1/preferences`
 
 The preferences of the person asking.
@@ -753,7 +771,7 @@ gets. Each entry of `cards` is a `Card` with what a board shows of it, so that a
 | `counts_as_sub_issue` | Whether the card counts as a sub-issue of its `parent` (see [only issues a person can have vouched for](#the-issue-tracker)). A client that builds stacks, counts "done of total" or decides what is next from `parent` uses only the cards where this is true; one that is false is an ordinary top-level card, whatever parent it names. |
 | `refusals` | How many tool calls of that latest run were refused (its `tool_check` and `mcp_call` run events with the decision `refuse`). |
 | `attempts` | The latest group of attempts of a card that was tried several times at once (see [column scripts](column-scripts.md#attempts)), oldest first, each `{"run", "model", "status", "result", "output", "picked", "reason"}`: `model` the model or class the attempt was started with, or null; `status` its run's status; `result` `passed`, `failed` or null before it was judged; `output` why it failed; `picked` whether it was the one kept, and `reason` why. Absent when the card has no attempts. |
-| `change` | The card's open change in its own issue's repository, `{"id", "repository", "state", "checks", "review_verdict"}`, or null. `repository` is the name of the repository the change is in. `checks` is `pending`, `success`, `failure` or `none`, as `card.change.checks`; `review_verdict` is `approve` or `changes` once a review ended since the latest `code` run, else null. Whether the change conflicts is not in the snapshot. |
+| `change` | The card's open change in its own issue's repository, `{"id", "repository", "state", "checks", "review_verdict", "outside_author"}`, or null. `repository` is the name of the repository the change is in. `outside_author` is the forge login of whoever opened the pull request when the card follows one that someone else opened, and is left out for Moebius's own change. `checks` is `pending`, `success`, `failure` or `none`, as `card.change.checks`; `review_verdict` is `approve` or `changes` once a review ended since the latest `code` run, else null. Whether the change conflicts is not in the snapshot. |
 | `changes` | Every open change of the card, one per repository it works in that has one, in the order the changes are merged (the order of `repositories`), each as `change` above. A card over one repository has this one change or none; `change` is the entry of its own repository. Empty for a card in Done. |
 
 A card in `Done` has `rounds` and `tokens` 0, no `run`, no `change`, no blockers and no refusals: the snapshot is read on
@@ -1598,14 +1616,28 @@ For Forgejo, such as Codeberg, with `[forgejo]` set up, the clone sends the acce
 
 ### `PUT /v1/repositories/{id}`
 
-A person, or the Moebius agent, replaces the logins whose issues on a repository on a forge need no approval.
-Request: `{"trusted": [string], "reason": string}`; `reason` is optional and is kept with the decision. Each login is
-trimmed and kept once (in any case); a login must be made of letters, digits and `-_.[]`. The decision is recorded
-(kind `edit_repository`, decider `person` or `agent:Moebius`; its context has `repository`, `trusted` and
-`previous_trusted`, the logins joined with `, `) and the event `repository_updated` is sent. A list that changes nothing
-records nothing. The new list counts for cards checked from then on; a card already approved or waiting stays as it is.
-Response: the `Repository`. Errors: `404` no such repository; `422` the repository is on no forge, or a login is blank
-or has other characters.
+A person, or the Moebius agent, changes a repository on a forge: the logins whose issues need no approval and how it
+works with people on other servers (see [Working with people on other servers](#working-with-people-on-other-servers)).
+Request: `{"trusted": [string], "mark_ready": bool, "ready_label": string, "agents_take": string, "reason": string}`;
+every key is optional, and a key left out stays as it is. `reason` is kept with the decision.
+
+- `trusted` replaces the logins whose issues on a repository on a forge need no approval. Each login is trimmed and
+  kept once (in any case); a login must be made of letters, digits and `-_.[]`. The new list counts for cards checked
+  from then on; a card already approved or waiting stays as it is.
+- `mark_ready` (default `false`): while it is true the server keeps the ready label on the repository's issues at every
+  poll of the repository. Only the server of the repository's owner should turn it on.
+- `ready_label` (default `Ready for agent`): the label, trimmed, not empty, at most 50 characters, without a comma or a
+  new line.
+- `agents_take` (default `all`): `all` leaves the column scripts' run starters as they are; `labelled` makes them start
+  only a card whose issue carries the label (in any case), or that someone of this server took (its issue is assigned
+  to a login of one of this server's people), or that has a run already. Any other card waits with `waiting for the
+  label "<label>" (this repository's agents take only labelled issues nobody took)`.
+
+The decision is recorded (kind `edit_repository`, decider `person` or `agent:Moebius`; its context has `repository`,
+and for `trusted` also `trusted` and `previous_trusted`, the logins joined with `, `, and for the other keys
+`mark_ready`, `ready_label` and `agents_take`) and the event `repository_updated` is sent. An edit that changes nothing
+records nothing. Response: the `Repository`. Errors: `404` no such repository; `422` the repository is on no forge, a
+login is blank or has other characters, the label is not allowed, or `agents_take` is neither `all` nor `labelled`.
 
 ### `DELETE /v1/repositories/{id}`
 
@@ -2158,8 +2190,8 @@ marks a duplicate. Errors: `404` no such card.
 Claims the issue, so that two sessions do not take the same one. Request: `{"by": text}`, optional: the name that claims,
 `person:<handle>` or `agent:<name>` for the caller when left out; a claim is advisory (see above). Claiming again as the claimer changes
 nothing. The event
-`card_claimed` is sent. Response: the `Card`. Errors: `404` no such card; `409` somebody else claimed it, and the message
-says who.
+`card_claimed` is sent. When a person claims a card whose repository is on a forge, their login on it (see [`PUT /v1/logins`](#put-v1logins)) is added to the issue's assignees (see [Working with people on other servers](#working-with-people-on-other-servers)); the claim succeeds even when that fails, and the `Card`'s `assign_problem` says why. Response: the `Card`. Errors: `404` no such card; `409` somebody else claimed it, and the message
+says who, or the issue is assigned on the forge to someone who is none of this server's people: `#<number> is taken by @<login> on <GitHub, GitLab or Forgejo>`.
 
 ### `DELETE /v1/cards/{id}/claim`
 
@@ -2280,7 +2312,7 @@ the repository `harness`.
 Request: `{"reason": "..."}`; `reason` is optional, but the body is not: send `{}`.
 
 Response: `{"commit": "<sha of the merge commit>"}`. Errors: `404` no such change; `422` the change is not `open`, or a
-change of its card before it is open (`merge the change in <repository> first: ...`); `409` the
+change of its card before it is open (`merge the change in <repository> first: ...`), or it follows a pull request someone else opened and the checks are `pending` or `failure` (`the checks of pull request #<n> have not passed`; a request with no checks may be merged); `409` the
 branch does not merge cleanly; `500` the forge failed.
 
 ### `POST /v1/changes/{id}/reject`
@@ -2296,6 +2328,18 @@ Request: `{"reason": "..."}`; `reason` is optional, but send `{}` without one.
 
 Response: the `Card`, or `null` for a workflow run's change. Errors: `404` no such change; `422` the change is not `open`
 or its card is not in `Ready to merge`.
+
+### `POST /v1/changes/{id}/review`
+
+A person has the Reviewer read a pull request someone else opened that a card follows (see [Working with people on
+other servers](#working-with-people-on-other-servers)): the request's head is fetched again into the change's local
+branch, the decision is recorded (kind `review_change`, decider `person`), and a run with the purpose `review` and the
+agent `Reviewer` starts for the card on that branch. Its findings are in the card's thread; nothing moves the card.
+Request: `{"reason": "..."}`, optional.
+
+Response: the `Run`. Errors: `404` no such change; `422` the change is not an open change that follows a pull request
+someone else opened, or there is no Reviewer agent (`there is no Reviewer agent`); `409` the run cannot start. Not
+allowed to an agent's token.
 
 ### `GET /v1/changes/{id}/diff`
 
@@ -3415,7 +3459,7 @@ same five, in the order a person takes them. Response:
   workflow <name> to a project`, the detail says why (no project exists yet, only private projects exist for a workflow
   that names no repository, the file cannot be read, or its project has a workflow of that name already). It is tried
   again at every start, so the item goes when the cause does. A wiki the server could not open at start is one more,
-  with the key `wiki` and the title `Open the wiki`; the detail gives the reason. `moebius doctor` writes the pending
+  with the key `wiki` and the title `Open the wiki`; the detail gives the reason. For each forge (`github`, `gitlab`, `forgejo`) that has a repository on this server while nobody of the server has said their login on it (see [`GET /v1/logins`](#get-v1logins)) there is an item with the key `forge_login` and the title `Tell Moebius your login on <GitHub, GitLab or Forgejo>`; it goes when someone sets one. `moebius doctor` writes the pending
   items after the warnings.
 
 ### `GET /v1/plugins`
@@ -4396,6 +4440,53 @@ with `run` null from now on, as for a chat. The decision is recorded (kind `dele
 as `research_deleted`. Request: `{"reason": string}` (optional). Response: the deleted research (as it was stored).
 Errors: `403` for an agent's run token; `404` no such research; `409` as above.
 
+## Working with people on other servers
+
+People who each run a server on one repository share nothing but its forge ([ADR 0027](../adr/0027-working-with-people-on-other-servers-through-the-forge.md);
+the steps are in [the guide](../guide/working-with-others.md)). What a server wants the others to know it writes on the
+forge, and what it wants to know it reads there at each poll of the repository.
+
+- **Taking assigns.** A card is taken when a person claims it (`POST /v1/cards/{id}/claim`), or when a column script's
+  `moebius.start_run` or `moebius.start_runs` starts a run for it. The server then adds the login of the person on the
+  card's forge (see [`PUT /v1/logins`](#put-v1logins)) to the assignees of the issue, keeping the others: GitHub
+  `POST /issues/{n}/assignees`, whose answer must list the login; GitLab `PUT issues/:iid` with `assignee_ids`, after
+  looking the login up among the project's members; Forgejo `PATCH` of the issue's assignees. The person is the one who
+  claimed; for a run a column script starts, the first of the people the card is given to who has a login on that
+  forge, else the one enabled person who has one there; when that is not one person nothing is assigned. Nothing
+  fails for it: with no login, or when the forge refuses (the token cannot assign, the login is no collaborator or
+  project member), the claim or run goes ahead and the `Card`'s `assign_problem` says why. Nothing is assigned for a
+  repository on no forge.
+- **Taken by someone else.** The poll records the logins an issue is assigned to. The first that is none of the logins
+  this server's people have on that forge, compared without regard to case, is the `Card`'s `taken_by`
+  (`card.taken_by` in a [column script](column-scripts.md#the-card-argument)). Such a card stays in its column. The
+  `moebius.start_run` and `moebius.start_runs` of a column script start nothing for it (they return nil and an empty
+  array) and make the card wait with the reason `taken by @<login>`; a claim of it is `409`. Another route of a person,
+  such as starting a chat, is not blocked. It stays taken until the assignee is removed on the forge. The web app draws
+  such a card greyed, with "Taken by @<login>".
+- **Ready label.** While a repository's `mark_ready` is true, at each poll the server adds `ready_label` to every open
+  card's issue that is approved (the card is confirmed, or its author is trusted, or its column is not `Backlog`) and has
+  no open blocker (`blocked_by` empty: `Blocked by #n` lines, the forge's dependencies and the board's own blockers) and
+  no sub-issue that is not done, and takes it off as soon as one of these stops being true. An issue for which the forge
+  has not yet said what blocks it is left as it is. The label is written as a script's labels are, so a forge that
+  refuses it is waited out. A repository whose `agents_take` is `labelled` starts only cards that carry the label.
+- **Following a pull request.** At each poll the server lists the repository's open pull requests (GitHub and Forgejo
+  `GET /pulls?state=open`, GitLab `GET /merge_requests?state=opened`). It follows one when its author is none of the
+  logins this server's people have on the forge, it is not a change of this repository already, its title or body
+  closes an issue of this repository with a closing keyword (`close`, `closes`, `closed`, `fix`, `fixes`, `fixed`,
+  `resolve`, `resolves`, `resolved`, then optionally a colon, then `#n` or `owner/repo#n` for this repository; a plain
+  mention does not count), and that issue has a card that is not in `Done` or closed and has no open change. Then the head is
+  fetched into the local branch `moebius/pr-<number>` (GitHub and Forgejo `refs/pull/<n>/head`, GitLab
+  `refs/merge-requests/<n>/head`; a failure is a `forge_error` event and the request is followed all the same), a
+  `Change` is recorded with `pull_request`, `outside_author` and `taken_from`, the card moves to `In review`, an
+  `outside_change` inbox item is added and `change_offered` is sent. The checks and the review of the request are read as
+  an own change's are, and the local branch moves when the head does. While the request is open the card has no column
+  script run, as a held card has none. A person merges it with `POST /v1/changes/{id}/merge`, refused while its checks
+  are `pending` or `failure`, and has the Reviewer read it with `POST /v1/changes/{id}/review`. When it is merged the
+  card moves to `Done`, also when its issue is closed. When it is closed without a merge the change is `closed`, its inbox
+  item is resolved (no `change_closed` item is added), and the card goes back to `taken_from` (`Not started` when that was `In
+  review` or `Done`); it is still taken until the assignee is removed.
+
+
 ## Events
 
 `GET /v1/events` sends one JSON object per message: `{"kind": "<kind>", "data": ...}`. These are all the kinds.
@@ -4403,7 +4494,7 @@ Errors: `403` for an agent's run token; `404` no such research; `409` as above.
 | Kind | When | `data` |
 |---|---|---|
 | `repository_added` | A repository was added. | The `Repository`. |
-| `repository_updated` | The logins a repository on a forge trusts were changed through the API. | The `Repository`. |
+| `repository_updated` | The logins a repository on a forge trusts, or how it works with others, were changed through the API. | The `Repository`. |
 | `repository_removed` | A repository was removed through the API. | The `Repository`. |
 | `project_changed` | A project was made, renamed or made private or public through the API; sent only to those who see its record (see [private projects](#private-projects)). A repository's home project, made with it, comes with `repository_added`. | `{"id", "name", "key", "created_at", "repositories": [id], "files": id or null, "private": bool, "members": [person id]}` |
 | `wiki_changed` | A person edited the wiki through the API, or a refresh brought commits pushed to its `origin` from elsewhere. | `{"commit": string (the full id the pages are now read at)}` |
@@ -4420,7 +4511,7 @@ Errors: `403` for an agent's run token; `404` no such research; `409` as above.
 | `project_settings_changed` | A file of a repository's settings was saved or removed, through the API. | `{"repository": id, "file": string}` |
 | `settings_moved` | The default branch of a repository still has a `.moebius/` folder, which is not read any more; said once for each repository while the server runs. | `{"repository": the repository's name, "message": string}` |
 | `card_added` | An issue became a card: created through the API or found on GitHub, GitLab or Forgejo. | The `Card`. |
-| `card_updated` | The title or body of a card changed: edited through the API, or changed on GitHub, GitLab or Forgejo; or it was held or released (`held`). | The `Card`. |
+| `card_updated` | The title or body of a card changed: edited through the API, or changed on GitHub, GitLab or Forgejo; or it was held or released (`held`); or who took it changed (`taken_by`, `assign_problem`). | The `Card`. |
 | `card_parent_changed` | An issue got a parent, was moved to another or lost it, through the API or on the forge. | `{"card": id, "parent": issue number or null}` |
 | `card_labels_changed` | The labels of an issue changed, through the API or on the forge. | `{"card": id, "labels": [text]}` |
 | `kind_changed` | A kind of issue was made, or its name or fields changed. | `{"id", "name", "fields": [{"id", "name", "type", "options"}]}` |

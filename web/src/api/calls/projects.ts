@@ -3,7 +3,7 @@
  * the settings plugins ask of them.
  */
 import { del, get, patch, post, put } from "../http";
-import type { Repository } from "../types/board";
+import type { AgentsTake, Repository } from "../types/board";
 import type {
   FileDetail,
   NewProject,
@@ -58,6 +58,21 @@ export function addRepository(repository: NewRepository): Promise<Repository> {
 /** Replaces the logins whose issues need no approval (a repository on a forge). */
 export function editTrusted(repository: number, trusted: string[]): Promise<Repository> {
   return put<Repository>(`/v1/repositories/${repository}`, { trusted });
+}
+
+/** What the server does with the repository's issues in agreement with other servers (`PUT /v1/repositories/{id}`). */
+export interface WorkingWithOthers {
+  mark_ready: boolean;
+  ready_label: string;
+  agents_take: AgentsTake;
+}
+
+/** Sets how the repository works with people on other servers: the ready label and which issues its agents take. */
+export function editWorkingWithOthers(
+  repository: number,
+  settings: WorkingWithOthers,
+): Promise<Repository> {
+  return put<Repository>(`/v1/repositories/${repository}`, settings);
 }
 
 /** Removes a repository with its cards, changes, chats and clone; the server refuses while one of its runs goes on. */

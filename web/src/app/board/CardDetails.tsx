@@ -16,6 +16,7 @@ import { Button } from "../../ui/components/Button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "../../ui/components/Dialog";
 import { PrBadge } from "../../ui/components/PrBadge";
 import { cn } from "../../ui/lib/cn";
+import { Avatar } from "../../ui/page/Avatar";
 import { Notice } from "../../ui/page/Notice";
 import { SkeletonLines } from "../../ui/page/Skeleton";
 import { scriptPath } from "../pages";
@@ -107,11 +108,19 @@ export function CardDetails({
                     </p>
                   )}
                   {pullRequest && (
-                    <PrBadge
-                      number={pullRequest.number}
-                      url={pullRequest.url}
-                      status={pullRequest.status}
-                    />
+                    <div className="flex flex-wrap items-center gap-x-4">
+                      <PrBadge
+                        number={pullRequest.number}
+                        url={pullRequest.url}
+                        status={pullRequest.status}
+                      />
+                      {change.outside_author && (
+                        <span className="inline-flex min-h-7 items-center gap-1.5 text-sm text-secondary">
+                          <Avatar handle={change.outside_author} />
+                          {`by @${change.outside_author}`}
+                        </span>
+                      )}
+                    </div>
                   )}
                   <ChangesCard
                     of={{ change: change.id }}

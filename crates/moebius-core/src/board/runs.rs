@@ -103,6 +103,10 @@ pub enum StartError {
     /// All agents are paused (see `App::pause_runs`); nothing was started.
     #[error("all agents are paused")]
     Paused,
+    /// Someone on another server took the issue, or the repository's agents take only labelled issues and this one is
+    /// not (see `App::left_alone`); nothing was started. The text says why.
+    #[error("{0}")]
+    LeftAlone(String),
 }
 
 /// Whether `card` may still get a run: false once it is held, or gone, and while all agents are paused. The card is
@@ -120,6 +124,18 @@ pub fn may_start(app: &App, card: &Card) -> Result<(), StartError> {
     match app.card(card.id) {
         Ok(now) if now.held.is_none() => Ok(()),
         Ok(_) | Err(crate::app::AppError::NotFound(_)) => Err(StartError::Held),
+        Err(e) => Err(StartError::Store(e.to_string())),
+    }
+}
+
+/// [`may_start`], and the card must not be one that this server leaves alone: one someone on another server took, or one
+/// the repository's agents do not take (see `App::left_alone`). The column scripts' starters ask this; a run a person
+/// asks for, such as the review of a pull request someone else opened, asks [`may_start`] only.
+pub fn may_take(app: &App, card: &Card) -> Result<(), StartError> {
+    may_start(app, card)?;
+    match app.left_alone(card) {
+        Ok(None) => Ok(()),
+        Ok(Some(why)) => Err(StartError::LeftAlone(why)),
         Err(e) => Err(StartError::Store(e.to_string())),
     }
 }

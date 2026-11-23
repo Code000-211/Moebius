@@ -41,6 +41,10 @@ pub enum GitHubError {
     #[error("{0:?} is not a GitHub repository as owner/repo")]
     Repository(String),
     #[error(
+        "GitHub did not assign {0}: the login is not a collaborator of the repository who can be assigned issues"
+    )]
+    NotAssignable(String),
+    #[error(
         "GitHub refused the access token ({status}): {message}. Check that it is the right one and has not expired or been revoked"
     )]
     TokenRefused {
@@ -83,6 +87,9 @@ pub struct Issue {
     /// Present where the forge has issue dependencies.
     #[serde(default)]
     pub issue_dependencies_summary: Option<DependenciesSummary>,
+    /// The people the issue is assigned to.
+    #[serde(default)]
+    pub assignees: Vec<User>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
@@ -123,6 +130,18 @@ pub struct PullRequest {
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 pub struct Head {
     pub sha: String,
+}
+
+/// An open pull request as the list of them has it: who opened it and what it says, which names the issues it closes.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+pub struct ListedPull {
+    pub number: i64,
+    #[serde(default)]
+    pub title: String,
+    #[serde(default)]
+    pub body: Option<String>,
+    pub user: User,
+    pub head: Head,
 }
 
 /// A check run of a commit.
@@ -725,6 +744,59 @@ impl GitHub {
             }
         }
         Ok(blockers.into_iter().map(|b| b.number).collect())
+    }
+
+    /// Adds `login` to the people issue `number` of `github` is assigned to, keeping the others. GitHub leaves out a
+    /// login it cannot assign (it is no collaborator of the repository) without saying so, so the issue it answers with
+    /// must carry the login, else this is an error.
+    pub async fn assign_issue(
+        &self,
+        github: &str,
+        number: i64,
+        login: &str,
+    ) -> Result<(), GitHubError> {
+        let request = json!({ "assignees": [login] });
+        let issue: Issue = self
+            .repository_call(
+                github,
+                Method::POST,
+                &format!("/issues/{number}/assignees"),
+                Some(&request),
+            )
+            .await?;
+        if issue
+            .assignees
+            .iter()
+            .any(|a| a.login.eq_ignore_ascii_case(login))
+        {
+            Ok(())
+        } else {
+            Err(GitHubError::NotAssignable(login.to_string()))
+        }
+    }
+
+    /// The open pull requests of `github`, from all pages.
+    pub async fn open_pull_requests(&self, github: &str) -> Result<Vec<ListedPull>, GitHubError> {
+        let (owner, repo) = github
+            .split_once('/')
+            .ok_or_else(|| GitHubError::Repository(github.to_string()))?;
+        let token = self.access_token(owner, repo).await?;
+        let mut url = format!(
+            "{}/repos/{github}/pulls?state=open&per_page=100",
+            self.api_url
+        );
+        let mut pulls = Vec::new();
+        loop {
+            let response =
+                Self::succeeded(Self::authorize(self.http.get(&url), &token).send().await?).await?;
+            let next = self.next_page(response.headers());
+            pulls.extend(response.json::<Vec<ListedPull>>().await?);
+            match next {
+                Some(next) => url = next,
+                None => break,
+            }
+        }
+        Ok(pulls)
     }
 
     pub async fn pull_request(

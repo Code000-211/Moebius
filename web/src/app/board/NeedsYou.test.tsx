@@ -2,7 +2,7 @@
 /** The tinted block at the end of a thread: what the card waits for and the buttons that answer it. */
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { InboxItem } from "../../api/types/board";
+import type { Card, InboxItem } from "../../api/types/board";
 import { card } from "./cardPropertiesFixtures";
 import { NeedsYouBlock } from "./NeedsYou";
 
@@ -19,13 +19,13 @@ const item = (kind: string, data: Record<string, unknown> = {}): InboxItem => ({
   assignees: [],
 });
 
-function show(waiting: InboxItem, askFor: number | null = null) {
+function show(waiting: InboxItem, askFor: number | null = null, extra: Partial<Card> = {}) {
   const onDecide = vi.fn();
   const onReply = vi.fn();
   const onAskAnswered = vi.fn();
   render(
     <NeedsYouBlock
-      card={card(5, { number: 5 })}
+      card={card(5, { number: 5, ...extra })}
       item={waiting}
       busy={false}
       askFor={askFor}
@@ -75,5 +75,32 @@ describe("the Moebius needs you block", () => {
     const { onDecide } = show(item("stuck"));
     fireEvent.click(screen.getByRole("button", { name: "Retry" }));
     expect(onDecide).toHaveBeenCalledWith({ kind: "retry", card: 5, number: 5 });
+  });
+
+  it("reviews a pull request someone else opened with the agent, and merges it once its checks pass", () => {
+    const change = (checks: "pending" | "success" | "failure" | "none") => ({
+      id: 8,
+      state: "open",
+      checks,
+      review_verdict: null,
+      outside_author: "alice",
+    });
+    const pending = show(item("outside_change", { change: 8 }), null, {
+      change: change("pending"),
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Review with agent" }));
+    expect(pending.onDecide).toHaveBeenCalledWith({ kind: "review", change: 8, number: 5 });
+    // Merging waits for the checks: the owner decides, but not before they have passed.
+    expect(screen.getByRole("button", { name: "Merge" }).getAttribute("aria-disabled")).toBe(
+      "true",
+    );
+    cleanup();
+    const passed = show(item("outside_change", { change: 8 }), null, { change: change("success") });
+    const merge = screen.getByRole("button", { name: "Merge" });
+    expect(merge.getAttribute("aria-disabled")).toBeNull();
+    fireEvent.click(merge);
+    expect(passed.onDecide).toHaveBeenCalledWith({ kind: "merge", change: 8, number: 5 });
+    // It is not Moebius's own change: there is nothing to send back to coding.
+    expect(screen.queryByRole("button", { name: "Reject with a reason" })).toBeNull();
   });
 });

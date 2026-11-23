@@ -69,6 +69,7 @@ export {
   changeWorktree,
   deleteWords,
   describeHistory,
+  elsewhereBy,
   forgeName,
   issueUrl,
   pullRequestOf,

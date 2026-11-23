@@ -9,7 +9,14 @@ import { KanbanCardContent } from "../../ui/components/KanbanCardContent";
 import { keepKey } from "../../ui/lib/shortcuts";
 import { CardMenu } from "./CardMenu";
 import { cardKey } from "./cardKey";
-import { type CardStatus, cardActivity, cardIcon, type Stack, stackWords } from "./model";
+import {
+  type CardStatus,
+  cardActivity,
+  cardIcon,
+  elsewhereBy,
+  type Stack,
+  stackWords,
+} from "./model";
 
 /** What the menus of the cards of a board do. */
 export type CardMenuActions = {
@@ -53,13 +60,22 @@ export function CardContent({
   open?: boolean;
   onToggleStack?: () => void;
 }) {
+  // Someone else's work, which this server leaves alone or follows, wears that person's avatar and is drawn quiet.
+  const elsewhere = elsewhereBy(card);
   return (
     <KanbanCardContent
       displayId={cardKey(card)}
       title={card.title}
       status={cardIcon(card, status)}
       activity={cardActivity(card, status, waiting)}
-      assignees={card.assignees}
+      assignees={card.assignees.length > 0 || !elsewhere ? card.assignees : [elsewhere]}
+      assigneesLabel={
+        card.assignees.length > 0 || !elsewhere
+          ? undefined
+          : card.change?.outside_author
+            ? "Pull request by"
+            : "Taken by"
+      }
       stack={
         stack && onToggleStack ? (
           <StackToggle card={card} stack={stack} open={open} onToggle={onToggleStack} />
@@ -67,7 +83,9 @@ export function CardContent({
           <p className="m-0 text-sm text-secondary">{stackWords(stack)}</p>
         ) : undefined
       }
-      muted={card.column === "Done" || card.closed}
+      muted={
+        card.column === "Done" || card.closed || (!!card.taken_by && !card.change?.outside_author)
+      }
       onOpen={onOpen}
       menu={menu && <CardMenu card={card} {...menu} />}
       select={select}

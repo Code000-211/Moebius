@@ -1246,6 +1246,8 @@ mod order_tests {
             estimate: None,
             moved_at: 0,
             archived_at: None,
+            taken_by: None,
+            assign_problem: None,
         }
     }
 

@@ -48,6 +48,8 @@ mod reproduce;
 mod runs;
 mod snapshot;
 mod stopping;
+mod taking;
+pub use taking::{OpenRequest, closing_references, followed_branch, forge_title};
 mod templates;
 mod view_filters;
 mod views;

@@ -6,7 +6,7 @@
  */
 import { type QueryClient, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useCallback } from "react";
-import { approve, merge, reject, retry, unblock } from "../../api/calls/board";
+import { approve, merge, reject, retry, reviewChange, unblock } from "../../api/calls/board";
 import { stopRun } from "../../api/calls/chat";
 import { isApiError } from "../../api/http";
 import { keys } from "../../api/keys";
@@ -19,6 +19,7 @@ export type Decision =
   | { kind: "unblock"; card: number; number: number }
   | { kind: "stop"; run: number; number: number }
   | { kind: "merge"; change: number; number: number }
+  | { kind: "review"; change: number; number: number }
   | { kind: "reject"; change: number; number: number; reason: string };
 
 /** What the page tells after a decision or a refused drop: a toast, with Undo when it can be taken back. */
@@ -44,6 +45,7 @@ const VERB: Record<Decision["kind"], string> = {
   unblock: "unblock",
   stop: "stop",
   merge: "merge",
+  review: "review",
   reject: "send back",
 };
 
@@ -66,6 +68,9 @@ async function send(decision: Decision, queryClient: QueryClient): Promise<strin
       const { commit } = await merge(decision.change);
       return `Merged ${n}. Commit ${commit.slice(0, 7)}.`;
     }
+    case "review":
+      await reviewChange(decision.change);
+      return `The Reviewer is reading the pull request of ${n}. Its findings come to the card.`;
     case "reject":
       putCards(queryClient, [await reject(decision.change, decision.reason)]);
       return `Sent ${n} back to coding.`;

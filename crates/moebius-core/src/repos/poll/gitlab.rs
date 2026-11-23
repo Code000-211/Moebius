@@ -2,6 +2,7 @@
 //! the jobs that failed in it, and whether anyone approved it.
 
 use super::{Polled, Request, Status};
+use crate::app::OpenRequest;
 use crate::repos::forge::{Comment, ForgeError, Issue, Remembered, seconds};
 use crate::repos::gitlab::{self, GitLab, Job, Pipeline};
 
@@ -18,6 +19,7 @@ impl From<gitlab::Issue> for Issue {
             comment_count: issue.user_notes_count,
             updated: issue.updated_at.unwrap_or_default(),
             blockers_unread: open,
+            assignees: issue.assignees.into_iter().map(|a| a.username).collect(),
             ..Issue::default()
         }
     }
@@ -72,6 +74,21 @@ impl Polled for GitLab {
 
     fn forget_issues(&self, name: &str) {
         self.forget_issues_etag(name);
+    }
+
+    async fn open_requests(&self, name: &str) -> Result<Vec<OpenRequest>, ForgeError> {
+        Ok(self
+            .open_merge_requests(name)
+            .await?
+            .into_iter()
+            .map(|request| OpenRequest {
+                number: request.iid,
+                title: request.title,
+                body: request.description.unwrap_or_default(),
+                author: request.author.username,
+                head: request.sha,
+            })
+            .collect())
     }
 
     async fn request(&self, name: &str, number: i64) -> Result<Request, ForgeError> {

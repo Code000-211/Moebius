@@ -40,6 +40,8 @@ pub(super) struct FakeForgejo {
     /// The statuses of each commit, as `(sha, statuses)`.
     pub(super) statuses: Mutex<Vec<(String, Vec<Value>)>>,
     pub(super) reviews: Mutex<Vec<Value>>,
+    /// The open pull requests the list of them holds.
+    pub(super) listed: Mutex<Vec<Value>>,
 }
 
 impl FakeForgejo {
@@ -151,7 +153,13 @@ pub(super) async fn fake_forgejo() -> (String, Arc<FakeForgejo>) {
         )
         .route(
             "/api/v1/repos/{owner}/{repo}/pulls",
-            post(
+            get(
+                |State(fake): Fake, UrlPath((owner, repo)): Repo| async move {
+                    widgets(&owner, &repo)?;
+                    Ok::<_, StatusCode>(axum::Json(fake.listed.lock().unwrap().clone()))
+                },
+            )
+            .post(
                 |State(fake): Fake,
                  UrlPath((owner, repo)): Repo,
                  axum::Json(body): axum::Json<Value>| async move {

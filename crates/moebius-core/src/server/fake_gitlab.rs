@@ -9,7 +9,7 @@ use axum::extract::{Path as UrlPath, Request, State};
 use axum::http::{HeaderMap, StatusCode};
 use axum::middleware::{self, Next};
 use axum::response::{IntoResponse, Response};
-use axum::routing::{get, post, put};
+use axum::routing::{get, put};
 use serde_json::{Value, json};
 
 use super::Server;
@@ -40,6 +40,8 @@ pub(super) struct FakeGitLab {
     /// The failed jobs of each pipeline, as `(pipeline, jobs)`.
     pub(super) jobs: Mutex<Vec<(i64, Vec<Value>)>>,
     pub(super) approved_by: Mutex<Vec<Value>>,
+    /// The open merge requests the list of them holds.
+    pub(super) listed: Mutex<Vec<Value>>,
 }
 
 impl FakeGitLab {
@@ -131,7 +133,11 @@ pub(super) async fn fake_gitlab() -> (String, Arc<FakeGitLab>) {
         )
         .route(
             "/api/v4/projects/{project}/merge_requests",
-            post(
+            get(|State(fake): Fake, UrlPath(project): UrlPath<String>| async move {
+                widgets(&project)?;
+                Ok::<_, StatusCode>(axum::Json(fake.listed.lock().unwrap().clone()))
+            })
+            .post(
                 |State(fake): Fake, UrlPath(project): UrlPath<String>, axum::Json(body): axum::Json<Value>| async move {
                     widgets(&project)?;
                     fake.opened.lock().unwrap().push(body);

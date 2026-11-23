@@ -57,6 +57,8 @@ pub struct Issue {
     /// Whether the poll still has to read the issue's blockers (`blocked_by`) from the forge: it can, and the issue
     /// may have some.
     pub blockers_unread: bool,
+    /// The logins the issue is assigned to on the forge.
+    pub assignees: Vec<String>,
 }
 
 /// A comment on an issue as a forge has it.
@@ -227,6 +229,28 @@ pub trait Forge: Send + Sync {
         repository: &Repository,
         _number: i64,
         _labels: &[String],
+    ) -> Result<(), ForgeError> {
+        Err(not_on_a_forge(repository))
+    }
+    /// Adds `login` to the people the issue `number` is assigned to on the forge, keeping the others. An error says why
+    /// the forge would not (the token may not assign, or the login is no collaborator). Only forges that keep issues
+    /// have it.
+    fn assign_issue(
+        &self,
+        repository: &Repository,
+        _number: i64,
+        _login: &str,
+    ) -> Result<(), ForgeError> {
+        Err(not_on_a_forge(repository))
+    }
+    /// Fetches the head of the pull or merge request `number` into the clone as the local branch `branch`, so that an
+    /// agent can read it and conflicts can be told; the branch is the forge's, never pushed. Only where there are
+    /// pull or merge requests.
+    fn fetch_request(
+        &self,
+        repository: &Repository,
+        _number: i64,
+        _branch: &str,
     ) -> Result<(), ForgeError> {
         Err(not_on_a_forge(repository))
     }
@@ -421,6 +445,31 @@ impl Forge for GitHubForge {
         Ok(self
             .runtime
             .block_on(self.github.merge_pull_request(name, number, message))?)
+    }
+
+    fn assign_issue(
+        &self,
+        repository: &Repository,
+        number: i64,
+        login: &str,
+    ) -> Result<(), ForgeError> {
+        let name = Self::github_name(repository)?;
+        Ok(self
+            .runtime
+            .block_on(self.github.assign_issue(name, number, login))?)
+    }
+
+    fn fetch_request(
+        &self,
+        repository: &Repository,
+        number: i64,
+        branch: &str,
+    ) -> Result<(), ForgeError> {
+        let name = Self::github_name(repository)?;
+        let clone = Path::new(&repository.path);
+        let header = self.origin_auth(clone, name)?;
+        let refspec = format!("+refs/pull/{number}/head:refs/heads/{branch}");
+        Ok(self.repos.fetch_ref(clone, header.as_deref(), &refspec)?)
     }
 
     fn create_issue(
@@ -633,6 +682,31 @@ impl Forge for GitLabForge {
             .block_on(self.gitlab.merge(project, number, message))?)
     }
 
+    fn assign_issue(
+        &self,
+        repository: &Repository,
+        number: i64,
+        login: &str,
+    ) -> Result<(), ForgeError> {
+        let project = Self::project(repository)?;
+        Ok(self
+            .runtime
+            .block_on(self.gitlab.assign_issue(project, number, login))?)
+    }
+
+    fn fetch_request(
+        &self,
+        repository: &Repository,
+        number: i64,
+        branch: &str,
+    ) -> Result<(), ForgeError> {
+        Self::project(repository)?;
+        let clone = Path::new(&repository.path);
+        let header = self.origin_auth(clone)?;
+        let refspec = format!("+refs/merge-requests/{number}/head:refs/heads/{branch}");
+        Ok(self.repos.fetch_ref(clone, header.as_deref(), &refspec)?)
+    }
+
     fn create_issue(
         &self,
         repository: &Repository,
@@ -822,6 +896,31 @@ impl Forge for ForgejoForge {
         Ok(self
             .runtime
             .block_on(self.forgejo.merge(repo, number, message))?)
+    }
+
+    fn assign_issue(
+        &self,
+        repository: &Repository,
+        number: i64,
+        login: &str,
+    ) -> Result<(), ForgeError> {
+        let repo = Self::repo(repository)?;
+        Ok(self
+            .runtime
+            .block_on(self.forgejo.assign_issue(repo, number, login))?)
+    }
+
+    fn fetch_request(
+        &self,
+        repository: &Repository,
+        number: i64,
+        branch: &str,
+    ) -> Result<(), ForgeError> {
+        Self::repo(repository)?;
+        let clone = Path::new(&repository.path);
+        let header = self.origin_auth(clone)?;
+        let refspec = format!("+refs/pull/{number}/head:refs/heads/{branch}");
+        Ok(self.repos.fetch_ref(clone, header.as_deref(), &refspec)?)
     }
 
     fn create_issue(

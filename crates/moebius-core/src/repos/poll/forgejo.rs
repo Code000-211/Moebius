@@ -2,6 +2,7 @@
 //! and its latest review.
 
 use super::{Polled, Request, Status};
+use crate::app::OpenRequest;
 use crate::repos::forge::{Comment, ForgeError, Issue, Remembered, seconds};
 use crate::repos::forgejo::{self, CommitStatus, Forgejo, Review};
 
@@ -18,6 +19,12 @@ impl From<forgejo::Issue> for Issue {
             comment_count: issue.comments,
             updated: issue.updated_at.unwrap_or_default(),
             blockers_unread: open,
+            assignees: issue
+                .assignees
+                .unwrap_or_default()
+                .into_iter()
+                .map(|a| a.login)
+                .collect(),
             ..Issue::default()
         }
     }
@@ -63,6 +70,21 @@ impl Polled for Forgejo {
 
     fn forget_issues(&self, name: &str) {
         self.forget_issues_etag(name);
+    }
+
+    async fn open_requests(&self, name: &str) -> Result<Vec<OpenRequest>, ForgeError> {
+        Ok(self
+            .open_pull_requests(name)
+            .await?
+            .into_iter()
+            .map(|pull| OpenRequest {
+                number: pull.number,
+                title: pull.title,
+                body: pull.body.unwrap_or_default(),
+                author: pull.user.login,
+                head: pull.head.sha,
+            })
+            .collect())
     }
 
     async fn request(&self, name: &str, number: i64) -> Result<Request, ForgeError> {

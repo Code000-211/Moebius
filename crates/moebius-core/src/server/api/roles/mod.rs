@@ -67,6 +67,8 @@ pub(super) const ROUTES: &[(&str, &str, Access)] = &[
     ("DELETE", "/v1/favourites/{id}", VIEWER_PERSON),
     ("POST", "/v1/recent", VIEWER_PERSON),
     ("DELETE", "/v1/recent/{id}", VIEWER_PERSON),
+    ("GET", "/v1/logins", VIEWER_PERSON),
+    ("PUT", "/v1/logins", VIEWER_PERSON),
     ("GET", "/v1/preferences", VIEWER_PERSON),
     ("PUT", "/v1/preferences", VIEWER_PERSON),
     ("GET", "/v1/server", VIEWER),
@@ -211,6 +213,7 @@ pub(super) const ROUTES: &[(&str, &str, Access)] = &[
     ("GET", "/v1/cards/{id}/history", VIEWER),
     ("POST", "/v1/changes/{id}/merge", MEMBER),
     ("POST", "/v1/changes/{id}/reject", MEMBER),
+    ("POST", "/v1/changes/{id}/review", MEMBER_PERSON),
     ("GET", "/v1/changes/{id}/diff", VIEWER),
     // Runs, chats and terminals.
     ("GET", "/v1/runs/finished", VIEWER),

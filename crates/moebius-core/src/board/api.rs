@@ -124,11 +124,11 @@ impl Engine {
                     Option<String>,
                 )| {
                     let run = outside_script(&clock, || {
-                        super::may_start(&app, &card_copy)?;
+                        super::may_take(&app, &card_copy)?;
                         if super::free_run_slots(&app, run_limit)? == 0 {
                             return Ok(None);
                         }
-                        runs.start(
+                        let run = runs.start(
                             &app,
                             &card_copy,
                             &agent,
@@ -137,10 +137,19 @@ impl Engine {
                                 model: None,
                                 runner: runner.as_deref(),
                             },
-                        )
-                        .map(Some)
-                    })
-                    .map_err(|e| mlua::Error::runtime(e.to_string()))?;
+                        )?;
+                        // The person it is run for is the issue's assignee on the forge from now on (ADR 0027).
+                        app.take_issue(&card_copy, None);
+                        Ok(Some(run))
+                    });
+                    let run = match run {
+                        // Someone else took the issue, or this server's agents do not take it: it waits here.
+                        Err(crate::board::StartError::LeftAlone(why)) => {
+                            fx.borrow_mut().waiting = Some(why);
+                            return Ok(None);
+                        }
+                        other => other.map_err(|e| mlua::Error::runtime(e.to_string()))?,
+                    };
                     let Some(run) = run else {
                         // The limit is reached: nothing starts, and the card waits for a slot.
                         fx.borrow_mut().waiting = Some(RUN_LIMIT_REACHED.to_string());

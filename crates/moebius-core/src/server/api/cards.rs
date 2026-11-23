@@ -14,6 +14,8 @@
 //! - `DELETE /v1/cards/{id}`: a person deletes a card with everything stored for it.
 //! - `POST /v1/changes/{id}/merge` `{reason}`: a person merges a change; its card moves to done.
 //! - `POST /v1/changes/{id}/reject` `{reason}`: a person sends a change waiting to be merged back to coding.
+//! - `POST /v1/changes/{id}/review` `{reason}`: a person has the Reviewer read a pull request someone else opened that a
+//!   card follows.
 //! - `GET /v1/changes/{id}/diff`: what a change changes, as a unified diff.
 //! - `POST /v1/cards/{id}/retry` `{reason}`: a person retries a stuck card or one whose pull request was closed, which
 //!   gets a fresh start.
@@ -57,6 +59,7 @@ pub(super) fn routes() -> Router<ApiState> {
         .route("/v1/cards/{id}/retry", post(retry_card))
         .route("/v1/changes/{id}/merge", post(merge_change))
         .route("/v1/changes/{id}/reject", post(reject_change))
+        .route("/v1/changes/{id}/review", post(review_change))
         .route("/v1/changes/{id}/diff", get(change_diff))
         .route("/v1/cards/{id}/runs", get(card_runs))
         .route("/v1/cards/{id}/history", get(card_history))
@@ -135,6 +138,10 @@ pub struct ChangeView {
     pub checks: String,
     /// `approve` or `changes` once a review finished since the latest `code` run.
     pub review_verdict: Option<String>,
+    /// The forge login of the person who opened the change's pull request when someone on another server did and the
+    /// card follows it (ADR 0027); left out for Moebius's own change.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub outside_author: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -268,6 +275,7 @@ fn card_view(
             state: change.state.clone(),
             checks: lookups.checks_of(&change)?.to_string(),
             review_verdict: verdict.clone(),
+            outside_author: change.outside_author.clone(),
         };
         if change.repository_id == Some(view.card.repository_id) {
             view.change = Some(shown.clone());
@@ -469,6 +477,20 @@ async fn merge_change(
     blocking(&state.app, move |app| {
         app.merge_change(&by, id, &merge.reason)
             .map(|commit| Merged { commit })
+    })
+    .await
+}
+
+async fn review_change(
+    State(state): State<ApiState>,
+    Extension(by): Extension<Actor>,
+    UrlPath(id): UrlPath<i64>,
+    body: Option<axum::Json<Reason>>,
+) -> Result<axum::Json<crate::store::Run>, ApiError> {
+    let reason = body.map(|body| body.0.reason).unwrap_or_default();
+    let runs = state.runs.clone();
+    blocking(&state.app, move |app| {
+        app.review_outside_change(&by, &*runs, id, &reason)
     })
     .await
 }

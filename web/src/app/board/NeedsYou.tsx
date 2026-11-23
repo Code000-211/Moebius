@@ -10,6 +10,7 @@ import { Button } from "../../ui/components/Button";
 import { ago } from "../../ui/lib/format";
 import { useNow } from "../../ui/lib/useNow";
 import type { Decision } from "./decisions";
+import { OUTSIDE_CHANGE } from "./model/inbox";
 
 /** The mark of Moebius in the thread: a dark square with its initial. */
 export function MoebiusMark() {
@@ -121,6 +122,30 @@ export function NeedsYouBlock({
               </Button>
               <Button variant="secondary" disabled={busy} onClick={() => setRejecting(true)}>
                 Reject with a reason
+              </Button>
+            </>
+          )}
+          {item.kind === OUTSIDE_CHANGE && change !== null && (
+            <>
+              <Button
+                variant="secondary"
+                disabled={busy}
+                onClick={() => onDecide({ kind: "review", change, number })}
+              >
+                Review with agent
+              </Button>
+              <Button
+                disabled={
+                  busy || card.change?.checks === "pending" || card.change?.checks === "failure"
+                }
+                title={
+                  card.change?.checks === "pending" || card.change?.checks === "failure"
+                    ? "Merge once the checks have passed"
+                    : undefined
+                }
+                onClick={() => onDecide({ kind: "merge", change, number })}
+              >
+                Merge
               </Button>
             </>
           )}

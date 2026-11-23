@@ -435,6 +435,15 @@ impl App {
             )));
         }
         self.check_merge_order(&change)?;
+        // A pull request someone else opened is merged only once its checks have passed: it is theirs, not reviewed here.
+        if change.outside_author.is_some()
+            && matches!(change.checks.as_deref(), Some("pending" | "failure"))
+        {
+            return Err(AppError::Invalid(format!(
+                "the checks of pull request #{} have not passed",
+                change.pull_request.unwrap_or_default()
+            )));
+        }
         let repository = change
             .repository_id
             .map(|id| self.repository(id))
@@ -539,6 +548,10 @@ impl App {
     /// A change's pull request was closed on the forge without being merged: the change is closed and, when it has a
     /// card, the person is told.
     pub fn change_closed(&self, change: &Change) -> Result<()> {
+        // A pull request someone else opened: the card goes back where it was (see `App::followed_closed`).
+        if change.outside_author.is_some() {
+            return self.followed_closed(change);
+        }
         self.store.set_change_state(change.id, "closed")?;
         self.bus.publish(Event::ChangeClosed { change: change.id });
         match change.card_id {

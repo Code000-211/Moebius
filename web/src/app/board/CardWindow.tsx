@@ -22,12 +22,14 @@ import { CardDetails } from "./CardDetails";
 import { CardMenu } from "./CardMenu";
 import { cardName, cardPagePath } from "./cardKey";
 import type { Decision } from "./decisions";
+import { FollowedRequest } from "./FollowedRequest";
 import { CardThread, EditIssueDialog, ReplyField } from "./IssueSections";
 import {
   type CardStatus,
   cardStatus,
   changesOfCard,
   descendants,
+  elsewhereBy,
   issueUrl,
   parentOf,
 } from "./model";
@@ -204,7 +206,7 @@ export function CardContent({
   const repository = board.repository;
   const status = cardStatus(card, item, board);
   const changes = changesOfCard(card);
-  const owner = card.assignees[0] ?? card.claimed_by;
+  const owner = card.assignees[0] ?? elsewhereBy(card) ?? card.claimed_by;
   const id = cardName(card, repository.forge !== "none");
   const url = issueUrl(repository, card);
 
@@ -252,6 +254,8 @@ export function CardContent({
             />
           </div>
         </div>
+
+        <FollowedRequest board={board} card={card} />
 
         <div className="px-6 pb-6">
           <CardThread

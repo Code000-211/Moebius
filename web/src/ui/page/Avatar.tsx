@@ -43,14 +43,23 @@ export function Avatar({ handle, className }: { handle: string; className?: stri
 }
 
 /** The avatars of `handles`, overlapping, with the count of those not shown; nothing for no one. */
-export function AvatarStack({ handles, className }: { handles: string[]; className?: string }) {
+export function AvatarStack({
+  handles,
+  className,
+  label = "Given to",
+}: {
+  handles: string[];
+  className?: string;
+  /** What the avatars are of, for a screen reader: "Given to" the people of the card, "Taken by" someone on another server. */
+  label?: string;
+}) {
   if (handles.length === 0) return null;
   const shown = handles.slice(0, SHOWN);
   const more = handles.length - shown.length;
   return (
     <span
       role="img"
-      aria-label={`Given to ${handles.map((h) => `@${h}`).join(", ")}`}
+      aria-label={`${label} ${handles.map((h) => `@${h}`).join(", ")}`}
       className={cn("inline-flex shrink-0 items-center", className)}
     >
       {shown.map((handle, index) => (

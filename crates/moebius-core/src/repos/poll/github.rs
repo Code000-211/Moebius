@@ -2,6 +2,7 @@
 //! request with the check runs of its head commit and its latest review.
 
 use super::{Polled, Request, Status};
+use crate::app::OpenRequest;
 use crate::repos::forge::{Comment, ForgeError, Issue, Remembered, seconds};
 use crate::repos::github::{self, CheckRun, GitHub};
 
@@ -26,6 +27,7 @@ impl From<github::Issue> for Issue {
             comments: None,
             updated: issue.updated_at.unwrap_or_default(),
             blockers_unread: total.is_some_and(|total| total > 0),
+            assignees: issue.assignees.into_iter().map(|a| a.login).collect(),
         }
     }
 }
@@ -92,6 +94,21 @@ impl Polled for GitHub {
 
     fn forget_issues(&self, name: &str) {
         self.forget_issues_etag(name);
+    }
+
+    async fn open_requests(&self, name: &str) -> Result<Vec<OpenRequest>, ForgeError> {
+        Ok(self
+            .open_pull_requests(name)
+            .await?
+            .into_iter()
+            .map(|pull| OpenRequest {
+                number: pull.number,
+                title: pull.title,
+                body: pull.body.unwrap_or_default(),
+                author: pull.user.login,
+                head: pull.head.sha,
+            })
+            .collect())
     }
 
     async fn request(&self, name: &str, number: i64) -> Result<Request, ForgeError> {

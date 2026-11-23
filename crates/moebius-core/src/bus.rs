@@ -491,6 +491,8 @@ mod tests {
             kind: None,
             fields: Default::default(),
             repositories: Vec::new(),
+            taken_by: None,
+            assign_problem: None,
         }
     }
 
@@ -511,6 +513,8 @@ mod tests {
             failed_checks: None,
             check_output: None,
             harness_repository: false,
+            outside_author: None,
+            taken_from: None,
         }
     }
 
@@ -526,6 +530,9 @@ mod tests {
             project: None,
             home_project_id: 2,
             files_of: None,
+            mark_ready: false,
+            ready_label: "Ready for agent".into(),
+            agents_take: "all".into(),
         }
     }
 
