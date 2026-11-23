@@ -50,7 +50,7 @@ export function DiffBody({ changes }: { changes: DiffChange[] }) {
   const shown = lines.slice(0, MAX_LINES);
   const text = lines.map((line) => `${line.sign}${line.text}`).join("\n");
   return (
-    <div className="reveal-copy bg-code-bg">
+    <div className="reveal-copy relative bg-code-bg">
       <div className="flex justify-end px-3 pt-2">
         <CopyButton text={text} label="Copy diff" className={COPY_ON_CODE} />
       </div>

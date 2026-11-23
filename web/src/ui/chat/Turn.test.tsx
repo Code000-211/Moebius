@@ -376,6 +376,8 @@ describe("the setting that shows thinking open", () => {
       const box = screen.getByTestId("tool-details");
       expect(box.className).toContain("bg-code-bg");
       expect(box.className).not.toMatch(/bg-code(?!-)/);
+      // Positioned, so the steps' line, an absolute pseudo-element of the group, runs behind the box, not through it.
+      expect(box.className).toMatch(/(^| )relative( |$)/);
       for (const text of ["cargo test", "test result: ok"]) {
         const className = screen.getByText(text).className;
         expect(className).toContain("text-code-text");

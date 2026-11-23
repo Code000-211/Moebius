@@ -72,7 +72,10 @@ function changesOf(call: ToolCall): DiffChange[] | null {
   return null;
 }
 
-/** What a tool was given and what it printed, on the colour of code, each with a Copy button. */
+/**
+ * What a tool was given and what it printed, on the colour of code, each with a Copy button. The box is positioned so
+ * it lies over the steps' line (`STEP_LINE`), which would otherwise run through it.
+ */
 function Details({ call }: { call: ToolCall }) {
   const check = verdict(call);
   const output = call.output.split("\n");
@@ -86,7 +89,7 @@ function Details({ call }: { call: ToolCall }) {
   return (
     <div
       data-testid="tool-details"
-      className="reveal-copy mt-1 flex flex-col gap-3 rounded-control bg-code-bg p-3"
+      className="reveal-copy relative mt-1 flex flex-col gap-3 rounded-control bg-code-bg p-3"
     >
       {check && !check.allowed && (
         <p className="break-words text-sm font-semibold text-code-error">

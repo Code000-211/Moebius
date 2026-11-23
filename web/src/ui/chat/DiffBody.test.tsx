@@ -14,6 +14,8 @@ describe("DiffBody", () => {
     const many = Array.from({ length: 210 }, (_, i) => `line ${i}`).join("\n");
     const { container } = render(<DiffBody changes={[{ oldText: "old", newText: many }]} />);
     expect(container.firstElementChild?.className).toContain("bg-code-bg");
+    // Positioned, so the steps' line of a turn runs behind the box, not through it.
+    expect(container.firstElementChild?.className).toMatch(/(^| )relative( |$)/);
     expect(container.querySelector("pre")?.className).toContain("text-code-text");
     expect(screen.getByRole("button", { name: "Copy diff" }).className).toContain("text-code-head");
     expect(screen.getByText(/left out/).className).toContain("text-code-head");
