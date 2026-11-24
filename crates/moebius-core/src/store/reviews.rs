@@ -28,7 +28,9 @@ CREATE TABLE external_reviews (
     summary TEXT NOT NULL DEFAULT '',
     comments TEXT NOT NULL DEFAULT '[]',
     url TEXT,
-    at INTEGER NOT NULL
+    at INTEGER NOT NULL,
+    kind TEXT NOT NULL DEFAULT 'author',
+    moved_at INTEGER NOT NULL DEFAULT 0
 );
 CREATE INDEX external_reviews_of_a_change ON external_reviews (change_id, id);
 "#;
@@ -64,6 +66,13 @@ pub struct ExternalReview {
     /// Where the review is on the forge, once it is posted.
     pub url: Option<String>,
     pub at: i64,
+    /// `author` for a round the author asked for, `person` for a review a person asked for from the card, which
+    /// writes nothing on the forge and counts for nothing, but holds the pull request like any round while it runs.
+    #[serde(skip)]
+    pub kind: String,
+    /// When the round last changed state, which a sweep reads to end a round that never moved on.
+    #[serde(skip)]
+    pub moved_at: i64,
 }
 
 /// The rounds of the forge pull request the change `?1` follows, whatever change row followed it: a pull request that
@@ -77,8 +86,7 @@ const SAME_PULL_REQUEST: &str = "(e.change_id = ?1 OR e.change_id IN (SELECT o.i
 /// its run going.
 const COUNTED: &str = "('starting', 'running', 'approved', 'posting', 'posted', 'merged')";
 
-const COLUMNS: &str =
-    "id, change_id, head, round, run_id, state, verdict, summary, comments, url, at, base";
+const COLUMNS: &str = "id, change_id, head, round, run_id, state, verdict, summary, comments, url, at, base, kind, moved_at";
 
 fn read(r: &rusqlite::Row) -> rusqlite::Result<ExternalReview> {
     let comments: String = r.get(8)?;
@@ -95,6 +103,8 @@ fn read(r: &rusqlite::Row) -> rusqlite::Result<ExternalReview> {
         url: r.get(9)?,
         at: r.get(10)?,
         base: r.get(11)?,
+        kind: r.get(12)?,
+        moved_at: r.get(13)?,
     })
 }
 
@@ -236,7 +246,7 @@ impl Store {
         Ok(self.read().query_row(
             &format!(
                 "SELECT COUNT(*) FROM external_reviews e WHERE {SAME_PULL_REQUEST} \
-                 AND (e.run_id IS NOT NULL OR e.state = 'starting')"
+                 AND e.kind = 'author' AND (e.run_id IS NOT NULL OR e.state = 'starting')"
             ),
             [change_id],
             |r| r.get(0),
@@ -248,7 +258,7 @@ impl Store {
         Ok(self.read().query_row(
             &format!(
                 "SELECT EXISTS (SELECT 1 FROM external_reviews e WHERE {SAME_PULL_REQUEST} \
-                 AND e.head = ?2 AND e.state IN {COUNTED})"
+                 AND e.kind = 'author' AND e.head = ?2 AND e.state IN {COUNTED})"
             ),
             params![change_id, head],
             |r| r.get(0),
@@ -278,9 +288,9 @@ impl Store {
             return Ok(false);
         }
         Ok(conn.execute(
-            "UPDATE external_reviews SET state = 'starting', head = ?1, base = ?2 \
+            "UPDATE external_reviews SET state = 'starting', head = ?1, base = ?2, moved_at = ?4 \
              WHERE id = ?3 AND state = 'wanted'",
-            params![head, base, id],
+            params![head, base, id, now()],
         )? > 0)
     }
 
@@ -294,6 +304,63 @@ impl Store {
             [change_id],
             |r| r.get(0),
         )?)
+    }
+
+    /// Claims the pull request the change follows for a review a person asked for, which is a round of its own kind
+    /// started at once: the same claim as an author's round, in the same locked step, so that neither starts while the
+    /// other is going. Gives its id, or none when a round of the pull request is going.
+    pub fn claim_person_review(
+        &self,
+        change_id: i64,
+        head: &str,
+        base: &str,
+    ) -> Result<Option<i64>> {
+        let conn = self.conn();
+        let busy: bool = conn.query_row(
+            &format!(
+                "SELECT EXISTS (SELECT 1 FROM external_reviews e WHERE {SAME_PULL_REQUEST} \
+                 AND e.state IN ('starting', 'running', 'posting'))"
+            ),
+            [change_id],
+            |r| r.get(0),
+        )?;
+        if busy {
+            return Ok(None);
+        }
+        conn.execute(
+            "INSERT INTO external_reviews (change_id, head, base, state, kind, at, moved_at) \
+             VALUES (?1, ?2, ?3, 'starting', 'person', ?4, ?4)",
+            params![change_id, head, base, now()],
+        )?;
+        Ok(Some(conn.last_insert_rowid()))
+    }
+
+    /// The ids of the change rows that follow the same forge pull request as the change, itself included.
+    pub fn same_pull_request_changes(&self, change_id: i64) -> Result<Vec<i64>> {
+        let mut ids = self.rows(
+            "SELECT o.id FROM changes o, changes me WHERE me.id = ?1 AND o.repository_id = me.repository_id \
+             AND o.pull_request IS NOT NULL AND o.pull_request = me.pull_request",
+            [change_id],
+            |r| r.get::<_, i64>(0),
+        )?;
+        if !ids.contains(&change_id) {
+            ids.push(change_id);
+        }
+        Ok(ids)
+    }
+
+    /// The rounds of any pull request that are in one of `states`, oldest first.
+    pub fn external_reviews_in(&self, states: &[&str]) -> Result<Vec<ExternalReview>> {
+        let list = states
+            .iter()
+            .map(|s| format!("'{}'", s.replace('\'', "")))
+            .collect::<Vec<_>>()
+            .join(", ");
+        self.rows(
+            &format!("SELECT {COLUMNS} FROM external_reviews WHERE state IN ({list}) ORDER BY id"),
+            [],
+            read,
+        )
     }
 
     /// The round of the pull request the change follows that is claimed and whose run is being made, with the commits
@@ -317,8 +384,8 @@ impl Store {
     /// review, merge) is done by the one that wins this move.
     pub fn move_external_review(&self, id: i64, from: &str, to: &str) -> Result<bool> {
         Ok(self.conn().execute(
-            "UPDATE external_reviews SET state = ?1 WHERE id = ?2 AND state = ?3",
-            params![to, id, from],
+            "UPDATE external_reviews SET state = ?1, moved_at = ?4 WHERE id = ?2 AND state = ?3",
+            params![to, id, from, now()],
         )? > 0)
     }
 
@@ -332,8 +399,8 @@ impl Store {
         (head, base): (&str, &str),
     ) -> Result<()> {
         self.conn().execute(
-            "UPDATE external_reviews SET state = 'running', run_id = ?1, round = ?2, head = ?3, base = ?4 WHERE id = ?5",
-            params![run_id, round, head, base, id],
+            "UPDATE external_reviews SET state = 'running', run_id = ?1, round = ?2, head = ?3, base = ?4, moved_at = ?6 WHERE id = ?5",
+            params![run_id, round, head, base, id, now()],
         )?;
         Ok(())
     }
@@ -348,8 +415,8 @@ impl Store {
         comments: &[ReviewComment],
     ) -> Result<()> {
         self.conn().execute(
-            "UPDATE external_reviews SET state = ?1, verdict = ?2, summary = ?3, comments = ?4 WHERE id = ?5",
-            params![state, verdict, summary, serde_json::to_string(comments)?, id],
+            "UPDATE external_reviews SET state = ?1, verdict = ?2, summary = ?3, comments = ?4, moved_at = ?6 WHERE id = ?5",
+            params![state, verdict, summary, serde_json::to_string(comments)?, id, now()],
         )?;
         Ok(())
     }
@@ -357,8 +424,8 @@ impl Store {
     /// Moves the round `id` to `state`; `url` is where its review is on the forge, when it is posted.
     pub fn set_external_review_state(&self, id: i64, state: &str, url: Option<&str>) -> Result<()> {
         self.conn().execute(
-            "UPDATE external_reviews SET state = ?1, url = COALESCE(?2, url) WHERE id = ?3",
-            params![state, url, id],
+            "UPDATE external_reviews SET state = ?1, url = COALESCE(?2, url), moved_at = ?4 WHERE id = ?3",
+            params![state, url, id, now()],
         )?;
         Ok(())
     }

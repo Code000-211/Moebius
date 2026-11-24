@@ -14,17 +14,23 @@ import { CHECKS } from "./CardProperties";
 import { ExternalReview } from "./ExternalReview";
 import { changeOf, forgeName, pullRequestOf } from "./model";
 
+/** The states in which a round holds its pull request or waits for its turn. */
+const ROUND_GOING = new Set(["wanted", "starting", "running", "posting", "approved"]);
+
 export function FollowedRequest({
   board,
   card,
   busy = false,
   onRelease,
+  onEndRound,
 }: {
   board: Board;
   card: Card;
   busy?: boolean;
   /** The owner takes the assignee off an issue that was taken with `/take`. */
   onRelease?: () => void;
+  /** The owner ends the review round that is going or waiting, and stops its run. */
+  onEndRound?: () => void;
 }) {
   const author = card.change?.outside_author;
   const change = author ? changeOf(board, card) : undefined;
@@ -56,6 +62,16 @@ export function FollowedRequest({
       {author && card.change?.external_review && (
         <ExternalReview review={card.change.external_review} forge={forge} />
       )}
+      {author &&
+        onEndRound &&
+        card.change?.external_review &&
+        ROUND_GOING.has(card.change.external_review.state) && (
+          <div>
+            <Button size="sm" variant="secondary" disabled={busy} onClick={onEndRound}>
+              End this review round
+            </Button>
+          </div>
+        )}
       {!author && card.taken_by && card.taken_by_command && (
         <div className="flex min-w-0 flex-wrap items-center justify-between gap-x-4 gap-y-2">
           <p data-testid="taken-note" className="m-0 min-w-0 text-sm text-secondary">

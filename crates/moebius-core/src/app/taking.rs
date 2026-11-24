@@ -625,11 +625,6 @@ impl App {
         if !runs.has_agent("Reviewer") {
             return Err(AppError::Invalid("there is no Reviewer agent".into()));
         }
-        if self.store.external_review_active(change.id)? {
-            return Err(AppError::Conflict(
-                "a review of this pull request is going; wait for it to end".into(),
-            ));
-        }
         let repository = self.repository_of(&change)?;
         // The Reviewer reads what is fetched now, and the review counts for that commit only.
         let mut reviewed = change.head.clone();
@@ -641,32 +636,52 @@ impl App {
                 &["rev-parse", &change.branch],
             )?);
         }
-        if let Some(head) = &reviewed {
+        let Some(head) = reviewed else {
+            return Err(AppError::Invalid(
+                "the head of the pull request is not known yet".into(),
+            ));
+        };
+        let base = git(
+            Path::new(&repository.path),
+            &["rev-parse", &repository.base_ref()],
+        )?;
+        // One claim for every review of the pull request, a person's or its author's: neither starts while the other
+        // is going, and the check and the claim are one locked step.
+        let Some(round) = self.store.claim_person_review(change.id, &head, &base)? else {
+            return Err(AppError::Conflict(
+                "a review of this pull request is going; wait for it to end, or end it".into(),
+            ));
+        };
+        let started = (|| -> Result<crate::store::Run> {
             self.store
-                .set_change_head(change.id, head, crate::store::now())?;
-            self.store.set_change_reviewed_head(change.id, head)?;
-            let base = git(
-                Path::new(&repository.path),
-                &["rev-parse", &repository.base_ref()],
-            )?;
+                .set_change_head(change.id, &head, crate::store::now())?;
+            self.store.set_change_reviewed_head(change.id, &head)?;
             self.store.set_change_reviewed_base(change.id, &base)?;
+            let context = BTreeMap::from([
+                ("repository".into(), repository.name.clone()),
+                (
+                    "pull_request".into(),
+                    change.pull_request.unwrap_or_default().to_string(),
+                ),
+            ]);
+            self.record_action(by, "review_change", Some(card.id), None, context, reason)?;
+            let run = runs
+                .start(
+                    self,
+                    &card,
+                    "Reviewer",
+                    ("review", None),
+                    crate::board::Variant::default(),
+                )
+                .map_err(|e| AppError::Conflict(e.to_string()))?;
+            self.store
+                .start_external_review(round, run.id, 0, (&head, &base))?;
+            Ok(run)
+        })();
+        if started.is_err() {
+            let _ = self.store.move_external_review(round, "starting", "failed");
         }
-        let context = BTreeMap::from([
-            ("repository".into(), repository.name.clone()),
-            (
-                "pull_request".into(),
-                change.pull_request.unwrap_or_default().to_string(),
-            ),
-        ]);
-        self.record_action(by, "review_change", Some(card.id), None, context, reason)?;
-        runs.start(
-            self,
-            &card,
-            "Reviewer",
-            ("review", None),
-            crate::board::Variant::default(),
-        )
-        .map_err(|e| AppError::Conflict(e.to_string()))
+        started
     }
 
     /// Keeps the local branch of a followed request at its head when the request moved on.
@@ -693,6 +708,8 @@ impl App {
     /// back to the column it was in, still taken until its assignee is removed.
     pub(crate) fn followed_closed(&self, change: &Change) -> Result<()> {
         self.store.set_change_state(change.id, "closed")?;
+        // Its rounds end with it: one left going would hold the pull request for ever if it is reopened.
+        self.end_rounds_of(change, "the pull request was closed")?;
         self.bus.publish(Event::ChangeClosed { change: change.id });
         let Some(card_id) = change.card_id else {
             return Ok(());

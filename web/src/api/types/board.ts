@@ -70,8 +70,10 @@ export interface ReviewComment {
 /** `wanted` waits for the checks, `running` is being read, `approved` waits for the checks to merge, `posted` and `merged` are on the forge, `stale` and `failed` came to nothing. */
 export type ExternalReviewState =
   | "wanted"
+  | "starting"
   | "running"
   | "approved"
+  | "posting"
   | "posted"
   | "merged"
   | "stale"

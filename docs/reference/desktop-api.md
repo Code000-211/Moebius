@@ -234,6 +234,7 @@ keep their rows: the role is checked before the `410`.
 | `POST /v1/changes/{id}/merge` | member | yes |
 | `POST /v1/changes/{id}/reject` | member | yes |
 | `POST /v1/changes/{id}/review` | member | no |
+| `POST /v1/changes/{id}/review/end` | member | no |
 | `POST /v1/cards/{id}/done` | member | no |
 | `POST /v1/cards/{id}/release-taken` | member | no |
 | `GET /v1/changes/{id}/diff` | viewer | yes |
@@ -2386,6 +2387,15 @@ Request: `{"reason": "..."}`, optional.
 Response: the `Run`. Errors: `404` no such change; `422` the change is not an open change that follows a pull request
 someone else opened, or there is no Reviewer agent (`there is no Reviewer agent`); `409` the run cannot start. Not
 allowed to an agent's token.
+
+### `POST /v1/changes/{id}/review/end`
+
+A person ends the review round of a pull request someone else opened that is going or waiting (`wanted`, `starting`,
+`running`, `posting` or `approved`, on any change that followed the same forge pull request) and stops its run. The
+round ends `failed` ("a person ended the round"); it counted if its run had started. The decision is recorded (kind
+`end_review_round`) and the author may write `/done` again. Request: `{"reason": "..."}`, optional. Response:
+`{"ended": number}`. Errors: `404` no such change; `422` the change is not a pull request of someone else, or no round
+of its pull request is going. Not allowed to an agent's token.
 
 ### `GET /v1/changes/{id}/diff`
 
@@ -4687,6 +4697,17 @@ by the Reviewer when its author says so. The steps are in [the guide](../guide/w
   is refused with the binary files. A default branch that moved elsewhere changes nothing; one that touched what the request
   touches, or makes it conflict, drops the round (`stale`, nothing is merged, the request is told "the default branch
   changed what merging this pull request does... write /done again").
+- **A round never holds its pull request for ever.** A pull request has one round going at a time, so the ones that
+  cannot end by themselves are ended: a round of a change that closes ends `failed` with it and its run is stopped; at
+  each poll and tick, and at the server's start, a sweep ends a round `starting` for over 300 seconds (at the start, any),
+  a round `posting` for over 600 seconds (at the start, any) with the owner asked through a `review_not_possible` inbox
+  item (the review may be on the forge in part, so it is never written again by itself), and a `running` round of a closed
+  change; a failure between the claim and the run recorded puts the round back to `wanted`. A person's "End this review
+  round" (`POST /v1/changes/{id}/review/end`) ends the going round and stops its run.
+- **One claim for every review.** "Review with agent" (`POST /v1/changes/{id}/review`) takes the same claim as an
+  author's round, in the same locked step, as a round of kind `person`: it is refused (`409`) while a round is starting,
+  running or writing its review, and an author's round waits while a person's review runs. A person's round writes
+  nothing on the forge, counts for nothing toward the three, and ends when its run does.
 - **Never merged.** A verdict counts for the head it read only. When the poll has read a push before the verdict is used,
   the round is `stale` and nothing is written. When it has not, the forge refuses the merge pinned to the old head, the pull
   request is told "...it could not be merged", and the card goes to `Ready to merge` with an inbox item that says why (see
@@ -4697,7 +4718,7 @@ by the Reviewer when its author says so. The steps are in [the guide](../guide/w
   a review that asked for changes is the latest round and read the current head, the card window says it waits for the
   author and offers no "Merge".
 - **External review in the snapshot.** `ChangeView.external_review`: `round` (from 1; 0 until it starts), `round_limit` (3),
-  `state` (`wanted`, `running`, `approved`, `posted`, `merged`, `stale` or `failed`), `verdict` (`approve`, `changes` or
+  `state` (`wanted`, `starting`, `running`, `approved`, `posting`, `posted`, `merged`, `stale` or `failed`), `verdict` (`approve`, `changes` or
   null), `summary`, `comments` (`{"path", "line", "body"}`), `url` (the review on the forge once it is written, else null),
   `head` (the commit it read) and `current` (whether that is the request's head now). The card window shows the verdict, the
   summary, each comment in a box "path line N" and "Open on GitHub".

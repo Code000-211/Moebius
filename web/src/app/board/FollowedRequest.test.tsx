@@ -86,6 +86,53 @@ describe("what the window says of someone else's work", () => {
     expect(screen.getByRole("link", { name: "Open on GitHub" })).toBeTruthy();
   });
 
+  it("lets the owner end a review round that is going, and not one that is over", () => {
+    const round = (state: "running" | "posted") =>
+      card(5, {
+        column: "In review",
+        taken_by: "alice",
+        change: {
+          id: 9,
+          state: "open",
+          checks: "success",
+          review_verdict: null,
+          outside_author: "alice",
+          external_review: {
+            round: 1,
+            round_limit: 3,
+            state,
+            verdict: state === "posted" ? "changes" : null,
+            summary: "",
+            comments: [],
+            url: null,
+            head: "abc",
+            current: true,
+          },
+        },
+      });
+    const going = round("running");
+    const onEndRound = vi.fn();
+    const { unmount } = render(
+      <FollowedRequest
+        board={{ ...board([going]), changes: [change] }}
+        card={going}
+        onEndRound={onEndRound}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "End this review round" }));
+    expect(onEndRound).toHaveBeenCalledOnce();
+    unmount();
+    const over = round("posted");
+    render(
+      <FollowedRequest
+        board={{ ...board([over]), changes: [change] }}
+        card={over}
+        onEndRound={onEndRound}
+      />,
+    );
+    expect(screen.queryByRole("button", { name: "End this review round" })).toBeNull();
+  });
+
   it("says who took an issue, and why the server could not assign its own person", () => {
     const taken = card(5, {
       taken_by: "alice",

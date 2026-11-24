@@ -9,6 +9,7 @@ use serde_json::{Value, json};
 use super::fake_github::{Fixture, check};
 use super::taking_tests::{ReviewerRuns, following, push_to_the_pull_request};
 use crate::app::{REVIEW_NOT_POSSIBLE, ROUNDS_SPENT, columns};
+use crate::decide::Actor;
 use crate::decide::check::{CheckRequest, decide_call};
 use crate::repos::git;
 use crate::router::Grant;
@@ -1042,4 +1043,227 @@ async fn every_round_that_started_a_run_counts_whatever_became_of_it() {
         g.author_says_done().await;
     }
     assert_eq!(g.reviews_of(&card).len(), 3, "no fourth run");
+}
+
+/// Runs whose runs cannot be started.
+struct NoRuns;
+
+impl crate::board::CardRuns for NoRuns {
+    fn start(
+        &self,
+        _: &Arc<crate::app::App>,
+        _: &Card,
+        _: &str,
+        _: (&str, Option<&str>),
+        _: crate::board::Variant,
+    ) -> Result<Run, crate::board::StartError> {
+        Err(crate::board::StartError::Held)
+    }
+    fn has_agent(&self, _: &str) -> bool {
+        true
+    }
+    fn runners(&self) -> Vec<crate::harness::remote::RunnerInfo> {
+        Vec::new()
+    }
+    fn agents(&self) -> Vec<crate::board::AgentInfo> {
+        Vec::new()
+    }
+    fn token_budget(&self, _: &str) -> Option<i64> {
+        None
+    }
+    fn steer(&self, _: i64, _: &str) -> bool {
+        false
+    }
+    fn stop(&self, _: i64) -> bool {
+        false
+    }
+    fn hold(&self, _: bool) {}
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_round_going_on_a_pull_request_that_was_closed_does_not_hold_it_when_it_is_reopened() {
+    let (f, card, head) = ready().await;
+    f.author_says_done().await;
+    assert_eq!(f.reviews_of(&card).len(), 1);
+    let listed = f.fake.listed_pulls.lock().unwrap().clone();
+    // The author closes the pull request while the Reviewer reads it, and reopens it.
+    f.fake.set_pull("closed", false);
+    *f.fake.listed_pulls.lock().unwrap() = Vec::new();
+    f.server.poll_github().await;
+    let first = f.server.app.store.external_reviews(1).unwrap();
+    assert!(
+        first.iter().all(|r| r.state == "failed"),
+        "the round ended with the pull request: {first:?}"
+    );
+    // The run was stopped with it (these runs do not stop by themselves).
+    for run in f.reviews_of(&card) {
+        f.server
+            .app
+            .store
+            .set_run_status(run.id, "stopped")
+            .unwrap();
+    }
+    f.fake.set_pull("open", false);
+    f.fake.set_head(&head);
+    f.checks_are("completed", "success");
+    *f.fake.listed_pulls.lock().unwrap() = listed;
+    f.server.poll_github().await;
+    f.author_says_done().await;
+    assert_eq!(
+        f.reviews_of(&card).len(),
+        2,
+        "a new round could start: {:?} {:?}",
+        f.on_the_issue(),
+        f.on_the_pull_request()
+    );
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_round_that_never_moved_on_is_ended_by_the_sweep_and_never_written_again() {
+    let (f, card, head) = ready().await;
+    let change = f.server.app.followed_change(&card).unwrap().unwrap();
+    let store = &f.server.app.store;
+    let now = crate::store::now();
+    let stale = |state: &str| -> i64 {
+        let id = store.add_external_review(change.id, &head).unwrap();
+        assert!(store.claim_external_review(id, &head, "base0").unwrap());
+        if state == "posting" {
+            store
+                .start_external_review(id, 99, 1, (&head, "base0"))
+                .unwrap();
+            store
+                .set_external_review_state(id, "posting", None)
+                .unwrap();
+        }
+        id
+    };
+    // Starting: left alone while young, failed once it is old, and at once after a restart.
+    let starting = stale("starting");
+    f.server
+        .app
+        .sweep_external_reviews(now + 10, false)
+        .unwrap();
+    assert_eq!(
+        store.external_review(starting).unwrap().unwrap().state,
+        "starting"
+    );
+    f.server
+        .app
+        .sweep_external_reviews(now + 400, false)
+        .unwrap();
+    assert_eq!(
+        store.external_review(starting).unwrap().unwrap().state,
+        "failed"
+    );
+    let restarted = stale("starting");
+    f.server.app.sweep_external_reviews(now, true).unwrap();
+    assert_eq!(
+        store.external_review(restarted).unwrap().unwrap().state,
+        "failed"
+    );
+    // Posting: failed when old, the owner is asked, and nothing is written.
+    let posting = stale("posting");
+    f.server
+        .app
+        .sweep_external_reviews(now + 10, false)
+        .unwrap();
+    assert_eq!(
+        store.external_review(posting).unwrap().unwrap().state,
+        "posting"
+    );
+    f.server
+        .app
+        .sweep_external_reviews(now + 700, false)
+        .unwrap();
+    assert_eq!(
+        store.external_review(posting).unwrap().unwrap().state,
+        "failed"
+    );
+    assert!(
+        store
+            .has_open_inbox_item(card.id, REVIEW_NOT_POSSIBLE)
+            .unwrap()
+    );
+    assert!(f.fake.review_posts.lock().unwrap().is_empty());
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_round_whose_run_could_not_be_made_is_not_left_starting() {
+    let (f, card, _) = ready().await;
+    f.server.app.set_review_runs(Arc::new(NoRuns));
+    f.author_says_done().await;
+    let change = f.server.app.followed_change(&card).unwrap().unwrap();
+    let rounds = f.server.app.store.external_reviews(change.id).unwrap();
+    assert_eq!(rounds[0].state, "wanted", "{rounds:?}");
+    // It starts when runs can be made.
+    f.server.app.set_review_runs(Arc::new(ReviewerRuns));
+    tick(&f, &card).await;
+    assert_eq!(f.reviews_of(&card).len(), 1);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_person_ends_the_round_that_is_going_and_the_author_may_ask_again() {
+    let (f, card, _) = ready().await;
+    f.author_says_done().await;
+    let change = f.server.app.followed_change(&card).unwrap().unwrap();
+    let app = f.server.app.clone();
+    let id = change.id;
+    let ended = tokio::task::spawn_blocking(move || {
+        app.end_review_round(&Actor::first_owner(), id, "stuck")
+    })
+    .await
+    .unwrap()
+    .unwrap();
+    assert_eq!(ended, 1);
+    let rounds = f.server.app.store.external_reviews(change.id).unwrap();
+    assert_eq!(rounds[0].state, "failed");
+    // Nothing is going now.
+    let app = f.server.app.clone();
+    let again =
+        tokio::task::spawn_blocking(move || app.end_review_round(&Actor::first_owner(), id, ""))
+            .await
+            .unwrap();
+    assert!(again.is_err());
+    f.author_says_done().await;
+    assert_eq!(f.reviews_of(&card).len(), 2);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_review_a_person_asks_for_and_a_round_never_run_together() {
+    let (f, card, _) = ready().await;
+    let change = f.server.app.followed_change(&card).unwrap().unwrap();
+    let person = |f: &Fixture| {
+        let app = f.server.app.clone();
+        let id = change.id;
+        async move {
+            tokio::task::spawn_blocking(move || {
+                app.review_outside_change(&Actor::first_owner(), &ReviewerRuns, id, "")
+            })
+            .await
+            .unwrap()
+        }
+    };
+    // A round is going: the person's review is refused.
+    f.author_says_done().await;
+    assert!(person(&f).await.is_err());
+    assert_eq!(f.reviews_of(&card).len(), 1);
+    // The person ends it and reviews; then the author's round waits for the person's review.
+    let (app, id) = (f.server.app.clone(), change.id);
+    tokio::task::spawn_blocking(move || app.end_review_round(&Actor::first_owner(), id, ""))
+        .await
+        .unwrap()
+        .unwrap();
+    let run = person(&f).await.unwrap();
+    assert_eq!(f.reviews_of(&card).len(), 2);
+    f.author_says_done().await;
+    tick(&f, &card).await;
+    assert_eq!(f.reviews_of(&card).len(), 2, "the author's round waits");
+    // The person's review ends; the author's round starts.
+    f.server
+        .app
+        .store
+        .set_run_status(run.id, "succeeded")
+        .unwrap();
+    tick(&f, &card).await;
+    assert_eq!(f.reviews_of(&card).len(), 3);
 }

@@ -47,6 +47,7 @@ mod projects;
 mod repositories;
 mod reproduce;
 mod review_context;
+mod review_sweep;
 pub(crate) use review_context::ContextError;
 mod reviews;
 mod runs;

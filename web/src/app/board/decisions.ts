@@ -10,6 +10,7 @@ import {
   answerDone,
   approve,
   type DoneAnswer,
+  endReviewRound,
   merge,
   reject,
   releaseTaken,
@@ -30,6 +31,7 @@ export type Decision =
   | { kind: "stop"; run: number; number: number }
   | { kind: "merge"; change: number; number: number }
   | { kind: "review"; change: number; number: number }
+  | { kind: "end_round"; change: number; number: number }
   | { kind: "reject"; change: number; number: number; reason: string }
   | { kind: "done"; card: number; number: number; answer: DoneAnswer }
   | { kind: "release"; card: number; number: number };
@@ -58,6 +60,7 @@ const VERB: Record<Decision["kind"], string> = {
   stop: "stop",
   merge: "merge",
   review: "review",
+  end_round: "end the review round of",
   reject: "send back",
   done: "answer",
   release: "release",
@@ -85,6 +88,10 @@ async function send(decision: Decision, queryClient: QueryClient): Promise<strin
     case "review":
       await reviewChange(decision.change);
       return `The Reviewer is reading the pull request of ${n}. Its findings come to the card.`;
+    case "end_round": {
+      await endReviewRound(decision.change);
+      return `Ended the review round of ${n}. Its author may write /done again.`;
+    }
     case "reject":
       putCards(queryClient, [await reject(decision.change, decision.reason)]);
       return `Sent ${n} back to coding.`;

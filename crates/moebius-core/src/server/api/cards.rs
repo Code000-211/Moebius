@@ -14,6 +14,7 @@
 //! - `DELETE /v1/cards/{id}`: a person deletes a card with everything stored for it.
 //! - `POST /v1/changes/{id}/merge` `{reason}`: a person merges a change; its card moves to done.
 //! - `POST /v1/changes/{id}/reject` `{reason}`: a person sends a change waiting to be merged back to coding.
+//! - `POST /v1/changes/{id}/review/end` `{reason}`: a person ends the review round of a followed pull request that is going.
 //! - `POST /v1/changes/{id}/review` `{reason}`: a person has the Reviewer read a pull request someone else opened that a
 //!   card follows.
 //! - `GET /v1/changes/{id}/diff`: what a change changes, as a unified diff.
@@ -65,6 +66,7 @@ pub(super) fn routes() -> Router<ApiState> {
         .route("/v1/changes/{id}/merge", post(merge_change))
         .route("/v1/changes/{id}/reject", post(reject_change))
         .route("/v1/changes/{id}/review", post(review_change))
+        .route("/v1/changes/{id}/review/end", post(end_review_round))
         .route("/v1/changes/{id}/diff", get(change_diff))
         .route("/v1/cards/{id}/runs", get(card_runs))
         .route("/v1/cards/{id}/history", get(card_history))
@@ -314,6 +316,7 @@ fn card_view(
                     .external_reviews(change.id)?
                     .into_iter()
                     .rev()
+                    .filter(|r| r.kind == "author")
                     .find(|r| r.state != "failed" && r.state != "stale" || r.verdict.is_some())
                     .map(|r| ExternalReviewView {
                         current: change.head.as_deref() == Some(r.head.as_str()),
@@ -543,6 +546,26 @@ async fn review_change(
     let runs = state.runs.clone();
     blocking(&state.app, move |app| {
         app.review_outside_change(&by, &*runs, id, &reason)
+    })
+    .await
+}
+
+/// What `POST /v1/changes/{id}/review/end` answers.
+#[derive(Debug, Clone, Serialize)]
+struct EndedRounds {
+    ended: usize,
+}
+
+async fn end_review_round(
+    State(state): State<ApiState>,
+    Extension(by): Extension<Actor>,
+    UrlPath(id): UrlPath<i64>,
+    body: Option<axum::Json<Reason>>,
+) -> Result<axum::Json<EndedRounds>, ApiError> {
+    let reason = body.map(|body| body.0.reason).unwrap_or_default();
+    blocking(&state.app, move |app| {
+        app.end_review_round(&by, id, &reason)
+            .map(|ended| EndedRounds { ended })
     })
     .await
 }

@@ -266,6 +266,10 @@ export function CardContent({
               ? undefined
               : () => onDecide({ kind: "release", card: card.id, number: card.number })
           }
+          onEndRound={() => {
+            const change = card.change?.id;
+            if (change !== undefined) onDecide({ kind: "end_round", change, number: card.number });
+          }}
         />
 
         <div className="px-6 pb-6">

@@ -37,6 +37,9 @@ pub const ROUND_LIMIT: i64 = 3;
 
 /// The kind of the inbox item that asks the owner to look at a pull request the Reviewer read [`ROUND_LIMIT`] times.
 pub const ROUNDS_SPENT: &str = "review_rounds_spent";
+/// What the owner is told when a review was not written to the end.
+pub(super) const REVIEW_NOT_POSSIBLE_REASON_POSTING: &str =
+    "the Reviewer's review was not written to the end, so it may be on the forge in part";
 /// The kind of the inbox item that says a followed pull request could not be given to the Reviewer.
 pub const REVIEW_NOT_POSSIBLE: &str = "review_not_possible";
 
@@ -84,7 +87,7 @@ impl App {
     }
 
     /// What starts the review runs.
-    fn review_runs(&self) -> Result<Arc<dyn CardRuns>> {
+    pub(super) fn review_runs(&self) -> Result<Arc<dyn CardRuns>> {
         #[cfg(test)]
         if let Some(runs) = self
             .review_runs
@@ -245,6 +248,14 @@ impl App {
         Ok("Thanks, the pull request will be reviewed once its checks have passed.".into())
     }
 
+    /// Asks the owner to look at a pull request one of whose rounds had to be ended (see `review_sweep`).
+    pub(super) fn ask_owner_about_a_round(&self, change: &Change, reason: &str) -> Result<()> {
+        let Some(card) = change.card_id.map(|id| self.card(id)).transpose()? else {
+            return Ok(());
+        };
+        self.ask_owner_unreviewed(&card, change, reason)
+    }
+
     /// Puts an item in the owner's inbox that says the pull request could not be given to the Reviewer, and why: it is
     /// too large, changes a binary file, or git could not read it. The owner reads it and merges it, or does not.
     fn ask_owner_unreviewed(&self, card: &Card, change: &Change, reason: &str) -> Result<()> {
@@ -305,6 +316,13 @@ impl App {
     /// round going. A failure is reported with the forge's errors, and the round it came from is retried at the next
     /// call unless it says otherwise.
     pub fn advance_external_reviews(self: &Arc<Self>, card_id: i64) {
+        // Rounds that cannot end by themselves are ended first, whatever this card follows (`review_sweep`).
+        if let Err(e) = self.sweep_external_reviews(super::review_sweep::clock(), false) {
+            self.bus.publish(crate::bus::Event::ForgeError {
+                repository: String::new(),
+                message: format!("the sweep of the reviews of pull requests: {e}"),
+            });
+        }
         let result = self.card(card_id).and_then(|card| {
             let Some(change) = self.followed_change(&card)? else {
                 return Ok(());
@@ -340,6 +358,10 @@ impl App {
     fn advance(self: &Arc<Self>, card: &Card, change: &Change) -> Result<()> {
         let repository = self.repository_of(change)?;
         for round in self.store.external_reviews(change.id)? {
+            // A review a person asked for writes nothing on the forge; its run ends by itself (see `review_sweep`).
+            if round.kind == "person" {
+                continue;
+            }
             match round.state.as_str() {
                 "wanted" => self.advance_wanted(&repository, card, change, &round)?,
                 "running" => self.advance_running(&repository, card, change, &round)?,
@@ -481,34 +503,44 @@ impl App {
         // For the owner's merge of a request that is not merged by the server: the commit that was reviewed.
         self.store.set_change_reviewed_head(change.id, head)?;
         self.store.set_change_reviewed_base(change.id, &base)?;
-        let context = BTreeMap::from([
-            ("repository".into(), repository.name.clone()),
-            (
-                "pull_request".into(),
-                change.pull_request.unwrap_or_default().to_string(),
-            ),
-        ]);
-        self.record_action(
-            &reviewer(),
-            "review_change",
-            Some(card.id),
-            None,
-            context,
-            "the author said the pull request is done",
-        )?;
-        let rounds = self.store.external_review_rounds(change.id)?;
-        let run = match runs.start(self, card, "Reviewer", ("review", None), Variant::default()) {
-            Ok(run) => run,
-            Err(e) => {
-                // It is asked for again at the next call.
-                self.store
-                    .move_external_review(round.id, "starting", "wanted")?;
-                return Err(AppError::Conflict(e.to_string()));
-            }
-        };
-        // The round is of the head the run reads, which is the one that was fetched just now.
-        self.store
-            .start_external_review(round.id, run.id, rounds, (head, &base))?;
+        // Whatever goes wrong from here until the run is recorded, the claim does not stay: the round goes back to
+        // `wanted` when no run was made, and ends `failed` when one was.
+        let started = (|| -> Result<()> {
+            let context = BTreeMap::from([
+                ("repository".into(), repository.name.clone()),
+                (
+                    "pull_request".into(),
+                    change.pull_request.unwrap_or_default().to_string(),
+                ),
+            ]);
+            self.record_action(
+                &reviewer(),
+                "review_change",
+                Some(card.id),
+                None,
+                context,
+                "the author said the pull request is done",
+            )?;
+            let rounds = self.store.external_review_rounds(change.id)?;
+            let run = match runs.start(self, card, "Reviewer", ("review", None), Variant::default())
+            {
+                Ok(run) => run,
+                Err(e) => {
+                    // It is asked for again at the next call.
+                    return Err(AppError::Conflict(e.to_string()));
+                }
+            };
+            // The round is of the head the run reads, which is the one that was fetched just now.
+            self.store
+                .start_external_review(round.id, run.id, rounds, (head, &base))?;
+            Ok(())
+        })();
+        if let Err(e) = started {
+            let _ = self
+                .store
+                .move_external_review(round.id, "starting", "wanted");
+            return Err(e);
+        }
         if no_checks {
             self.answer_on_request(
                 repository,
