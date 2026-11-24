@@ -15,8 +15,8 @@ links to the other.
 [0.16.0](releases/v0.16.0.md), [0.16.1](releases/v0.16.1.md),
 [0.17.0](releases/v0.17.0.md), [0.17.1](releases/v0.17.1.md),
 [0.17.2](releases/v0.17.2.md), [0.17.3](releases/v0.17.3.md),
-[0.18.0](releases/v0.18.0.md), [0.18.1](releases/v0.18.1.md) and
-[0.18.2](releases/v0.18.2.md).
+[0.18.0](releases/v0.18.0.md), [0.18.1](releases/v0.18.1.md),
+[0.18.2](releases/v0.18.2.md) and [0.18.3](releases/v0.18.3.md).
 
 ## To build on Moebius
 
