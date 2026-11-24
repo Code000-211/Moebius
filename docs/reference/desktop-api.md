@@ -520,7 +520,7 @@ same change failing again keeps it, another stop replaces it) and
 `project_label` (`data.label`, `data.repository`; its `title` says the label names no project of the repository, and the card it is about stays where it is: see [the project label](#the-project-label)) and
 `outside_change` (`data.change`, `data.pull_request`, `data.author`, `data.repository`: the card follows a pull request someone else opened; resolved when the request is merged or closed; see [Working with people on other servers](#working-with-people-on-other-servers)) and
 `review_rounds_spent` (`data.change`, `data.pull_request`, `data.author`, `data.repository`: the Reviewer read the pull request the card follows three times and its author wrote `/done` again; resolved when the request is merged or closed; see [Reviews of followed pull requests](#reviews-of-followed-pull-requests)) and
-`review_not_possible` (`data.change`, `data.pull_request`, `data.author`, `data.repository`, `data.reason`: the pull request the card follows could not be given to the Reviewer, because it is too large to be read whole, changes a binary file or git could not read it; resolved when the request is merged or closed; the same choices as for `outside_change`) and
+`review_not_possible` (`data.change`, `data.pull_request`, `data.author`, `data.repository`, `data.reason`: the pull request the card follows could not be given to the Reviewer, because it is too large to be read whole, changes a binary file, git could not read it, or the run of a review a person asked for could not start; resolved when the request is merged or closed; the same choices as for `outside_change`) and
 `done_asked` (`data.login`, `data.reason`, `data.repository`: the assignee of the issue, `login`, wrote `/done` in a comment and `reason` is the rest of that comment; resolved by the owner's answer, `POST /v1/cards/{id}/done`, or when the assignee is released; see [Commands in issue comments](#commands-in-issue-comments)) and
 `proposal` (`data.proposal`, `data.branch`, `data.trials`: an array of `{"card", "outcome", "reason"}` for the cards it
 addresses, and `data.regression`: the same for the cards of the regression set, empty when none was tried; its `title` is the
@@ -2381,11 +2381,13 @@ or its card is not in `Ready to merge`.
 A person has the Reviewer read a pull request someone else opened that a card follows (see [Working with people on
 other servers](#working-with-people-on-other-servers)): the request's head is fetched again into the change's local
 branch, the decision is recorded (kind `review_change`, decider `person`), and a run with the purpose `review` and the
-agent `Reviewer` starts for the card on that branch. Its findings are in the card's thread; nothing moves the card.
-Request: `{"reason": "..."}`, optional.
+agent `Reviewer` starts for the card on that branch. Its findings are in the card's thread, and once the run ends the
+round is written on the forge like the author's round — a review with `REQUEST_CHANGES` or `APPROVE` and the answer on
+the issue — except that nothing is merged; nothing moves the card. Request: `{"reason": "..."}`, optional.
 
 Response: the `Run`. Errors: `404` no such change; `422` the change is not an open change that follows a pull request
-someone else opened, or there is no Reviewer agent (`there is no Reviewer agent`); `409` the run cannot start. Not
+someone else opened, or there is no Reviewer agent (`there is no Reviewer agent`); `409` the run cannot start, and the
+round then ends `failed` with the reason and an inbox item `review_not_possible` asks the owner to look. Not
 allowed to an agent's token.
 
 ### `POST /v1/changes/{id}/review/end`
@@ -4706,12 +4708,16 @@ by the Reviewer when its author says so. The steps are in [the guide](../guide/w
   each poll and tick, and at the server's start, a sweep ends a round `starting` for over 300 seconds (at the start, any),
   a round `posting` for over 600 seconds (at the start, any) with the owner asked through a `review_not_possible` inbox
   item (the review may be on the forge in part, so it is never written again by itself), and a `running` round of a closed
-  change; a failure between the claim and the run recorded puts the round back to `wanted`. A person's "End this review
-  round" (`POST /v1/changes/{id}/review/end`) ends the going round and stops its run.
+  change; a failure between the claim and the run recorded puts the round back to `wanted`, and, for a review a person
+  asked for, which has no `wanted` round to try again, leaves it `failed` with the reason the run gave and a
+  `review_not_possible` item in the owner's Inbox. A person's "End this review round"
+  (`POST /v1/changes/{id}/review/end`) ends the going round and stops its run.
 - **One claim for every review.** "Review with agent" (`POST /v1/changes/{id}/review`) takes the same claim as an
   author's round, in the same locked step, as a round of kind `person`: it is refused (`409`) while a round is starting,
-  running or writing its review, and an author's round waits while a person's review runs. A person's round writes
-  nothing on the forge, counts for nothing toward the three, and ends when its run does.
+  running or writing its review, and an author's round waits while a person's review runs. A person's round is written on
+  the forge like an author's round, and the answer on the issue names what was found; it never merges and nothing moves
+  the card, so the person merges the pull request where they asked for the review, and it counts for nothing toward the
+  three.
 - **Never merged.** A verdict counts for the head it read only. When the poll has read a push before the verdict is used,
   the round is `stale` and nothing is written. When it has not, the forge refuses the merge pinned to the old head, the pull
   request is told "...it could not be merged", and the card goes to `Ready to merge` with an inbox item that says why (see
@@ -4750,7 +4756,7 @@ by the Reviewer when its author says so. The steps are in [the guide](../guide/w
   leading `@` (Pi strips it), and a pattern that names a place (`glob`, `include`, `exclude`, `ignore`, and `pattern` of `find`,
   `ls`, `Glob`, `LS`) neither absolute, nor starting with `~`, `$` or `@`, nor holding a `..` part; arguments that are no
   object are refused. No review of a pull request uses it.
-- **One thread acts on a round, and the run reads the round's commits.** The claim (`wanted` to `starting`) writes the head and the default branch's tip into the round in the same step, and fails while another round of the pull request is going. The run's prompt, its context and its row (`runs.review_head`, `runs.review_base`) are made from the claimed round, never from the columns of the change, which a thread that lost the claim could have written; a review a person asked for, which has no round, uses the commits recorded on the change for it and is refused while a round is going. The poll and the engine tick both call `App::advance_external_reviews`. A round changes
+- **One thread acts on a round, and the run reads the round's commits.** The claim (`wanted` to `starting`) writes the head and the default branch's tip into the round in the same step, and fails while another round of the pull request is going. The run's prompt, its context and its row (`runs.review_head`, `runs.review_base`) are made from the claimed round, never from the columns of the change, which a thread that lost the claim could have written; a review a person asked for claims a round of its own the same way, with the head it fetched, and is refused while a round is going. The poll and the engine tick both call `App::advance_external_reviews`. A round changes
   state by compare-and-set in the store (`wanted` to `starting`, `running` or `approved` to `posting`), so one thread starts
   the run, writes the review and merges. A round's `head` is the head its run reads, set when it starts. The merge is refused
   unless the change's head is the round's head (`409`, "moved on from <sha>"), besides the forge's refusal of a pinned commit.

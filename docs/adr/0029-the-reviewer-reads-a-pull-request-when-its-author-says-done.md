@@ -32,6 +32,11 @@ server merge what the Reviewer approves. A pull request is somebody else's code,
   request and nothing is reviewed. Comments on the pull request itself are not read: the poll reads the comments of
   issues, and a second place to read would double what [0028](0028-helpers-take-issues-with-commands-in-comments.md) built.
 - **A round never holds its pull request for ever.** One round of a pull request goes at a time, a person's review ("Review with agent") takes the same claim, and a sweep, a closing pull request and a person's "End this review round" end the rounds that cannot end by themselves; a review left half written is never written again by itself.
+- **A review a person asks for is written on the pull request too.** "Review with agent" has the Reviewer read it and
+  writes what it found as a review on the pull request, with the answer on the issue, as a round its author asked for
+  does. It never merges and it moves no card: the person who asked is there to merge the request. A round whose run
+  cannot start ends `failed` with the reason the run gave, and the owner is asked to look with a `review_not_possible`
+  item, rather than the person's decision leaving no trace.
 - **At most three rounds per forge pull request, one per head, one at a time.** Counted across the change rows that followed it, so closing and reopening it does not begin again; the claim of a round also writes its two commits, and the run reads them from the round. A round counts once its run started, whatever came of it. A fourth `/done` is
   answered that a person will look, and the owner gets an Inbox item (`review_rounds_spent`). A head with a round is not
   read again. A head that ended with a verdict is not read again; one whose round ended without a verdict, or went stale, may be read again, and each such round has counted toward the three, so the author cannot spend runs for ever.

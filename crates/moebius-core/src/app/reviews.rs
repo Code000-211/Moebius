@@ -16,7 +16,9 @@
 //! - changes requested are written as a review that asks for them, with the comments on the lines the diff has; the rest
 //!   goes into the body;
 //! - an approval is written as an approving review, and the pull request is merged when the repository says so and its
-//!   checks are green, else the card goes to Ready to merge and the owner is asked.
+//!   checks are green, else the card goes to Ready to merge and the owner is asked;
+//! - a review a person asked for from the card (`kind` `person`) is written the same way, but is never merged and never
+//!   moves the card: the person merges the pull request where they asked for the review.
 //!
 //! A review run of such a pull request is restricted: it reads files and nothing else (see `decide::guard`).
 
@@ -248,7 +250,8 @@ impl App {
         Ok("Thanks, the pull request will be reviewed once its checks have passed.".into())
     }
 
-    /// Asks the owner to look at a pull request one of whose rounds had to be ended (see `review_sweep`).
+    /// Asks the owner to look at a pull request one of whose rounds had to be ended or could not start (see
+    /// `review_sweep`).
     pub(super) fn ask_owner_about_a_round(&self, change: &Change, reason: &str) -> Result<()> {
         let Some(card) = change.card_id.map(|id| self.card(id)).transpose()? else {
             return Ok(());
@@ -257,7 +260,8 @@ impl App {
     }
 
     /// Puts an item in the owner's inbox that says the pull request could not be given to the Reviewer, and why: it is
-    /// too large, changes a binary file, or git could not read it. The owner reads it and merges it, or does not.
+    /// too large, changes a binary file, git could not read it, or the run of a review failed to start. The owner reads
+    /// it and merges it, or does not.
     fn ask_owner_unreviewed(&self, card: &Card, change: &Change, reason: &str) -> Result<()> {
         if self
             .store
@@ -269,7 +273,7 @@ impl App {
             REVIEW_NOT_POSSIBLE,
             Some(card.id),
             &format!(
-                "Pull request #{} could not be reviewed automatically: {}",
+                "Pull request #{} could not be reviewed: {}",
                 change.pull_request.unwrap_or_default(),
                 card.title
             ),
@@ -358,10 +362,6 @@ impl App {
     fn advance(self: &Arc<Self>, card: &Card, change: &Change) -> Result<()> {
         let repository = self.repository_of(change)?;
         for round in self.store.external_reviews(change.id)? {
-            // A review a person asked for writes nothing on the forge; its run ends by itself (see `review_sweep`).
-            if round.kind == "person" {
-                continue;
-            }
             match round.state.as_str() {
                 "wanted" => self.advance_wanted(&repository, card, change, &round)?,
                 "running" => self.advance_running(&repository, card, change, &round)?,
@@ -694,7 +694,9 @@ impl App {
     ) -> Result<()> {
         let number = change.pull_request.unwrap_or_default();
         let approve = said.verdict == "approve";
-        if approve && repository.merge_reviewed {
+        // A review a person asked for is never merged: the person merges the pull request where they asked for it.
+        let merges = repository.merge_reviewed && round.kind == "author";
+        if approve && merges {
             // Merged only when the checks of the head that was read are green; pending ones are waited for.
             if change.head.as_deref() != Some(round.head.as_str()) {
                 self.store
@@ -791,7 +793,17 @@ impl App {
                 .publish(crate::bus::Event::CardUpdated(self.card(card.id)?));
             return Ok(());
         }
-        if repository.merge_reviewed {
+        if round.kind == "person" {
+            self.answer(
+                repository,
+                card.id,
+                &format!("Reviewed pull request #{number}: approved. The owner will merge it."),
+            );
+            self.bus
+                .publish(crate::bus::Event::CardUpdated(self.card(card.id)?));
+            return Ok(());
+        }
+        if merges {
             // Whether it was merged or is left to the owner is told by `merge_reviewed` itself.
             self.merge_reviewed(repository, card, change, round)?.ok();
             return Ok(());
