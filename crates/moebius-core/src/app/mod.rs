@@ -80,7 +80,7 @@ use moebius_plugin_api::Host;
 
 use crate::board::Runs;
 use crate::bus::{Bus, Event};
-use crate::config::{LocalizeConfig, PackagesConfig};
+use crate::config::{LocalizeConfig, PackagesConfig, ReviewConfig};
 use crate::decide::{Actor, Decisions, Question};
 use crate::harness::repo::HarnessRepo;
 use crate::harness::terminal::Slots;
@@ -222,6 +222,8 @@ pub struct App {
     pub card_stop_waits: CardStopWaits,
     /// Whether code runs are given a hint of the files that are likely relevant, and how many (see `localize`).
     pub localize: LocalizeConfig,
+    /// How much of a pull request someone else opened the Reviewer is given (see `review_context`).
+    pub review: ReviewConfig,
     /// Where Pi packages are found and fetched from (see `packages`).
     pub packages: PackagesConfig,
     /// The checks going now, as change and commit.
@@ -330,6 +332,7 @@ impl App {
             checks_timeout: Duration::from_secs(1800),
             card_stop_waits: CardStopWaits::default(),
             localize: LocalizeConfig::default(),
+            review: ReviewConfig::default(),
             packages: PackagesConfig::default(),
             checking: Mutex::default(),
             judging: Mutex::default(),

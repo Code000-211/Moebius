@@ -44,6 +44,10 @@ const KEYS: &[Key] = &[
     key("guard.enabled", "true", true),
     key("localize.enabled", "true", true),
     key("localize.files", "10", false),
+    key("review.diff_limit", "60000", false),
+    key("review.file_limit", "40000", false),
+    key("review.files_limit", "150000", false),
+    key("review.files_at_most", "60", false),
     key(
         "packages.npm_registry",
         "\"https://registry.npmjs.org\"",

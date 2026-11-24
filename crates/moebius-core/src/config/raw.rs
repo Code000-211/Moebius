@@ -51,6 +51,16 @@ pub(super) struct RawLocalize {
     pub(super) files: Option<u32>,
 }
 
+/// The table of what the Reviewer of an outside pull request is given: `[review]`.
+#[derive(Debug, Default, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(super) struct RawReview {
+    pub(super) diff_limit: Option<u64>,
+    pub(super) file_limit: Option<u64>,
+    pub(super) files_limit: Option<u64>,
+    pub(super) files_at_most: Option<u64>,
+}
+
 /// The table of a built-in decider that can be turned off: `[guard]`.
 #[derive(Debug, Default, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -185,6 +195,8 @@ pub(super) struct Raw {
     pub(super) board: RawBoard,
     #[serde(default)]
     pub(super) localize: RawLocalize,
+    #[serde(default)]
+    pub(super) review: RawReview,
     #[serde(default)]
     pub(super) guard: RawBuiltIn,
     /// The table of the removed lens, accepted so that a file written for an earlier version still loads.
