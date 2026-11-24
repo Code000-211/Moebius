@@ -447,8 +447,6 @@ impl App {
             Path::new(&repository.path),
             &["rev-parse", &repository.base_ref()],
         )?;
-        self.store.set_change_reviewed_head(change.id, head)?;
-        self.store.set_change_reviewed_base(change.id, &base)?;
         // What the Reviewer is given is made now, once, so that a pull request that is too big or does not merge is
         // answered and not started.
         let not_possible = |reason: &str| -> Result<()> {
@@ -460,7 +458,7 @@ impl App {
             )?;
             self.ask_owner_unreviewed(card, change, reason)
         };
-        match self.review_context(card) {
+        match self.review_context_at(change, head, &base) {
             Ok(_) => {}
             Err(ContextError::Conflicts) => {
                 return end(
@@ -474,13 +472,15 @@ impl App {
                 | ContextError::Other(why),
             ) => return not_possible(&why),
         }
-        // Only one thread starts the run: the poll and the engine both come here.
-        if !self
-            .store
-            .move_external_review(round.id, "wanted", "starting")?
-        {
+        // Only one thread starts the run, and only one round of the pull request runs at a time: the poll and the engine
+        // both come here. The claim writes the two commits with it, and the run reads them from the claimed round, so
+        // nothing a thread that lost wrote can reach the run.
+        if !self.store.claim_external_review(round.id, head, &base)? {
             return Ok(());
         }
+        // For the owner's merge of a request that is not merged by the server: the commit that was reviewed.
+        self.store.set_change_reviewed_head(change.id, head)?;
+        self.store.set_change_reviewed_base(change.id, &base)?;
         let context = BTreeMap::from([
             ("repository".into(), repository.name.clone()),
             (

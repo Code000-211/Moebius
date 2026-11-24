@@ -46,6 +46,7 @@ pub(in crate::harness) fn restricted_run(
     card: &Card,
     (agent, config): (&str, &AgentConfig),
     purpose: &str,
+    (head, base): (&str, &str),
 ) -> Result<RunningRun, StartError> {
     let run = app
         .store
@@ -53,6 +54,10 @@ pub(in crate::harness) fn restricted_run(
         .map_err(|e| StartError::Store(e.to_string()))?;
     app.store
         .set_run_restricted(run.id)
+        .map_err(|e| StartError::Store(fail(app, run.id, e.to_string())))?;
+    // The two commits it reads, on its row for good.
+    app.store
+        .set_run_review(run.id, head, base)
         .map_err(|e| StartError::Store(fail(app, run.id, e.to_string())))?;
     // A directory of its own under the system's temporary directory, which has no `AGENTS.md` or `CLAUDE.md` above it
     // for a harness to find, as the data directory may (a person's home directory, say). Its name is random and only its

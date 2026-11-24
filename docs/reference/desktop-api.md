@@ -4624,7 +4624,7 @@ by the Reviewer when its author says so. The steps are in [the guide](../guide/w
   and `success`: `pending` checks, or checks not yet read for the head after a push, make it wait; `failure` ends the round
   with a comment on the pull request ("The checks of this pull request fail, so nothing was reviewed...") and nothing is
   reviewed. Nobody else's `/done` has it reviewed.
-- **Rounds.** At most three rounds per pull request (`ROUND_LIMIT`). Every round whose run started counts, whatever came of
+- **Rounds.** At most three rounds per forge pull request (`ROUND_LIMIT`), counted across the change rows that followed it, so closing and reopening a pull request does not begin again, and a head read once is not read again whichever row follows it. Rounds of one pull request never run side by side: a round waits while another is starting, running or writing its review. Every round whose run started counts, whatever came of
   it (a verdict, no verdict, or a head that moved), so that no author can have the Reviewer read a pull request for ever. A fourth `/done` is answered "a person will look" and adds a `review_rounds_spent` inbox item for the card.
   A new `/done` after a push starts the next round. A head is never read twice: a `/done` for a head that has a round is
   answered that it was reviewed already. A round whose run did not end, or whose answer is no verdict, is `failed`, and one dropped because the head moved
@@ -4725,7 +4725,7 @@ by the Reviewer when its author says so. The steps are in [the guide](../guide/w
   leading `@` (Pi strips it), and a pattern that names a place (`glob`, `include`, `exclude`, `ignore`, and `pattern` of `find`,
   `ls`, `Glob`, `LS`) neither absolute, nor starting with `~`, `$` or `@`, nor holding a `..` part; arguments that are no
   object are refused. No review of a pull request uses it.
-- **One thread acts on a round.** The poll and the engine tick both call `App::advance_external_reviews`. A round changes
+- **One thread acts on a round, and the run reads the round's commits.** The claim (`wanted` to `starting`) writes the head and the default branch's tip into the round in the same step, and fails while another round of the pull request is going. The run's prompt, its context and its row (`runs.review_head`, `runs.review_base`) are made from the claimed round, never from the columns of the change, which a thread that lost the claim could have written; a review a person asked for, which has no round, uses the commits recorded on the change for it and is refused while a round is going. The poll and the engine tick both call `App::advance_external_reviews`. A round changes
   state by compare-and-set in the store (`wanted` to `starting`, `running` or `approved` to `posting`), so one thread starts
   the run, writes the review and merges. A round's `head` is the head its run reads, set when it starts. The merge is refused
   unless the change's head is the round's head (`409`, "moved on from <sha>"), besides the forge's refusal of a pinned commit.

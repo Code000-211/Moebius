@@ -757,6 +757,12 @@ fn a_review_of_a_pull_request_someone_else_opened_is_started_restricted_on_eithe
                 continue;
             }
             assert!(marked && stored, "{name}");
+            // The two commits it reads are on its row.
+            assert_eq!(
+                setup.app.store.run_review(id).unwrap(),
+                Some((head.clone(), base.clone())),
+                "{name}"
+            );
             // Its name is not one another person on the machine can guess and make first, and only its owner enters it.
             assert!(
                 worktree.file_name().unwrap().to_string_lossy()

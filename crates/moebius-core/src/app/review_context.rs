@@ -470,15 +470,27 @@ impl Contexts {
 }
 
 impl App {
-    /// What the Reviewer is given to read of the pull request the card follows, as of the commits recorded as reviewed
-    /// (`Change.reviewed_head`, and the default branch's tip recorded with it): the diff of what the merge would do and
-    /// the changed files, all of it data, from git objects only. Built once for those two commits. The error says why
-    /// it cannot be made; a review does not start without it.
-    pub(crate) fn review_context(&self, card: &Card) -> Result<Arc<String>, ContextError> {
+    /// The change the card follows and the two commits its review reads: those of the round that is claimed and whose
+    /// run is being made, which are written with the claim; or, for a review a person asked for, the ones recorded on
+    /// the change for it. Never the change's while a round holds the claim: a thread that lost the claim wrote
+    /// nothing a run can read.
+    pub(crate) fn review_source(
+        &self,
+        card: &Card,
+    ) -> Result<(crate::store::Change, String, String), ContextError> {
         let change = self
             .followed_change(card)
             .map_err(other)?
             .ok_or_else(|| other("the card follows no pull request of someone else"))?;
+        if let Some(round) = self
+            .store
+            .claimed_external_review(change.id)
+            .map_err(other)?
+            && !round.head.is_empty()
+            && !round.base.is_empty()
+        {
+            return Ok((change, round.head, round.base));
+        }
         let head = change
             .reviewed_head
             .clone()
@@ -488,12 +500,30 @@ impl App {
             .change_reviewed_base(change.id)
             .map_err(other)?
             .ok_or_else(|| other("no base commit is recorded for the review"))?;
-        let key = (change.id, head.clone(), base.clone());
+        Ok((change, head, base))
+    }
+
+    /// What the Reviewer is given to read of the pull request the card follows, as of the commits its review reads
+    /// (see [`App::review_source`]): the diff of what the merge would do and the changed files, all of it data, from git
+    /// objects only. The error says why it cannot be made; a review does not start without it.
+    pub(crate) fn review_context(&self, card: &Card) -> Result<Arc<String>, ContextError> {
+        let (change, head, base) = self.review_source(card)?;
+        self.review_context_at(&change, &head, &base)
+    }
+
+    /// The context of the merge of the commit `head` into the commit `base`, built once for those two commits.
+    pub(crate) fn review_context_at(
+        &self,
+        change: &crate::store::Change,
+        head: &str,
+        base: &str,
+    ) -> Result<Arc<String>, ContextError> {
+        let key = (change.id, head.to_string(), base.to_string());
         if let Some(kept) = self.review_contexts.get(&key) {
             return Ok(kept);
         }
-        let repository = self.repository_of(&change).map_err(other)?;
-        let built = Arc::new(build(&repository, &base, &head)?);
+        let repository = self.repository_of(change).map_err(other)?;
+        let built = Arc::new(build(&repository, base, head)?);
         self.review_contexts.put(key, built.clone());
         Ok(built)
     }
@@ -1099,6 +1129,41 @@ mod tests {
         let error = p.app.review_context(&p.card).unwrap_err();
         assert!(matches!(error, ContextError::Unreadable(_)), "{error}");
         assert!(error.to_string().contains("UTF-8"), "{error}");
+    }
+
+    #[test]
+    fn a_claimed_round_is_read_at_its_own_commits_whatever_the_change_holds_meanwhile() {
+        let p = pull();
+        let change = p.app.followed_change(&p.card).unwrap().unwrap();
+        // The round is claimed at the pull request's head and main's tip.
+        let base = git(&p.clone, &["rev-parse", "main"]).unwrap();
+        let round = p.app.store.add_external_review(change.id, &p.head).unwrap();
+        assert!(
+            p.app
+                .store
+                .claim_external_review(round, &p.head, &base)
+                .unwrap()
+        );
+        // Another thread writes other commits on the change meanwhile: a later push, and a later tip of main.
+        git(&p.clone, &["checkout", "--quiet", "moebius/pr-7"]).unwrap();
+        std::fs::write(p.clone.join("src.txt"), "a later push\n").unwrap();
+        git(&p.clone, &["add", "."]).unwrap();
+        commit(&p.clone, "later");
+        let later = git(&p.clone, &["rev-parse", "HEAD"]).unwrap();
+        git(&p.clone, &["checkout", "--quiet", "main"]).unwrap();
+        p.app
+            .store
+            .set_change_reviewed_head(change.id, &later)
+            .unwrap();
+        p.app
+            .store
+            .set_change_reviewed_base(change.id, &later)
+            .unwrap();
+        let (_, head, tip) = p.app.review_source(&p.card).unwrap();
+        assert_eq!((head, tip), (p.head.clone(), base));
+        let text = p.app.review_context(&p.card).unwrap();
+        assert!(text.contains(&p.head), "{text}");
+        assert!(!text.contains("a later push"), "{text}");
     }
 
     #[test]

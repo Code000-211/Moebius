@@ -9,8 +9,11 @@ use super::lifecycle::{
     RunningRun, card_run, detached_run, in_worktree_run, launch_or_keep, launch_or_undo,
     restricted_run, undo_unlaunched,
 };
-use super::prompts::{prompt_for, repositories_prompt, review_repositories_prompt, run_prompt};
-use crate::app::App;
+use super::prompts::{
+    prompt_for, repositories_prompt, restricted_review_prompt, review_repositories_prompt,
+    run_prompt,
+};
+use crate::app::{App, ContextError};
 use crate::board::{StartError, Variant};
 use crate::config::AgentConfig;
 use crate::harness::remote::Runners;
@@ -54,13 +57,18 @@ pub(in crate::harness) fn start_card(
     if app.restricts_review(card, purpose) {
         config.mcp.clear();
         config.runner = None;
-        app.review_context(card).map_err(|why| {
+        // The two commits are read once, from the claimed round, and the run, its prompt and its row all have them.
+        let cannot = |why: ContextError| {
             StartError::WorktreeFailed(format!(
                 "the pull request cannot be given to the Reviewer: {why}"
             ))
-        })?;
-        let prompt = run_prompt(app, card, purpose, note);
-        let running = restricted_run(app, router, card, (agent, &config), purpose)?;
+        };
+        let (change, head, base) = app.review_source(card).map_err(cannot)?;
+        let context = app
+            .review_context_at(&change, &head, &base)
+            .map_err(cannot)?;
+        let prompt = restricted_review_prompt(app, card, note, &context);
+        let running = restricted_run(app, router, card, (agent, &config), purpose, (&head, &base))?;
         if let Err(e) = crate::board::may_start(app, card) {
             undo_unlaunched(app, router, &running);
             return Err(e);

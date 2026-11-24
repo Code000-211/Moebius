@@ -113,13 +113,24 @@ pub(crate) fn run_prompt(app: &App, card: &Card, purpose: &str, note: Option<&st
     let hint = matches!(purpose, "code" | "attempt")
         .then(|| app.localize_hint(card))
         .flatten();
-    prompt_with(app, card, purpose, note, hint.as_deref())
+    prompt_with(app, card, purpose, note, (hint.as_deref(), None))
+}
+
+/// The prompt of the review of a pull request someone else opened, with the `context` of the two commits its run reads
+/// (see `App::review_source`): the run is given what was built for those, not what any change row holds meanwhile.
+pub(crate) fn restricted_review_prompt(
+    app: &App,
+    card: &Card,
+    note: Option<&str>,
+    context: &str,
+) -> String {
+    prompt_with(app, card, "review", note, (None, Some(context)))
 }
 
 /// The prompt for a run of `card`; `note` is added under a heading of its own. A `code` run in a repository that works
 /// test first is told the rule of red, then green.
 pub(crate) fn prompt_for(app: &App, card: &Card, purpose: &str, note: Option<&str>) -> String {
-    prompt_with(app, card, purpose, note, None)
+    prompt_with(app, card, purpose, note, (None, None))
 }
 
 /// The text of the `review.md` of `repository`, its own notes for its reviews, when it has any.
@@ -285,7 +296,7 @@ fn prompt_with(
     card: &Card,
     purpose: &str,
     note: Option<&str>,
-    hint: Option<&str>,
+    (hint, context): (Option<&str>, Option<&str>),
 ) -> String {
     // The review of a pull request someone else opened is told no more than it needs: the issue as data, in a fence, and
     // nothing of the organisation (no comments, no wiki pages, no lessons), for what a stranger's text can make it quote
@@ -325,14 +336,17 @@ fn prompt_with(
             // Built from git objects at the commit recorded for the review (see `App::review_context`); a run does not
             // start without it, so the error here is only what the Reviewer is told if it vanished meanwhile.
             prompt.push_str("\n\n");
-            prompt.push_str(&app.review_context(card).map_or_else(
-                |why| {
-                    format!(
-                        "The pull request could not be read ({why}); answer `changes` and say so."
-                    )
-                },
-                |context| context.to_string(),
-            ));
+            prompt.push_str(&match context {
+                Some(context) => context.to_string(),
+                None => app.review_context(card).map_or_else(
+                    |why| {
+                        format!(
+                            "The pull request could not be read ({why}); answer `changes` and say so."
+                        )
+                    },
+                    |context| context.to_string(),
+                ),
+            });
         }
         "review" => prompt.push_str(REVIEW_PROMPT),
         "review-standards" => {

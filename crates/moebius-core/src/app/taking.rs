@@ -625,6 +625,11 @@ impl App {
         if !runs.has_agent("Reviewer") {
             return Err(AppError::Invalid("there is no Reviewer agent".into()));
         }
+        if self.store.external_review_active(change.id)? {
+            return Err(AppError::Conflict(
+                "a review of this pull request is going; wait for it to end".into(),
+            ));
+        }
         let repository = self.repository_of(&change)?;
         // The Reviewer reads what is fetched now, and the review counts for that commit only.
         let mut reviewed = change.head.clone();

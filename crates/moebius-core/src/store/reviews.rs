@@ -12,6 +12,8 @@ use super::{Result, Store, now};
 pub(super) const SCHEMA: &str = r#"
 ALTER TABLE repositories ADD COLUMN merge_reviewed INTEGER NOT NULL DEFAULT 1;
 ALTER TABLE runs ADD COLUMN restricted INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE runs ADD COLUMN review_head TEXT;
+ALTER TABLE runs ADD COLUMN review_base TEXT;
 ALTER TABLE changes ADD COLUMN base_branch TEXT;
 ALTER TABLE changes ADD COLUMN reviewed_base TEXT;
 CREATE TABLE external_reviews (
@@ -63,6 +65,13 @@ pub struct ExternalReview {
     pub url: Option<String>,
     pub at: i64,
 }
+
+/// The rounds of the forge pull request the change `?1` follows, whatever change row followed it: a pull request that
+/// was closed and reopened is followed again as a new change, and its rounds are still its own. Written for a table
+/// `external_reviews e`.
+const SAME_PULL_REQUEST: &str = "(e.change_id = ?1 OR e.change_id IN (SELECT o.id FROM changes o, changes me \
+     WHERE me.id = ?1 AND o.repository_id = me.repository_id AND o.pull_request IS NOT NULL \
+     AND o.pull_request = me.pull_request))";
 
 /// The states in which a head counts as read, so that it is not read again: a round that ended with a verdict, or has
 /// its run going.
@@ -143,6 +152,33 @@ impl Store {
             .flatten())
     }
 
+    /// Records the two commits a restricted review run reads, as its round claimed them.
+    pub fn set_run_review(&self, run_id: i64, head: &str, base: &str) -> Result<()> {
+        self.conn().execute(
+            "UPDATE runs SET review_head = ?1, review_base = ?2 WHERE id = ?3",
+            params![head, base, run_id],
+        )?;
+        Ok(())
+    }
+
+    /// The head and the default branch's tip a restricted review run reads, once they are recorded.
+    pub fn run_review(&self, run_id: i64) -> Result<Option<(String, String)>> {
+        Ok(self
+            .read()
+            .query_row(
+                "SELECT review_head, review_base FROM runs WHERE id = ?1",
+                [run_id],
+                |r| {
+                    Ok((
+                        r.get::<_, Option<String>>(0)?,
+                        r.get::<_, Option<String>>(1)?,
+                    ))
+                },
+            )
+            .optional()?
+            .and_then(|(head, base)| head.zip(base)))
+    }
+
     /// Marks the run as restricted, as it is started: it reads a pull request someone else opened, has no tools, and
     /// nothing changes that later.
     pub fn set_run_restricted(&self, run_id: i64) -> Result<()> {
@@ -193,27 +229,87 @@ impl Store {
             .optional()?)
     }
 
-    /// How many rounds of the change started a run, whatever came of them: one that went stale, failed or was never
-    /// answered cost a run too, so no author can have the Reviewer read a pull request for ever. A round that is
-    /// starting counts, since its run is being made.
+    /// How many rounds of the pull request the change follows started a run, whatever came of them: one that went stale,
+    /// failed or was never answered cost a run too, so no author can have the Reviewer read a pull request for ever, and
+    /// closing and reopening it does not begin again. A round that is starting counts, since its run is being made.
     pub fn external_review_rounds(&self, change_id: i64) -> Result<i64> {
         Ok(self.read().query_row(
-            "SELECT COUNT(*) FROM external_reviews WHERE change_id = ?1 AND (run_id IS NOT NULL OR state = 'starting')",
+            &format!(
+                "SELECT COUNT(*) FROM external_reviews e WHERE {SAME_PULL_REQUEST} \
+                 AND (e.run_id IS NOT NULL OR e.state = 'starting')"
+            ),
             [change_id],
             |r| r.get(0),
         )?)
     }
 
-    /// Whether a round on `head` of the change started and was not thrown away.
+    /// Whether a round on `head` of the pull request the change follows started and was not thrown away.
     pub fn external_review_of_head(&self, change_id: i64, head: &str) -> Result<bool> {
         Ok(self.read().query_row(
             &format!(
-                "SELECT EXISTS (SELECT 1 FROM external_reviews WHERE change_id = ?1 AND head = ?2 \
-                 AND state IN {COUNTED})"
+                "SELECT EXISTS (SELECT 1 FROM external_reviews e WHERE {SAME_PULL_REQUEST} \
+                 AND e.head = ?2 AND e.state IN {COUNTED})"
             ),
             params![change_id, head],
             |r| r.get(0),
         )?)
+    }
+
+    /// Claims the round `id` to start its run on the commits `head` and `base`, and says whether it did: false when
+    /// another thread claimed it first, or when another round of the same pull request is starting, running or
+    /// writing its review (rounds of a pull request never run side by side). The commits are written with the claim,
+    /// in the same step, so that what the run reads is what the winner claimed and nothing a thread that lost wrote.
+    pub fn claim_external_review(&self, id: i64, head: &str, base: &str) -> Result<bool> {
+        let conn = self.conn();
+        let change_id: i64 = conn.query_row(
+            "SELECT change_id FROM external_reviews WHERE id = ?1",
+            [id],
+            |r| r.get(0),
+        )?;
+        let busy: bool = conn.query_row(
+            &format!(
+                "SELECT EXISTS (SELECT 1 FROM external_reviews e WHERE {SAME_PULL_REQUEST} \
+                 AND e.id <> ?2 AND e.state IN ('starting', 'running', 'posting'))"
+            ),
+            params![change_id, id],
+            |r| r.get(0),
+        )?;
+        if busy {
+            return Ok(false);
+        }
+        Ok(conn.execute(
+            "UPDATE external_reviews SET state = 'starting', head = ?1, base = ?2 \
+             WHERE id = ?3 AND state = 'wanted'",
+            params![head, base, id],
+        )? > 0)
+    }
+
+    /// Whether a round of the pull request the change follows is starting, running or writing its review.
+    pub fn external_review_active(&self, change_id: i64) -> Result<bool> {
+        Ok(self.read().query_row(
+            &format!(
+                "SELECT EXISTS (SELECT 1 FROM external_reviews e WHERE {SAME_PULL_REQUEST} \
+                 AND e.state IN ('starting', 'running', 'posting'))"
+            ),
+            [change_id],
+            |r| r.get(0),
+        )?)
+    }
+
+    /// The round of the pull request the change follows that is claimed and whose run is being made, with the commits
+    /// its run reads.
+    pub fn claimed_external_review(&self, change_id: i64) -> Result<Option<ExternalReview>> {
+        Ok(self
+            .read()
+            .query_row(
+                &format!(
+                    "SELECT {COLUMNS} FROM external_reviews e WHERE {SAME_PULL_REQUEST} \
+                     AND e.state = 'starting' ORDER BY e.id DESC LIMIT 1"
+                ),
+                [change_id],
+                read,
+            )
+            .optional()?)
     }
 
     /// Moves the round `id` from the state `from` to `to` and says whether it did: false when another thread moved it
@@ -324,5 +420,62 @@ mod tests {
             .unwrap();
         assert_eq!(store.external_review_rounds(change.id).unwrap(), 1);
         assert!(!store.external_review_of_head(change.id, "bbb").unwrap());
+    }
+
+    #[test]
+    fn the_rounds_belong_to_the_pull_request_and_not_to_the_row_that_follows_it_and_never_run_together()
+     {
+        let dir = tempfile::tempdir().unwrap();
+        let store = Store::in_memory(dir.path()).unwrap();
+        let repo = store.add_repository("r", "/r", "none", "main").unwrap();
+        let first = store
+            .add_change(repo.id, None, "moebius/pr-1", Some(1), "aaa")
+            .unwrap();
+        let round = store.add_external_review(first.id, "aaa").unwrap();
+        assert!(store.claim_external_review(round, "aaa", "base0").unwrap());
+        store
+            .start_external_review(round, 5, 1, ("aaa", "base0"))
+            .unwrap();
+        store
+            .set_external_review_state(round, "posted", None)
+            .unwrap();
+        // The pull request is closed and reopened: another change row follows it.
+        let reopened = store
+            .add_change(repo.id, None, "moebius/pr-1", Some(1), "aaa")
+            .unwrap();
+        assert_ne!(first.id, reopened.id);
+        assert_eq!(store.external_review_rounds(reopened.id).unwrap(), 1);
+        assert!(store.external_review_of_head(reopened.id, "aaa").unwrap());
+        // Another pull request is another.
+        let other = store
+            .add_change(repo.id, None, "moebius/pr-2", Some(2), "ccc")
+            .unwrap();
+        assert_eq!(store.external_review_rounds(other.id).unwrap(), 0);
+        // Two rounds of one pull request, on two change rows, never run together.
+        let second = store.add_external_review(reopened.id, "bbb").unwrap();
+        let third = store.add_external_review(first.id, "ccc").unwrap();
+        assert!(store.claim_external_review(second, "bbb", "base1").unwrap());
+        assert!(store.external_review_active(first.id).unwrap());
+        assert!(
+            !store.claim_external_review(third, "ccc", "base1").unwrap(),
+            "another round of the pull request is starting"
+        );
+        store
+            .start_external_review(second, 6, 2, ("bbb", "base1"))
+            .unwrap();
+        assert!(
+            !store.claim_external_review(third, "ccc", "base1").unwrap(),
+            "and while it runs"
+        );
+        store
+            .set_external_review_state(second, "stale", None)
+            .unwrap();
+        assert!(store.claim_external_review(third, "ccc", "base1").unwrap());
+        // The claim wrote its commits with it.
+        let claimed = store.claimed_external_review(first.id).unwrap().unwrap();
+        assert_eq!(
+            (claimed.head.as_str(), claimed.base.as_str()),
+            ("ccc", "base1")
+        );
     }
 }
