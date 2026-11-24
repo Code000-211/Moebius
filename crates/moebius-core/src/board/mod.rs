@@ -6,6 +6,7 @@
 //! - `attempts`: the functions for a card with several attempts, and the `card` fields that show them.
 //! - `card`: the `card` table, what a script knows of its card, and the verdict of its review.
 //! - `review`: the review along two axes, Standards and Spec, read from the summaries of its runs.
+//! - `structured`: the structured review of a pull request someone else opened, which the server writes on the forge.
 //! - `cache`: what the engine remembers between script calls: compiled scripts, the cards a tick can leave alone and the
 //!   project scripts of the tick.
 //! - `sandbox`: the Luau sandbox every script runs in, with its memory and time limits.
@@ -27,6 +28,7 @@ mod review;
 mod runs;
 mod sandbox;
 pub mod scripts;
+pub mod structured;
 #[cfg(test)]
 pub(crate) mod testing;
 

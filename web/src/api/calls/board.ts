@@ -147,6 +147,11 @@ export function reviewChange(change: number): Promise<Run> {
   return post<Run>(`/v1/changes/${change}/review`, {});
 }
 
+/** Ends the review round of a pull request someone else opened that is going or waiting, and stops its run. */
+export function endReviewRound(change: number): Promise<{ ended: number }> {
+  return post<{ ended: number }>(`/v1/changes/${change}/review/end`, {});
+}
+
 /** Sends a change back to coding, with the reason as the card's note; a run's change has no card. */
 export function reject(change: number, reason: string): Promise<Card | null> {
   return post<Card | null>(`/v1/changes/${change}/reject`, { reason });

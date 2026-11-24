@@ -48,6 +48,7 @@ pub struct WorkingWithOthers {
     pub commands: Option<bool>,
     pub command_limit: Option<i64>,
     pub answer_on_forge: Option<bool>,
+    pub merge_reviewed: Option<bool>,
 }
 
 /// What taking an issue came to.
@@ -295,7 +296,8 @@ impl App {
     /// A person, or the Moebius agent, changes how the repository works with others: whether the server marks the issues
     /// that are ready for agents with a label (`mark_ready`), which label (`ready_label`), which issues its agents
     /// take (`agents_take`, `all` or `labelled`), and the commands in issue comments (`commands`, `command_limit`,
-    /// `answer_on_forge`; see `app::commands`); what is left out stays. Recorded as an `edit_repository` decision and
+    /// `answer_on_forge`; see `app::commands`) and whether a followed pull request the Reviewer approved is merged by the
+    /// server (`merge_reviewed`; see `app::reviews`); what is left out stays. Recorded as an `edit_repository` decision and
     /// announced as `repository_updated`; an edit that changes nothing does neither. A repository without a forge has
     /// no one to work with.
     pub fn edit_working_with_others(
@@ -338,7 +340,8 @@ impl App {
         let mark = edit.mark_ready.unwrap_or(repository.mark_ready);
         let commands = edit.commands.unwrap_or(repository.commands);
         let answer = edit.answer_on_forge.unwrap_or(repository.answer_on_forge);
-        let unchanged = (mark, &label, &takes, commands, limit, answer)
+        let merge = edit.merge_reviewed.unwrap_or(repository.merge_reviewed);
+        let unchanged = (mark, &label, &takes, commands, limit, answer, merge)
             == (
                 repository.mark_ready,
                 &repository.ready_label,
@@ -346,6 +349,7 @@ impl App {
                 repository.commands,
                 repository.command_limit,
                 repository.answer_on_forge,
+                repository.merge_reviewed,
             );
         if unchanged {
             return Ok(repository);
@@ -358,12 +362,14 @@ impl App {
             ("commands".into(), commands.to_string()),
             ("command_limit".into(), limit.to_string()),
             ("answer_on_forge".into(), answer.to_string()),
+            ("merge_reviewed".into(), merge.to_string()),
         ]);
         self.record_action(by, "edit_repository", None, None, context, reason)?;
         self.store
             .set_repository_working_with_others(id, mark, &label, &takes)?;
         self.store
             .set_repository_commands(id, commands, limit, answer)?;
+        self.store.set_repository_merge_reviewed(id, merge)?;
         let repository = self.repository(id)?;
         self.bus
             .publish(Event::RepositoryUpdated(repository.clone()));
@@ -577,6 +583,8 @@ impl App {
         )?;
         self.store
             .set_change_outside(change.id, &request.author, &card.column)?;
+        self.store
+            .set_change_base_branch(change.id, &request.base)?;
         let change = self.change(change.id)?;
         self.move_card(card.id, columns::IN_REVIEW, None)?;
         self.store.add_inbox_item(
@@ -628,27 +636,52 @@ impl App {
                 &["rev-parse", &change.branch],
             )?);
         }
-        if let Some(head) = &reviewed {
+        let Some(head) = reviewed else {
+            return Err(AppError::Invalid(
+                "the head of the pull request is not known yet".into(),
+            ));
+        };
+        let base = git(
+            Path::new(&repository.path),
+            &["rev-parse", &repository.base_ref()],
+        )?;
+        // One claim for every review of the pull request, a person's or its author's: neither starts while the other
+        // is going, and the check and the claim are one locked step.
+        let Some(round) = self.store.claim_person_review(change.id, &head, &base)? else {
+            return Err(AppError::Conflict(
+                "a review of this pull request is going; wait for it to end, or end it".into(),
+            ));
+        };
+        let started = (|| -> Result<crate::store::Run> {
             self.store
-                .set_change_head(change.id, head, crate::store::now())?;
-            self.store.set_change_reviewed_head(change.id, head)?;
+                .set_change_head(change.id, &head, crate::store::now())?;
+            self.store.set_change_reviewed_head(change.id, &head)?;
+            self.store.set_change_reviewed_base(change.id, &base)?;
+            let context = BTreeMap::from([
+                ("repository".into(), repository.name.clone()),
+                (
+                    "pull_request".into(),
+                    change.pull_request.unwrap_or_default().to_string(),
+                ),
+            ]);
+            self.record_action(by, "review_change", Some(card.id), None, context, reason)?;
+            let run = runs
+                .start(
+                    self,
+                    &card,
+                    "Reviewer",
+                    ("review", None),
+                    crate::board::Variant::default(),
+                )
+                .map_err(|e| AppError::Conflict(e.to_string()))?;
+            self.store
+                .start_external_review(round, run.id, 0, (&head, &base))?;
+            Ok(run)
+        })();
+        if started.is_err() {
+            let _ = self.store.move_external_review(round, "starting", "failed");
         }
-        let context = BTreeMap::from([
-            ("repository".into(), repository.name.clone()),
-            (
-                "pull_request".into(),
-                change.pull_request.unwrap_or_default().to_string(),
-            ),
-        ]);
-        self.record_action(by, "review_change", Some(card.id), None, context, reason)?;
-        runs.start(
-            self,
-            &card,
-            "Reviewer",
-            ("review", None),
-            crate::board::Variant::default(),
-        )
-        .map_err(|e| AppError::Conflict(e.to_string()))
+        started
     }
 
     /// Keeps the local branch of a followed request at its head when the request moved on.
@@ -675,6 +708,8 @@ impl App {
     /// back to the column it was in, still taken until its assignee is removed.
     pub(crate) fn followed_closed(&self, change: &Change) -> Result<()> {
         self.store.set_change_state(change.id, "closed")?;
+        // Its rounds end with it: one left going would hold the pull request for ever if it is reopened.
+        self.end_rounds_of(change, "the pull request was closed")?;
         self.bus.publish(Event::ChangeClosed { change: change.id });
         let Some(card_id) = change.card_id else {
             return Ok(());

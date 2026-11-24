@@ -22,16 +22,77 @@ use crate::store::{Card, Repository, Run};
 use super::scratch;
 
 /// The run's token, which the router knows the run by. The router checks the tool calls of the answers to a harness
-/// without a bridge, Claude Code.
+/// without a bridge, Claude Code, and of every restricted run (a review of a pull request someone else opened, ADR
+/// 0029), whatever its harness: Pi-Bolt's bridge blocks no call, so the router is where its restriction is enforced.
 pub(in crate::harness) fn issue_token(
     router: &Router,
     config: &AgentConfig,
     grant: Grant,
+    restricted: bool,
 ) -> String {
-    match config.harness {
-        HarnessKind::PiBolt => router.issue_token(grant),
-        HarnessKind::ClaudeCode => router.issue_checked_token(grant),
+    match (config.harness, restricted) {
+        (HarnessKind::PiBolt, false) => router.issue_token(grant),
+        _ => router.issue_checked_token(grant),
     }
+}
+
+/// Records a review run of `card`, which follows a pull request someone else opened, and its token. The run is
+/// *restricted*: recorded as such, for good, before anything else, with a checked token on either harness, and in an
+/// empty directory of its own as its working directory, not a checkout of anything: the pull request is given to it as
+/// text (see `App::review_context`), and it has no tools. It never runs on a runner.
+pub(in crate::harness) fn restricted_run(
+    app: &App,
+    router: &Router,
+    card: &Card,
+    (agent, config): (&str, &AgentConfig),
+    purpose: &str,
+    (head, base): (&str, &str),
+) -> Result<RunningRun, StartError> {
+    let run = app
+        .store
+        .add_run(Some(card.id), agent, config.harness.name(), purpose)
+        .map_err(|e| StartError::Store(e.to_string()))?;
+    app.store
+        .set_run_restricted(run.id)
+        .map_err(|e| StartError::Store(fail(app, run.id, e.to_string())))?;
+    // The two commits it reads, on its row for good.
+    app.store
+        .set_run_review(run.id, head, base)
+        .map_err(|e| StartError::Store(fail(app, run.id, e.to_string())))?;
+    // A directory of its own under the system's temporary directory, which has no `AGENTS.md` or `CLAUDE.md` above it
+    // for a harness to find, as the data directory may (a person's home directory, say). Its name is random and only its
+    // owner may enter it, so that no one else on the machine can have made it first. Removed with the run.
+    let mut own = tempfile::Builder::new();
+    own.prefix("moebius-review-");
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        own.permissions(std::fs::Permissions::from_mode(0o700));
+    }
+    let empty = own
+        .tempdir()
+        .map_err(|e| StartError::WorktreeFailed(fail(app, run.id, e.to_string())))?
+        .keep();
+    app.store
+        .set_run_worktree(run.id, &empty.to_string_lossy())
+        .map_err(|e| StartError::Store(fail(app, run.id, e.to_string())))?;
+    let grant = Grant {
+        run_id: run.id,
+        card_id: Some(card.id),
+        budget: config.token_budget,
+    };
+    Ok(RunningRun {
+        id: run.id,
+        clone: None,
+        start: String::new(),
+        worktree: empty,
+        token: issue_token(router, config, grant, true),
+        restricted: true,
+        purpose: purpose.to_string(),
+        commit_message: String::new(),
+        remote: None,
+        others: Vec::new(),
+    })
 }
 
 /// Records a run of `agent` (on the harness `config` names) for `purpose`, with no card, and makes it a fresh detached
@@ -78,7 +139,8 @@ pub(in crate::harness) fn detached_run(
         clone: Some(clone.to_path_buf()),
         start,
         worktree,
-        token: issue_token(router, config, grant),
+        token: issue_token(router, config, grant, false),
+        restricted: false,
         purpose: purpose.into(),
         commit_message: String::new(),
         remote: None,
@@ -121,7 +183,8 @@ pub(in crate::harness) fn in_worktree_run(
         clone: Some(clone.to_path_buf()),
         start,
         worktree: worktree.to_path_buf(),
-        token: issue_token(router, config, grant),
+        token: issue_token(router, config, grant, false),
+        restricted: false,
         purpose: "workflow".into(),
         commit_message: format!("Workflow run {workflow_run}\n\nCommitted by Moebius for its run."),
         remote: None,
@@ -204,7 +267,8 @@ pub(in crate::harness) fn card_run(
         clone: Some(clone),
         start,
         worktree: worktree.path,
-        token: issue_token(router, config, grant),
+        token: issue_token(router, config, grant, false),
+        restricted: false,
         purpose: purpose.to_string(),
         commit_message: format!(
             "#{}: {}\n\nCommitted by Moebius for its run.",
@@ -278,6 +342,9 @@ pub(in crate::harness) struct RunningRun {
     pub(in crate::harness) worktree: PathBuf,
     pub(in crate::harness) token: String,
     pub(in crate::harness) purpose: String,
+    /// Whether the run reads a pull request someone else opened: its token is checked and it may only read files (see
+    /// `decide::guard::restricted`).
+    pub(in crate::harness) restricted: bool,
     /// The message of the commit of what the agent leaves in the worktree.
     pub(in crate::harness) commit_message: String,
     /// The runner the harness goes on, if the run is not on the server.
@@ -474,7 +541,8 @@ pub(in crate::harness) fn chat_run(
         clone,
         start,
         worktree,
-        token: issue_token(router, config, grant),
+        token: issue_token(router, config, grant, false),
+        restricted: false,
         purpose: "chat".into(),
         commit_message: format!(
             "Chat {}\n\nCommitted by Moebius when the chat ended.",
@@ -535,7 +603,8 @@ pub(in crate::harness) fn woken_chat(
         clone,
         start,
         worktree,
-        token: issue_token(router, config, grant),
+        token: issue_token(router, config, grant, false),
+        restricted: false,
         purpose: "chat".into(),
         commit_message: format!("Chat {id}\n\nCommitted by Moebius when the chat ended."),
         remote: None,

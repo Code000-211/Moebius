@@ -46,11 +46,16 @@ pub mod plugin_settings;
 mod projects;
 mod repositories;
 mod reproduce;
+mod review_context;
+mod review_sweep;
+pub(crate) use review_context::ContextError;
+mod reviews;
 mod runs;
 mod snapshot;
 mod stopping;
 mod taking;
 pub use commands::{Command, DONE_ASKED, command_in};
+pub use reviews::{REVIEW_NOT_POSSIBLE, ROUND_LIMIT, ROUNDS_SPENT};
 pub use taking::{
     OpenRequest, WorkingWithOthers, closing_references, followed_branch, forge_title,
 };
@@ -269,6 +274,11 @@ pub struct App {
     wiki_problem: Mutex<Option<String>>,
     /// What starts the chats of the server, once it has a harness.
     runs: OnceLock<Arc<dyn Runs>>,
+    /// What starts the review runs of followed pull requests in place of `runs`, for tests.
+    #[cfg(test)]
+    review_runs: Mutex<Option<Arc<dyn crate::board::CardRuns>>>,
+    /// The contexts the Reviewer of followed pull requests is given, built once per round (see `review_context`).
+    review_contexts: review_context::Contexts,
     /// Where the server and the web app run (see `whereabouts`).
     whereabouts: whereabouts::Whereabouts,
 }
@@ -342,6 +352,9 @@ impl App {
             wiki: RwLock::default(),
             wiki_problem: Mutex::default(),
             runs: OnceLock::new(),
+            #[cfg(test)]
+            review_runs: Mutex::default(),
+            review_contexts: Default::default(),
             whereabouts: Default::default(),
         }
     }

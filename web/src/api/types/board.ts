@@ -30,6 +30,8 @@ export interface Repository {
   command_limit?: number;
   /** Whether the server writes the result of every command as a comment on the issue; on until it is turned off. */
   answer_on_forge?: boolean;
+  /** Whether the server merges a followed pull request the Reviewer approved and whose checks are green; on until turned off. */
+  merge_reviewed?: boolean;
 }
 
 /** `all` approved issues, or `labelled` only those that carry the ready label and nobody else took. */
@@ -54,6 +56,43 @@ export interface CardChange {
   review_verdict: "approve" | "changes" | null;
   /** The forge login of the person who opened the pull request the card follows; absent for Moebius's own change. */
   outside_author?: string;
+  /** The latest round of the Reviewer on that pull request (ADR 0029); absent until the author asked for one. */
+  external_review?: ExternalReview;
+}
+
+/** A comment of a review on a line of the pull request's diff, in the file as the pull request leaves it. */
+export interface ReviewComment {
+  path: string;
+  line: number;
+  body: string;
+}
+
+/** `wanted` waits for the checks, `running` is being read, `approved` waits for the checks to merge, `posted` and `merged` are on the forge, `stale` and `failed` came to nothing. */
+export type ExternalReviewState =
+  | "wanted"
+  | "starting"
+  | "running"
+  | "approved"
+  | "posting"
+  | "posted"
+  | "merged"
+  | "stale"
+  | "failed";
+
+/** A round of the Reviewer on a pull request someone else opened, as the card window shows it. */
+export interface ExternalReview {
+  round: number;
+  round_limit: number;
+  state: ExternalReviewState;
+  verdict: "approve" | "changes" | null;
+  summary: string;
+  comments: ReviewComment[];
+  /** Where the review is on the forge, once it is written there. */
+  url: string | null;
+  /** The commit the round read. */
+  head: string;
+  /** Whether the round read the pull request as it is now. */
+  current: boolean;
 }
 
 /** Why and by whom a card is held (blocked), and since when. */

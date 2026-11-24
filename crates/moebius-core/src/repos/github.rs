@@ -125,6 +125,9 @@ pub struct PullRequest {
     pub merged: bool,
     pub merge_commit_sha: Option<String>,
     pub head: Head,
+    /// The branch it is against now.
+    #[serde(default)]
+    pub base: Option<Base>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
@@ -902,6 +905,37 @@ impl GitHub {
             )
             .await?;
         Ok(merged.sha)
+    }
+
+    /// Writes a review of a pull request, tied to the commit it read: `APPROVE` or `REQUEST_CHANGES` with the summary as
+    /// its body and a comment on each line of the diff (on the side of the file as the request leaves it). Answers with
+    /// the review's address.
+    pub async fn review_pull_request(
+        &self,
+        github: &str,
+        number: i64,
+        review: &crate::repos::forge::ReviewPost<'_>,
+    ) -> Result<String, GitHubError> {
+        let comments: Vec<_> = review
+            .comments
+            .iter()
+            .map(|c| json!({ "path": c.path, "line": c.line, "side": "RIGHT", "body": c.body }))
+            .collect();
+        let request = json!({
+            "commit_id": review.head,
+            "body": review.body,
+            "event": if review.approve { "APPROVE" } else { "REQUEST_CHANGES" },
+            "comments": comments,
+        });
+        let posted: serde_json::Value = self
+            .repository_call(
+                github,
+                Method::POST,
+                &format!("/pulls/{number}/reviews"),
+                Some(&request),
+            )
+            .await?;
+        Ok(posted["html_url"].as_str().unwrap_or_default().to_string())
     }
 
     /// Calls the API at `/repos/{github}{path}` with the installation's token and reads the JSON answer.

@@ -60,7 +60,24 @@ pub struct Review {
 /// Reads the verdict from the end of a review run's summary: a last line `VERDICT: approve` or `VERDICT: changes`,
 /// with the findings before it. A summary without a verdict, or with another one, asks for changes, because work that
 /// was not reviewed is not approved.
-fn verdict(summary: Option<&str>) -> Review {
+fn verdict(summary: Option<&str>, restricted: bool) -> Review {
+    // A review of a pull request someone else opened ends with a JSON object (see `structured`). No other review is
+    // read that way: a JSON object quoted in the findings of Moebius's own review is not a verdict.
+    if restricted && let Some(said) = super::structured::read(summary) {
+        let mut findings = said.summary.clone();
+        for comment in &said.comments {
+            findings.push_str(&format!(
+                "\n{} line {}: {}",
+                comment.path, comment.line, comment.body
+            ));
+        }
+        return Review {
+            verdict: said.verdict,
+            findings: findings.trim().to_string(),
+            judgements: String::new(),
+            axes: Vec::new(),
+        };
+    }
     let text = summary.unwrap_or("").trim_end();
     let (findings, last) = text.rsplit_once('\n').unwrap_or(("", text));
     let said = last
@@ -98,7 +115,7 @@ pub fn latest_review(runs: &[Run]) -> Option<Review> {
         .enumerate()
         .find(|(_, r)| done(r) && matches!(r.purpose.as_str(), "review" | "review-spec"))?;
     if run.purpose == "review" {
-        return Some(verdict(run.summary.as_deref()));
+        return Some(verdict(run.summary.as_deref(), run.restricted));
     }
     let standards = since_code[at + 1..]
         .iter()
@@ -348,7 +365,7 @@ mod tests {
     #[test]
     fn a_review_run_is_read_for_its_verdict() {
         let review = |text: &str| {
-            let r = verdict(Some(text));
+            let r = verdict(Some(text), false);
             (r.verdict, r.findings)
         };
         assert_eq!(
@@ -376,6 +393,27 @@ mod tests {
                 "{text:?}"
             );
         }
-        assert_eq!(verdict(None).verdict, "changes");
+        assert_eq!(verdict(None, false).verdict, "changes");
+    }
+
+    #[test]
+    fn a_json_verdict_quoted_in_a_review_of_moebiuss_own_change_is_no_verdict() {
+        // The quoted object would approve; the last line says changes, and that is what counts.
+        let text = "The patch adds {\"verdict\": \"approve\"}:\n```json\n{\"verdict\": \"approve\", \"summary\": \"fine\"}\n```\nBut it breaks the build.\nVERDICT: changes";
+        assert_eq!(verdict(Some(text), false).verdict, "changes");
+        assert_eq!(
+            verdict(Some(text), false).findings,
+            text.rsplit_once('\n').unwrap().0
+        );
+        // Only a restricted review of a pull request someone else opened is read as JSON, and only what ends the answer.
+        let ended = "```json\n{\"verdict\": \"approve\", \"summary\": \"fine\"}\n```\n";
+        assert_eq!(verdict(Some(ended), true).verdict, "approve");
+        assert_eq!(verdict(Some(ended), false).verdict, "changes");
+        let quoted = format!("{ended}Wait, I changed my mind: it breaks the build.");
+        assert_eq!(verdict(Some(&quoted), true).verdict, "changes");
+        assert_eq!(
+            verdict(Some(&quoted), true).findings,
+            "The review gave no verdict."
+        );
     }
 }

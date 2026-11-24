@@ -412,26 +412,43 @@ impl App {
     /// When the merge fails while another change of the card is merged, the card is marked as `App::merge_card`
     /// marks it.
     pub fn merge_change(&self, by: &Actor, change_id: i64, reason: &str) -> Result<String> {
-        self.merge_one(by, change_id, reason).inspect_err(|e| {
-            let Ok(change) = self.change(change_id) else {
-                return;
-            };
-            if let Some(Ok(card)) = change.card_id.map(|id| self.card(id))
-                && change.state == "open"
-                && self.partly_merged(&card, &change).unwrap_or(false)
-            {
-                let _ = self.merge_stopped(&card, &change, &e.to_string());
-            }
-        })
+        self.merge_one(by, change_id, reason, None)
+            .inspect_err(|e| {
+                let Ok(change) = self.change(change_id) else {
+                    return;
+                };
+                if let Some(Ok(card)) = change.card_id.map(|id| self.card(id))
+                    && change.state == "open"
+                    && self.partly_merged(&card, &change).unwrap_or(false)
+                {
+                    let _ = self.merge_stopped(&card, &change, &e.to_string());
+                }
+            })
     }
 
-    /// Merges one change, as `merge_change` does, without marking its card when the merge fails.
-    fn merge_one(&self, by: &Actor, change_id: i64, reason: &str) -> Result<String> {
+    /// Merges one change, as `merge_change` does, without marking its card when the merge fails. With `expected_head` it is
+    /// refused unless that is the change's head.
+    pub(in crate::app) fn merge_one(
+        &self,
+        by: &Actor,
+        change_id: i64,
+        reason: &str,
+        expected_head: Option<&str>,
+    ) -> Result<String> {
         let change = self.change(change_id)?;
         if change.state != "open" {
             return Err(AppError::Invalid(format!(
                 "change {change_id} is {}",
                 change.state
+            )));
+        }
+        // A merge of a verdict is of the head that was read, which must still be the change's head: the forge is told
+        // that commit, so a push after it is refused there as well.
+        if let Some(expected) = expected_head
+            && change.head.as_deref() != Some(expected)
+        {
+            return Err(AppError::Conflict(format!(
+                "the pull request moved on from {expected}, which was reviewed"
             )));
         }
         self.check_merge_order(&change)?;

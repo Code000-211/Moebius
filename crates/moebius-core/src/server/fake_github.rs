@@ -19,6 +19,9 @@ use crate::store::{Card, Change, Repository, Run};
 
 /// A GitHub with one repository, `acme/widgets`: its issues, the ETag they are served with and the
 /// `If-None-Match` of every request for them.
+/// Reads to let pass, and what to do at the next one.
+pub(super) type PullHook = (usize, Box<dyn FnOnce() + Send>);
+
 pub(super) struct FakeGitHub {
     pub(super) issues: Mutex<(String, Vec<Value>)>,
     pub(super) asked: Mutex<Vec<Option<String>>>,
@@ -57,6 +60,17 @@ pub(super) struct FakeGitHub {
     pub(super) unassign_fails: std::sync::atomic::AtomicBool,
     /// The states it was asked to give an issue (`open` or `closed`), as issue number and state.
     pub(super) state_writes: Mutex<Vec<(u64, String)>>,
+    /// The reviews it was asked to write on pull request 7.
+    pub(super) review_posts: Mutex<Vec<Value>>,
+    /// What it does once, as it is asked for pull request 7 after that many reads: a person changing a setting while a merge is being made.
+    pub(super) on_pull_read: Mutex<Option<PullHook>>,
+    /// Whether it refuses a review that has comments on lines, as GitHub does for a line the diff does not have.
+    pub(super) refuse_line_comments: std::sync::atomic::AtomicBool,
+    /// Whether it answers a review, or a merge, with a server error, as a forge does for a moment.
+    pub(super) fail_reviews: std::sync::atomic::AtomicBool,
+    pub(super) fail_merges: std::sync::atomic::AtomicBool,
+    /// How many reviews it was asked to write, those it failed included.
+    pub(super) review_attempts: std::sync::atomic::AtomicUsize,
 }
 
 /// The access token the fake accepts at `GET /user`.
@@ -125,6 +139,11 @@ impl FakeGitHub {
         self.pulls.lock().unwrap().pull = pull(state, merged);
     }
 
+    /// Makes pull request 7 be against the branch `branch`, as an author who retargets it does.
+    pub(super) fn set_base(&self, branch: &str) {
+        self.pulls.lock().unwrap().pull["base"]["ref"] = json!(branch);
+    }
+
     /// Makes the head of pull request 7 the commit `sha`, as a push does.
     pub(super) fn set_head(&self, sha: &str) {
         self.pulls.lock().unwrap().pull["head"]["sha"] = json!(sha);
@@ -133,7 +152,8 @@ impl FakeGitHub {
 
 pub(super) fn pull(state: &str, merged: bool) -> Value {
     json!({ "number": 7, "state": state, "merged": merged,
-            "merge_commit_sha": merged.then_some("c0ffee"), "head": { "sha": "deadbeef" } })
+            "merge_commit_sha": merged.then_some("c0ffee"), "head": { "sha": "deadbeef" },
+            "base": { "ref": "main" } })
 }
 
 pub(super) fn check(name: &str, status: &str, conclusion: &str) -> Value {
@@ -163,6 +183,12 @@ pub(super) async fn fake_github() -> (String, Arc<FakeGitHub>) {
         threads: Mutex::new(Default::default()),
         posted: Mutex::new(Vec::new()),
         state_writes: Mutex::new(Vec::new()),
+        review_posts: Mutex::new(Vec::new()),
+        on_pull_read: Mutex::new(None),
+        refuse_line_comments: std::sync::atomic::AtomicBool::new(false),
+        fail_reviews: std::sync::atomic::AtomicBool::new(false),
+        fail_merges: std::sync::atomic::AtomicBool::new(false),
+        review_attempts: std::sync::atomic::AtomicUsize::new(0),
         unassign_fails: std::sync::atomic::AtomicBool::new(false),
         next_comment: std::sync::atomic::AtomicI64::new(1000),
         pulls: Mutex::new(Pulls {
@@ -412,6 +438,20 @@ pub(super) async fn fake_github() -> (String, Arc<FakeGitHub>) {
                         return StatusCode::NOT_FOUND.into_response();
                     }
                     assert_eq!(number, 7);
+                    let hook = {
+                        let mut waiting = fake.on_pull_read.lock().unwrap();
+                        match waiting.take() {
+                            Some((0, hook)) => Some(hook),
+                            Some((skip, hook)) => {
+                                *waiting = Some((skip - 1, hook));
+                                None
+                            }
+                            None => None,
+                        }
+                    };
+                    if let Some(hook) = hook {
+                        hook();
+                    }
                     axum::Json(fake.pulls.lock().unwrap().pull.clone()).into_response()
                 },
             )
@@ -443,14 +483,54 @@ pub(super) async fn fake_github() -> (String, Arc<FakeGitHub>) {
             "/repos/acme/widgets/pulls/{number}/reviews",
             get(|State(fake): State<Arc<FakeGitHub>>| async move {
                 axum::Json(fake.pulls.lock().unwrap().reviews.clone())
-            }),
+            })
+            .post(
+                |State(fake): State<Arc<FakeGitHub>>, axum::Json(body): axum::Json<Value>| async move {
+                    fake.review_attempts
+                        .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                    if fake.fail_reviews.load(std::sync::atomic::Ordering::SeqCst) {
+                        return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+                    }
+                    let lines = body["comments"].as_array().is_some_and(|c| !c.is_empty());
+                    if lines && fake.refuse_line_comments.load(std::sync::atomic::Ordering::SeqCst) {
+                        return (
+                            StatusCode::UNPROCESSABLE_ENTITY,
+                            axum::Json(json!({ "message": "Line could not be resolved" })),
+                        )
+                            .into_response();
+                    }
+                    fake.review_posts.lock().unwrap().push(body);
+                    (
+                        StatusCode::OK,
+                        axum::Json(json!({
+                            "id": 91,
+                            "html_url": "https://github.test/acme/widgets/pull/7#pullrequestreview-91",
+                        })),
+                    )
+                        .into_response()
+                },
+            ),
         )
         .route(
             "/repos/acme/widgets/pulls/{number}/merge",
             axum::routing::put(
                 |State(fake): State<Arc<FakeGitHub>>, axum::Json(body): axum::Json<Value>| async move {
-                    fake.pulls.lock().unwrap().merged.push(body);
-                    axum::Json(json!({ "sha": "c0ffee", "merged": true }))
+                    if fake.fail_merges.load(std::sync::atomic::Ordering::SeqCst) {
+                        return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+                    }
+                    let mut pulls = fake.pulls.lock().unwrap();
+                    // As GitHub does, it refuses a merge pinned to a commit that is no longer the head.
+                    if body.get("sha").is_some_and(|sha| *sha != pulls.pull["head"]["sha"])
+                        && !pulls.pull["head"]["sha"].is_null()
+                    {
+                        return (
+                            StatusCode::CONFLICT,
+                            axum::Json(json!({ "message": "Head branch was modified" })),
+                        )
+                            .into_response();
+                    }
+                    pulls.merged.push(body);
+                    axum::Json(json!({ "sha": "c0ffee", "merged": true })).into_response()
                 },
             ),
         )

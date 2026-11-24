@@ -30,9 +30,20 @@ pub struct CardLookups {
     cards: HashMap<(i64, i64), Blocker>,
     /// The issue numbers the forge was seen to say are closed, by repository.
     closed: HashMap<i64, HashSet<i64>>,
+    /// The rounds of the Reviewer on each open pull request someone else opened, by change.
+    external_reviews: HashMap<i64, Vec<crate::store::ExternalReview>>,
 }
 
 impl CardLookups {
+    /// The rounds of the Reviewer on the change, oldest first; none for a change that is not a followed request.
+    pub fn external_reviews(&self, change_id: i64) -> Result<Vec<crate::store::ExternalReview>> {
+        Ok(self
+            .external_reviews
+            .get(&change_id)
+            .cloned()
+            .unwrap_or_default())
+    }
+
     /// The repository `id`, as `App::repository` says it.
     fn repository(&self, id: i64) -> Result<&Repository> {
         self.repositories
@@ -165,6 +176,10 @@ impl App {
         for repository in repositories {
             closed.insert(repository.id, self.store.closed_on_forge(repository.id)?);
         }
+        let mut external_reviews = HashMap::new();
+        for change in open_changes.values().filter(|c| c.outside_author.is_some()) {
+            external_reviews.insert(change.id, self.store.external_reviews(change.id)?);
+        }
         Ok(CardLookups {
             repositories: repositories.iter().map(|r| (r.id, r.clone())).collect(),
             non_viewers: self
@@ -180,6 +195,7 @@ impl App {
             open_changes,
             cards: by_number,
             closed,
+            external_reviews,
         })
     }
 }

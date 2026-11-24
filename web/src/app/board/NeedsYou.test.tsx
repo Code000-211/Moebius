@@ -104,6 +104,77 @@ describe("the Moebius needs you block", () => {
     expect(screen.queryByRole("button", { name: "Reject with a reason" })).toBeNull();
   });
 
+  it("keeps the choices of the pull request when the Reviewer has read it three times", () => {
+    const change = {
+      id: 8,
+      state: "open",
+      checks: "success" as const,
+      review_verdict: null,
+      outside_author: "alice",
+    };
+    const { onDecide } = show(item("review_rounds_spent", { change: 8, author: "alice" }), null, {
+      change,
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Review with agent" }));
+    expect(onDecide).toHaveBeenCalledWith({ kind: "review", change: 8, number: 5 });
+    fireEvent.click(screen.getByRole("button", { name: "Merge" }));
+    expect(onDecide).toHaveBeenCalledWith({ kind: "merge", change: 8, number: 5 });
+  });
+
+  it("offers the choices of the pull request when it could not be read whole", () => {
+    const change = {
+      id: 8,
+      state: "open",
+      checks: "success" as const,
+      review_verdict: null,
+      outside_author: "alice",
+    };
+    const { onDecide } = show(
+      item("review_not_possible", {
+        change: 8,
+        author: "alice",
+        reason: "it changes a binary file",
+      }),
+      null,
+      { change },
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Merge" }));
+    expect(onDecide).toHaveBeenCalledWith({ kind: "merge", change: 8, number: 5 });
+  });
+
+  it("says it waits for the author's changes after a review that asked for them, and offers no merge", () => {
+    const review = {
+      round: 1,
+      round_limit: 3,
+      state: "posted" as const,
+      verdict: "changes" as const,
+      summary: "No.",
+      comments: [],
+      url: null,
+      head: "abc",
+      current: true,
+    };
+    const change = {
+      id: 8,
+      state: "open",
+      checks: "success" as const,
+      review_verdict: "changes" as const,
+      outside_author: "alice",
+      external_review: review,
+    };
+    show(item("outside_change", { change: 8 }), null, { change });
+    expect(screen.getByTestId("waiting-for-author").textContent).toContain("Waiting for @alice");
+    expect(screen.queryByRole("button", { name: "Merge" })).toBeNull();
+    expect(screen.getByRole("button", { name: "Review with agent" })).toBeTruthy();
+    // A push makes the review old: the choice to merge is back.
+    cleanup();
+    show(item("outside_change", { change: 8 }), null, {
+      change: { ...change, external_review: { ...review, current: false } },
+    });
+    expect(screen.queryByTestId("waiting-for-author")).toBeNull();
+    expect(screen.getByRole("button", { name: "Merge" })).toBeTruthy();
+  });
+
   it("asks what to do with an issue its assignee says is done: close it, give it back, or release it", () => {
     const { onDecide } = show(
       item("done_asked", { login: "alice", reason: "The assets are cached now." }),

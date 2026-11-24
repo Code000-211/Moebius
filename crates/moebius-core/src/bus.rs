@@ -538,6 +538,7 @@ mod tests {
             commands: false,
             command_limit: 3,
             answer_on_forge: true,
+            merge_reviewed: true,
         }
     }
 

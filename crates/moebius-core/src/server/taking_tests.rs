@@ -287,13 +287,13 @@ async fn an_unlabelled_issue_a_person_of_this_server_took_is_started_here() {
 }
 
 /// A pull request 7 of `alice` that says it fixes issue 1, listed as open.
-fn alices_request() -> Value {
+pub(super) fn alices_request() -> Value {
     json!({ "number": 7, "title": "Fix the thing", "body": "Fixes #1\n\nDone by hand.",
             "user": { "login": "alice" }, "head": { "sha": "deadbeef" }, "base": { "ref": "main" } })
 }
 
 /// Has pull request 7 of the remote name a commit, as GitHub does for the head of every pull request.
-fn give_the_remote_a_pull_head(f: &Fixture) {
+pub(super) fn give_the_remote_a_pull_head(f: &Fixture) {
     let head = git(&f.remote, &["rev-parse", "main"]).unwrap();
     git(&f.remote, &["update-ref", "refs/pull/7/head", &head]).unwrap();
 }
@@ -475,14 +475,14 @@ async fn the_reviewer_reads_the_followed_pull_request_from_its_branch() {
 }
 
 /// The head of pull request 7 on the remote, and the fake saying it is the head.
-fn the_pull_head(f: &Fixture) -> String {
+pub(super) fn the_pull_head(f: &Fixture) -> String {
     let head = git(&f.remote, &["rev-parse", "refs/pull/7/head"]).unwrap();
     f.fake.set_head(&head);
     head
 }
 
 /// Gives pull request 7 a new head on the remote and in the fake, as a push to its branch does.
-fn push_to_the_pull_request(f: &Fixture) -> String {
+pub(super) fn push_to_the_pull_request(f: &Fixture) -> String {
     let tree = git(&f.remote, &["rev-parse", "main^{tree}"]).unwrap();
     let parent = git(&f.remote, &["rev-parse", "refs/pull/7/head"]).unwrap();
     let head = git(
@@ -504,7 +504,7 @@ fn push_to_the_pull_request(f: &Fixture) -> String {
 }
 
 /// Runs that start a run of any agent, among them a Reviewer.
-struct ReviewerRuns;
+pub(super) struct ReviewerRuns;
 
 impl crate::board::CardRuns for ReviewerRuns {
     fn start(

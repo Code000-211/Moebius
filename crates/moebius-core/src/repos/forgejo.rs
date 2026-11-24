@@ -101,6 +101,9 @@ pub struct PullRequest {
     pub merged: bool,
     pub merge_commit_sha: Option<String>,
     pub head: Head,
+    /// The branch it is against now.
+    #[serde(default)]
+    pub base: Option<Base>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
@@ -619,6 +622,36 @@ impl Forgejo {
         Self::succeeded(response).await?;
         let merged = self.pull_request(repo, number).await?;
         Ok(merged.merge_commit_sha.unwrap_or(merged.head.sha))
+    }
+
+    /// Writes a review of a pull request, tied to the commit it read: `APPROVED` or `REQUEST_CHANGES` with the summary
+    /// as its body and a comment on each line of the new file. Answers with the review's address.
+    pub async fn review_pull_request(
+        &self,
+        repo: &str,
+        number: i64,
+        review: &crate::repos::forge::ReviewPost<'_>,
+    ) -> Result<String, ForgejoError> {
+        let comments: Vec<_> = review
+            .comments
+            .iter()
+            .map(|c| json!({ "path": c.path, "new_position": c.line, "body": c.body }))
+            .collect();
+        let request = json!({
+            "commit_id": review.head,
+            "body": review.body,
+            "event": if review.approve { "APPROVED" } else { "REQUEST_CHANGES" },
+            "comments": comments,
+        });
+        let posted: serde_json::Value = self
+            .repo_call(
+                repo,
+                Method::POST,
+                &format!("/pulls/{number}/reviews"),
+                Some(&request),
+            )
+            .await?;
+        Ok(posted["html_url"].as_str().unwrap_or_default().to_string())
     }
 
     /// Calls the API at `/repos/{repo}{path}` and reads the JSON answer.

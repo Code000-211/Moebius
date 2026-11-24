@@ -54,6 +54,10 @@ pub struct Repository {
     /// Whether the server writes the result of every command, and of the owner's answers, as a comment on the issue.
     #[serde(default = "default_answer_on_forge")]
     pub answer_on_forge: bool,
+    /// Whether the server merges a followed pull request of someone else once the Reviewer approved it and its checks
+    /// are green (see `app::reviews`); otherwise it only approves it and the owner merges.
+    #[serde(default = "default_answer_on_forge")]
+    pub merge_reviewed: bool,
 }
 
 fn default_command_limit() -> i64 {
@@ -240,7 +244,7 @@ fn card_records_last(runs: &str, changes: &str, cards: &str) -> Vec<String> {
     ]
 }
 
-const REPOSITORY_COLUMNS: &str = "id, name, path, forge, default_branch, github, trusted, project, home_project_id, files_of, mark_ready, ready_label, agents_take, commands, command_limit, answer_on_forge";
+const REPOSITORY_COLUMNS: &str = "id, name, path, forge, default_branch, github, trusted, project, home_project_id, files_of, mark_ready, ready_label, agents_take, commands, command_limit, answer_on_forge, merge_reviewed";
 
 fn repository_from_row(r: &rusqlite::Row) -> rusqlite::Result<Repository> {
     let trusted: String = r.get(6)?;
@@ -263,6 +267,7 @@ fn repository_from_row(r: &rusqlite::Row) -> rusqlite::Result<Repository> {
         commands: r.get(13)?,
         command_limit: r.get(14)?,
         answer_on_forge: r.get(15)?,
+        merge_reviewed: r.get(16)?,
     })
 }
 
@@ -358,6 +363,7 @@ impl Store {
             commands: false,
             command_limit: default_command_limit(),
             answer_on_forge: default_answer_on_forge(),
+            merge_reviewed: default_answer_on_forge(),
         })
     }
 

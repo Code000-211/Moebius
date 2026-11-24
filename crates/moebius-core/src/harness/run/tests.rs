@@ -5,6 +5,7 @@
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 use serde_json::Value;
 
@@ -580,4 +581,215 @@ fn a_decider_that_fails_leaves_the_run_without_a_hint() {
         "{}",
         hints[0].reason
     );
+}
+
+/// What a review run of a pull request someone else opened is started with, on either harness: recorded restricted on
+/// its row, a checked token, no MCP servers, no runner, and no checkout: its working directory is an empty directory
+/// and it has no clone. The same review of a card that follows no such request is none of that.
+/// Whether the directory is one only its owner may enter (anything but Unix has no such mode to read).
+fn private_to_its_owner(dir: &std::path::Path) -> bool {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::metadata(dir).is_ok_and(|m| m.permissions().mode() & 0o077 == 0)
+    }
+    #[cfg(not(unix))]
+    {
+        dir.is_dir()
+    }
+}
+
+#[test]
+fn a_review_of_a_pull_request_someone_else_opened_is_started_restricted_on_either_harness() {
+    use crate::config::HarnessKind;
+    use crate::harness::remote::Runners;
+    use crate::harness::run::start_card;
+    use crate::router::Router;
+
+    let setup = setup();
+    let router = Router::new(setup.app.store.clone(), vec![]);
+    let runners = Arc::new(Runners::default());
+    let repository = setup.app.store.repository(setup.repo).unwrap().unwrap();
+    let clone = PathBuf::from(&repository.path);
+    // The pull request's branch has a file, and a link that leads out of any worktree.
+    git(&clone, &["checkout", "--quiet", "-b", "moebius/pr-7"]).unwrap();
+    std::fs::write(clone.join("feature.txt"), "feature\n").unwrap();
+    git(&clone, &["add", "."]).unwrap();
+    git(
+        &clone,
+        &[
+            "-c",
+            "user.name=alice",
+            "-c",
+            "user.email=alice@example.com",
+            "commit",
+            "--quiet",
+            "-m",
+            "a feature",
+        ],
+    )
+    .unwrap();
+    let head = git(&clone, &["rev-parse", "HEAD"]).unwrap();
+    git(&clone, &["checkout", "--quiet", "main"]).unwrap();
+    let followed = setup
+        .app
+        .create_issue(setup.repo, "Followed", "", "person")
+        .unwrap();
+    let change = setup
+        .app
+        .store
+        .add_change(
+            setup.repo,
+            Some(followed.id),
+            "moebius/pr-7",
+            Some(7),
+            &head,
+        )
+        .unwrap();
+    setup
+        .app
+        .store
+        .set_change_outside(change.id, "alice", "In progress")
+        .unwrap();
+    setup
+        .app
+        .store
+        .set_change_reviewed_head(change.id, &head)
+        .unwrap();
+    let base = git(&clone, &["rev-parse", "main"]).unwrap();
+    setup
+        .app
+        .store
+        .set_change_reviewed_base(change.id, &base)
+        .unwrap();
+    // The card has an earlier code run of Moebius's own: the review is of the pull request all the same.
+    let earlier = setup
+        .app
+        .store
+        .add_run(Some(followed.id), "Coder", "idle", "code")
+        .unwrap();
+    setup
+        .app
+        .store
+        .set_run_status(earlier.id, "succeeded")
+        .unwrap();
+    let own = setup
+        .app
+        .create_issue(setup.repo, "Own", "", "person")
+        .unwrap();
+
+    for harness in [HarnessKind::PiBolt, HarnessKind::ClaudeCode] {
+        for (card, restricted) in [(&followed, true), (&own, false)] {
+            let mut mcp = BTreeMap::new();
+            mcp.insert(
+                "search".to_string(),
+                crate::harness::mcp::McpServer {
+                    command: None,
+                    args: vec![],
+                    env: BTreeMap::new(),
+                    url: Some("https://search.test/mcp".into()),
+                    headers: BTreeMap::new(),
+                },
+            );
+            let config = crate::config::AgentConfig {
+                model: "qwen-local".into(),
+                protocol: crate::router::Protocol::Anthropic,
+                thinking: None,
+                instructions: None,
+                skills: vec![],
+                extensions: vec![],
+                mcp,
+                token_budget: None,
+                harness,
+                tool_output: Default::default(),
+                engineering_skills: Default::default(),
+                runner: restricted.then(|| "far-away".to_string()),
+            };
+            let seen = std::cell::RefCell::new(None);
+            let started = start_card(
+                &setup.app,
+                (&router, &runners),
+                card,
+                ("Reviewer", config),
+                ("review", None),
+                Variant::default(),
+                &|launching| {
+                    let prompt = launching.prompt.unwrap_or_default().to_string();
+                    *seen.borrow_mut() = Some((
+                        launching.run.restricted,
+                        router.is_checked(&launching.run.token),
+                        launching.config.mcp.len(),
+                        launching.config.runner.clone(),
+                        launching.run.clone.is_some(),
+                        std::fs::read_dir(&launching.run.worktree).map(|d| d.count()),
+                        launching.run.worktree.clone(),
+                        setup.app.store.run_restricted(launching.run.id).unwrap(),
+                        prompt,
+                        launching.run.id,
+                        private_to_its_owner(&launching.run.worktree),
+                    ));
+                    Err("not started: the test only looks".into())
+                },
+            );
+            let name = format!("{harness:?}, restricted {restricted}");
+            assert!(started.is_err(), "{name}");
+            let (
+                marked,
+                checked,
+                servers,
+                runner,
+                has_clone,
+                files,
+                worktree,
+                stored,
+                prompt,
+                id,
+                private,
+            ) = seen.into_inner().expect("the run was launched");
+            if !restricted {
+                // Moebius's own change is reviewed as before: a worktree of its clone, its servers, and its token as
+                // its harness has it (Claude Code's calls are checked, Pi-Bolt's are not).
+                assert!(!marked && !stored, "{name}");
+                assert_eq!(checked, harness == HarnessKind::ClaudeCode, "{name}");
+                assert_eq!(servers, 1, "{name}");
+                assert!(has_clone, "{name}");
+                assert!(!prompt.contains("You have no tools at all"), "{name}");
+                continue;
+            }
+            assert!(marked && stored, "{name}");
+            // The two commits it reads are on its row.
+            assert_eq!(
+                setup.app.store.run_review(id).unwrap(),
+                Some((head.clone(), base.clone())),
+                "{name}"
+            );
+            // Its name is not one another person on the machine can guess and make first, and only its owner enters it.
+            assert!(
+                worktree.file_name().unwrap().to_string_lossy()
+                    != format!("moebius-review-{id}-{}", std::process::id()),
+                "{name}: {worktree:?}"
+            );
+            assert!(private, "{name}: only its owner may enter {worktree:?}");
+            assert!(checked, "{name}: a checked token on either harness");
+            assert_eq!(servers, 0, "{name}");
+            assert_eq!(runner, None, "{name}: never on a runner");
+            assert!(!has_clone, "{name}: no clone, no checkout");
+            assert_eq!(files.ok(), Some(0), "{name}: an empty directory");
+            // Its own directory under the system's temporary directory, with no context file of the data directory
+            // or the home directory above it; the run was undone, so it is gone.
+            assert!(
+                worktree.starts_with(std::env::temp_dir()),
+                "{name}: {worktree:?}"
+            );
+            assert!(
+                !worktree.starts_with(&setup.app.data_dir),
+                "{name}: {worktree:?}"
+            );
+            assert!(!worktree.exists(), "{name}: removed with the run");
+            // The prompt holds the pull request as of its commit, and no other branch: not the earlier code run's.
+            assert!(prompt.contains(&head), "{name}: {prompt}");
+            assert!(prompt.contains("feature.txt"), "{name}");
+            assert!(prompt.contains("You have no tools at all"), "{name}");
+        }
+    }
 }

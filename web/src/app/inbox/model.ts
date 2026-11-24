@@ -16,6 +16,8 @@ export const APPROVE_ISSUE = "approve_issue";
 export const STUCK = "stuck";
 /** The assignee of an issue taken with `/take` wrote `/done`: the owner closes the issue, gives it back or releases it. */
 export const DONE_ASKED = "done_asked";
+export const REVIEW_ROUNDS_SPENT = "review_rounds_spent";
+export const REVIEW_NOT_POSSIBLE = "review_not_possible";
 export const CHANGE_CLOSED = "change_closed";
 export const MERGE_STOPPED = "merge_stopped";
 export const PROPOSAL = "proposal";
@@ -137,6 +139,10 @@ export function kindTag(item: InboxItem): { label: string; mark: StateMark } {
       return { label: "Merge stopped", mark: "blocked" };
     case DONE_ASKED:
       return { label: "Says it is done", mark: "none" };
+    case REVIEW_ROUNDS_SPENT:
+      return { label: "Reviewed three times", mark: "none" };
+    case REVIEW_NOT_POSSIBLE:
+      return { label: "Could not be reviewed", mark: "none" };
     case PROPOSAL:
       return { label: "Retro proposal", mark: "none" };
     case TAKEOVER:
@@ -179,6 +185,14 @@ export function why(item: InboxItem, about: Found, changes?: string): string | n
         ? `@${login} took this issue with /take and says it is done: ${reason}`
         : `@${login} took this issue with /take and says it is done.`;
     }
+    case REVIEW_ROUNDS_SPENT: {
+      const author = text(item.data.author);
+      return `The Reviewer read this pull request three times${author !== "" ? ` and @${author} asked again` : ""}. Open the card to review it again or merge it.`;
+    }
+    case REVIEW_NOT_POSSIBLE:
+      return reason !== ""
+        ? `The Reviewer could not read this pull request whole: ${reason}. Review it yourself, or merge it.`
+        : "The Reviewer could not read this pull request whole. Review it yourself, or merge it.";
     case MERGE_STOPPED: {
       const { repository, reason, merged, open } = mergeStopped(item);
       const stopped = `The merge in ${repository || "a repository"} stopped${reason !== "" ? `: ${reason}` : ""}.`;

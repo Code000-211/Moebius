@@ -1230,6 +1230,7 @@ export function createPagesAFake(send: Send, board: BoardFake): PagesAFake {
                 "commands",
                 "command_limit",
                 "answer_on_forge",
+                "merge_reviewed",
               ]
                 .filter((key) => key in body)
                 .map((key) => [key, body[key]]),

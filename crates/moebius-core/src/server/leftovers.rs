@@ -1,6 +1,6 @@
 //! What a server that stopped left going, ended at the next start: its runs are failed, so the board starts them
 //! again, and their worktrees and scratch directories removed; its Retros are failed, its research confirmed again and
-//! its trials reopened.
+//! its trials reopened, and the rounds of the Reviewer that were starting or writing a review are ended.
 
 use std::path::Path;
 
@@ -17,6 +17,9 @@ pub(super) fn end_runs_of_a_previous_server(app: &App, runners: &Runners) -> Res
         .store
         .fail_unended_runs("the server stopped while the run was going")
         .map_err(|e| format!("cannot end the runs of the last start: {e}"))?;
+    // A round of the Reviewer that was starting or writing its review died with it as well.
+    app.sweep_external_reviews(crate::store::now(), true)
+        .map_err(|e| format!("cannot end the review rounds of the last start: {e}"))?;
     app.store
         .fail_analysing_retros("the server stopped while the analyst was going")
         .map_err(|e| format!("cannot end the Retros of the last start: {e}"))?;

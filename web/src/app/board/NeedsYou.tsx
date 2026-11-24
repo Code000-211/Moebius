@@ -10,7 +10,12 @@ import { Button } from "../../ui/components/Button";
 import { ago } from "../../ui/lib/format";
 import { useNow } from "../../ui/lib/useNow";
 import type { Decision } from "./decisions";
-import { DONE_ASKED, OUTSIDE_CHANGE } from "./model/inbox";
+import {
+  DONE_ASKED,
+  OUTSIDE_CHANGE,
+  REVIEW_NOT_POSSIBLE,
+  REVIEW_ROUNDS_SPENT,
+} from "./model/inbox";
 
 /** The mark of Moebius in the thread: a dark square with its initial. */
 export function MoebiusMark() {
@@ -58,6 +63,16 @@ export function NeedsYouBlock({
     if (askFor === card.id) setRejecting(true);
   }, [askFor, card.id]);
   const change = typeof item.data.change === "number" ? item.data.change : null;
+  // The pull request of someone else: both items offer its choices.
+  const outside =
+    item.kind === OUTSIDE_CHANGE ||
+    item.kind === REVIEW_ROUNDS_SPENT ||
+    item.kind === REVIEW_NOT_POSSIBLE;
+  // A review that asked for changes is the author's turn until they push: there is nothing to merge yet.
+  const review = card.change?.external_review;
+  const waitingForAuthor =
+    outside && review?.verdict === "changes" && review.state === "posted" && review.current;
+  const author = card.change?.outside_author;
   const number = card.number;
   const ready = reason.trim() !== "";
 
@@ -79,6 +94,11 @@ export function NeedsYouBlock({
         <span className="shrink-0 text-sm tabular-nums text-secondary">{ago(now, item.at)}</span>
       </div>
       <p className="m-0 text-md text-text [overflow-wrap:anywhere]">{item.title}</p>
+      {waitingForAuthor && (
+        <p data-testid="waiting-for-author" className="m-0 text-base text-secondary">
+          {`Waiting for @${author ?? "the author"} to push changes after the review. Merge is back once they do.`}
+        </p>
+      )}
       {item.kind === DONE_ASKED && reasonOf(item) !== "" && (
         <p
           data-testid="done-reason"
@@ -139,7 +159,7 @@ export function NeedsYouBlock({
               </Button>
             </>
           )}
-          {item.kind === OUTSIDE_CHANGE && change !== null && (
+          {outside && change !== null && (
             <>
               <Button
                 variant="secondary"
@@ -148,19 +168,21 @@ export function NeedsYouBlock({
               >
                 Review with agent
               </Button>
-              <Button
-                disabled={
-                  busy || card.change?.checks === "pending" || card.change?.checks === "failure"
-                }
-                title={
-                  card.change?.checks === "pending" || card.change?.checks === "failure"
-                    ? "Merge once the checks have passed"
-                    : undefined
-                }
-                onClick={() => onDecide({ kind: "merge", change, number })}
-              >
-                Merge
-              </Button>
+              {!waitingForAuthor && (
+                <Button
+                  disabled={
+                    busy || card.change?.checks === "pending" || card.change?.checks === "failure"
+                  }
+                  title={
+                    card.change?.checks === "pending" || card.change?.checks === "failure"
+                      ? "Merge once the checks have passed"
+                      : undefined
+                  }
+                  onClick={() => onDecide({ kind: "merge", change, number })}
+                >
+                  Merge
+                </Button>
+              )}
             </>
           )}
           {item.kind === DONE_ASKED && (

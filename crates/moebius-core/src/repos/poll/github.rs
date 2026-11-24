@@ -126,6 +126,7 @@ impl Polled for GitHub {
         if pull_request.state == "closed" {
             return Ok(Request::Closed);
         }
+        let base = pull_request.base.clone();
         let checks = self.check_runs(name, &pull_request.head.sha).await?;
         let review = self
             .reviews(name, number)
@@ -137,6 +138,7 @@ impl Polled for GitHub {
             checks: summarise_checks(&checks),
             failed: failed_checks(&checks),
             review,
+            base: base.map(|base| base.branch),
         }))
     }
 }

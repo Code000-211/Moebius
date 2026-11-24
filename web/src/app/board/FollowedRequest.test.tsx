@@ -56,6 +56,83 @@ describe("what the window says of someone else's work", () => {
     expect(screen.queryByTestId("taken-note")).toBeNull();
   });
 
+  it("shows the review of the followed pull request under its badge", () => {
+    const followed = card(5, {
+      column: "In review",
+      taken_by: "alice",
+      change: {
+        id: 9,
+        state: "open",
+        checks: "success",
+        review_verdict: "changes",
+        outside_author: "alice",
+        external_review: {
+          round: 1,
+          round_limit: 3,
+          state: "posted",
+          verdict: "changes",
+          summary: "Needs a test.",
+          comments: [{ path: "src/a.rs", line: 3, body: "Why?" }],
+          url: "https://github.test/acme/demo/pull/7#pullrequestreview-1",
+          head: "abc",
+          current: true,
+        },
+      },
+    });
+    const full = { ...board([followed]), changes: [change] };
+    render(<FollowedRequest board={full} card={followed} />);
+    expect(screen.getByText("Changes requested")).toBeTruthy();
+    expect(screen.getByText("src/a.rs line 3")).toBeTruthy();
+    expect(screen.getByRole("link", { name: "Open on GitHub" })).toBeTruthy();
+  });
+
+  it("lets the owner end a review round that is going, and not one that is over", () => {
+    const round = (state: "running" | "posted") =>
+      card(5, {
+        column: "In review",
+        taken_by: "alice",
+        change: {
+          id: 9,
+          state: "open",
+          checks: "success",
+          review_verdict: null,
+          outside_author: "alice",
+          external_review: {
+            round: 1,
+            round_limit: 3,
+            state,
+            verdict: state === "posted" ? "changes" : null,
+            summary: "",
+            comments: [],
+            url: null,
+            head: "abc",
+            current: true,
+          },
+        },
+      });
+    const going = round("running");
+    const onEndRound = vi.fn();
+    const { unmount } = render(
+      <FollowedRequest
+        board={{ ...board([going]), changes: [change] }}
+        card={going}
+        onEndRound={onEndRound}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "End this review round" }));
+    expect(onEndRound).toHaveBeenCalledOnce();
+    unmount();
+    const over = round("posted");
+    render(
+      <FollowedRequest
+        board={{ ...board([over]), changes: [change] }}
+        card={over}
+        onEndRound={onEndRound}
+      />,
+    );
+    expect(screen.queryByRole("button", { name: "End this review round" })).toBeNull();
+  });
+
   it("says who took an issue, and why the server could not assign its own person", () => {
     const taken = card(5, {
       taken_by: "alice",

@@ -8,7 +8,8 @@
 //! - `/release` takes the commenter off the issue; only an assignee may.
 //! - `/done` asks the owner to look: an inbox item and the "Moebius needs you" block of the card, which the owner
 //!   answers by closing the issue, giving it back to the assignee or releasing it ([`App::answer_done`]). Nobody but
-//!   the owner closes anything. When a followed pull request closes the issue already, it only says thanks.
+//!   the owner closes anything. When a followed pull request closes the issue already, its author's `/done` has the
+//!   Reviewer read it (see `reviews`), and anybody else's only says thanks.
 //!
 //! The server's own comments are never read as commands, and neither is a line quoted with `>`, indented as code or
 //! inside a fenced block.
@@ -156,6 +157,16 @@ impl App {
     ) -> Result<String> {
         let assignees = self.store.forge_assignees(card.id)?;
         let assigned = assignees.iter().any(|l| l.eq_ignore_ascii_case(login));
+        // The author of a followed pull request has it reviewed with `/done`, whoever the issue is assigned to.
+        if command == Command::Done
+            && let Some(change) = self.followed_change(card)?
+            && change
+                .outside_author
+                .as_deref()
+                .is_some_and(|author| author.eq_ignore_ascii_case(login))
+        {
+            return self.review_on_done(repository, card, &change);
+        }
         Ok(match command {
             Command::Take => self.take_by_command(repository, card, login, &assignees)?,
             _ if !assigned => match assignees.first() {
@@ -240,7 +251,10 @@ impl App {
     /// `/done` by an assignee: asks the owner, unless a followed pull request closes the issue already.
     fn ask_done(&self, card: &Card, login: &str, reason: &str) -> Result<String> {
         if self.follows_outside_request(card)? {
-            return Ok("Thanks, the pull request is followed.".into());
+            return Ok(
+                "Thanks, the pull request is followed; only its author can have it reviewed with /done."
+                    .into(),
+            );
         }
         if self.store.has_open_inbox_item(card.id, DONE_ASKED)? {
             return Ok("The owner has been asked already.".into());

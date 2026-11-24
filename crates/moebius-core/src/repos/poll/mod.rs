@@ -42,6 +42,8 @@ pub struct Status {
     pub failed: Option<String>,
     /// The latest review in lower case, such as `approved`.
     pub review: Option<String>,
+    /// The branch the request is against now, when the forge says: an author may retarget it.
+    pub base: Option<String>,
 }
 
 /// A forge's client as the poll uses it.
@@ -353,13 +355,21 @@ async fn poll_request<F: Polled>(
         Request::Open(status) => {
             blocking(move || {
                 app.refresh_followed(&change, &status.head)?;
+                if let (Some(base), true) = (&status.base, change.outside_author.is_some()) {
+                    app.store.set_change_base_branch(change.id, base)?;
+                }
                 app.record_change_status(
                     &change,
                     status.checks,
                     &status.head,
                     status.failed.as_deref(),
                     status.review.as_deref(),
-                )
+                )?;
+                // A review the author asked for goes on once the checks of the head are known.
+                if let Some(card) = change.card_id {
+                    app.advance_external_reviews(card);
+                }
+                Ok::<(), crate::app::AppError>(())
             })
             .await
         }

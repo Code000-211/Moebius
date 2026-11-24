@@ -101,6 +101,9 @@ pub struct MergeRequest {
     pub sha: String,
     pub merge_commit_sha: Option<String>,
     pub squash_commit_sha: Option<String>,
+    /// The branch it is against now.
+    #[serde(default)]
+    pub target_branch: Option<String>,
 }
 
 impl MergeRequest {
@@ -717,6 +720,62 @@ impl GitLab {
         Ok(merged.merged_commit())
     }
 
+    /// Writes a review of a merge request: GitLab has no review that asks for changes, so the summary is a note and
+    /// each comment a discussion on its line of the diff, and an approval also approves the merge request at the commit
+    /// it read. Answers with the merge request's address.
+    pub async fn review_merge_request(
+        &self,
+        project: &str,
+        number: i64,
+        review: &crate::repos::forge::ReviewPost<'_>,
+    ) -> Result<String, GitLabError> {
+        let request: serde_json::Value = self
+            .project_call(
+                project,
+                Method::GET,
+                &format!("/merge_requests/{number}"),
+                None,
+            )
+            .await?;
+        let refs = &request["diff_refs"];
+        let verdict = if review.approve {
+            "Approved."
+        } else {
+            "Changes requested."
+        };
+        self.project_do(
+            project,
+            Method::POST,
+            &format!("/merge_requests/{number}/notes"),
+            Some(&json!({ "body": format!("**{verdict}**\n\n{}", review.body.trim()) })),
+        )
+        .await?;
+        for comment in review.comments {
+            let position = json!({
+                "position_type": "text",
+                "base_sha": refs["base_sha"], "start_sha": refs["start_sha"], "head_sha": refs["head_sha"],
+                "new_path": comment.path, "new_line": comment.line,
+            });
+            self.project_do(
+                project,
+                Method::POST,
+                &format!("/merge_requests/{number}/discussions"),
+                Some(&json!({ "body": comment.body, "position": position })),
+            )
+            .await?;
+        }
+        if review.approve {
+            self.project_do(
+                project,
+                Method::POST,
+                &format!("/merge_requests/{number}/approve"),
+                Some(&json!({ "sha": review.head })),
+            )
+            .await?;
+        }
+        Ok(request["web_url"].as_str().unwrap_or_default().to_string())
+    }
+
     /// The API's address of `project`, whose path is one segment there.
     fn project_url(&self, project: &str) -> String {
         format!("{}/projects/{}", self.api_url, project.replace('/', "%2F"))
@@ -972,6 +1031,7 @@ mod tests {
     #[test]
     fn a_merge_leaves_the_merge_commit_the_squashed_one_or_the_head() {
         let request = |merge: Option<&str>, squash: Option<&str>| MergeRequest {
+            target_branch: None,
             state: "merged".into(),
             sha: "head".into(),
             merge_commit_sha: merge.map(Into::into),
