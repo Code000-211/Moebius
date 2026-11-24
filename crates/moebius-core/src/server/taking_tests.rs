@@ -540,6 +540,97 @@ impl crate::board::CardRuns for ReviewerRuns {
     fn hold(&self, _: bool) {}
 }
 
+/// Runs of which none starts, as when the runner a person's review would go on has no free run.
+pub(super) struct NoFreeRuns;
+
+impl crate::board::CardRuns for NoFreeRuns {
+    fn start(
+        &self,
+        _: &std::sync::Arc<crate::app::App>,
+        _: &Card,
+        _: &str,
+        _: (&str, Option<&str>),
+        _: crate::board::Variant,
+    ) -> Result<crate::store::Run, crate::board::StartError> {
+        Err(crate::board::StartError::RunnerFull(
+            "the runner builder has no free run".into(),
+        ))
+    }
+    fn has_agent(&self, _: &str) -> bool {
+        true
+    }
+    fn runners(&self) -> Vec<crate::harness::remote::RunnerInfo> {
+        Vec::new()
+    }
+    fn agents(&self) -> Vec<crate::board::AgentInfo> {
+        Vec::new()
+    }
+    fn token_budget(&self, _: &str) -> Option<i64> {
+        None
+    }
+    fn steer(&self, _: i64, _: &str) -> bool {
+        false
+    }
+    fn stop(&self, _: i64) -> bool {
+        false
+    }
+    fn hold(&self, _: bool) {}
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_review_a_person_asks_for_keeps_why_its_run_could_not_start() {
+    let f = Fixture::new().await;
+    let card = following(&f).await;
+    the_pull_head(&f);
+    let change = f
+        .server
+        .app
+        .store
+        .open_change_in(card.id, f.repository.id)
+        .unwrap()
+        .unwrap();
+
+    let (app, id) = (f.server.app.clone(), change.id);
+    let refused = tokio::task::spawn_blocking(move || {
+        app.review_outside_change(&Actor::first_owner(), &NoFreeRuns, id, "")
+    })
+    .await
+    .unwrap()
+    .unwrap_err();
+    assert!(
+        refused
+            .to_string()
+            .contains("the runner builder has no free run"),
+        "{refused}"
+    );
+
+    // The round keeps why the run could not start, instead of failing without a trace.
+    let rounds = f.server.app.store.external_reviews(change.id).unwrap();
+    assert_eq!(rounds.len(), 1, "{rounds:?}");
+    assert_eq!(rounds[0].state, "failed");
+    assert_eq!(rounds[0].run_id, None);
+    assert!(
+        rounds[0]
+            .summary
+            .contains("the runner builder has no free run"),
+        "{:?}",
+        rounds[0].summary
+    );
+    // And the owner is asked to look at the pull request.
+    let inbox = f.server.app.store.inbox_for_card(card.id).unwrap();
+    let item = inbox
+        .iter()
+        .find(|i| i.kind == crate::app::REVIEW_NOT_POSSIBLE && i.resolved_at.is_none())
+        .expect("an inbox item that asks the owner to look");
+    assert!(
+        item.data["reason"]
+            .as_str()
+            .unwrap()
+            .contains("the runner builder has no free run"),
+        "{item:?}"
+    );
+}
+
 #[tokio::test(flavor = "multi_thread")]
 async fn the_merge_of_a_followed_pull_request_is_pinned_to_the_head_the_owner_saw() {
     let f = Fixture::new().await;

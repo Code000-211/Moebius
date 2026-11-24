@@ -66,8 +66,9 @@ pub struct ExternalReview {
     /// Where the review is on the forge, once it is posted.
     pub url: Option<String>,
     pub at: i64,
-    /// `author` for a round the author asked for, `person` for a review a person asked for from the card, which
-    /// writes nothing on the forge and counts for nothing, but holds the pull request like any round while it runs.
+    /// `author` for a round the author asked for, `person` for a review a person asked for from the card, which is
+    /// written on the forge like an author's round but never merges, counts for nothing, and holds the pull request
+    /// like any round while it runs.
     #[serde(skip)]
     pub kind: String,
     /// When the round last changed state, which a sweep reads to end a round that never moved on.

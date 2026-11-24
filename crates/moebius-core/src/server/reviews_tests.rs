@@ -1267,3 +1267,84 @@ async fn a_review_a_person_asks_for_and_a_round_never_run_together() {
     tick(&f, &card).await;
     assert_eq!(f.reviews_of(&card).len(), 3);
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_review_a_person_asks_for_is_written_on_the_pull_request() {
+    let (f, card, head) = ready().await;
+    let change = f.server.app.followed_change(&card).unwrap().unwrap();
+    let (app, id) = (f.server.app.clone(), change.id);
+    let run = tokio::task::spawn_blocking(move || {
+        app.review_outside_change(&Actor::first_owner(), &ReviewerRuns, id, "")
+    })
+    .await
+    .unwrap()
+    .unwrap();
+    f.reviewer_ends(
+        &card,
+        &run,
+        &said(
+            "changes",
+            "Two problems.",
+            json!([{ "path": "src/lib.rs", "line": 4, "body": "Off by one." }]),
+        ),
+    )
+    .await;
+
+    let posts = f.fake.review_posts.lock().unwrap().clone();
+    assert_eq!(posts.len(), 1, "{posts:?}");
+    assert_eq!(posts[0]["event"], "REQUEST_CHANGES");
+    assert_eq!(posts[0]["commit_id"], json!(head));
+    assert_eq!(posts[0]["comments"].as_array().unwrap().len(), 1);
+    let round = &f.server.app.store.external_reviews(change.id).unwrap()[0];
+    assert_eq!(
+        (round.kind.as_str(), round.state.as_str()),
+        ("person", "posted")
+    );
+    assert_eq!(round.verdict.as_deref(), Some("changes"));
+    assert!(
+        round
+            .url
+            .as_deref()
+            .unwrap()
+            .contains("pullrequestreview-91")
+    );
+    let told = f.on_the_issue();
+    assert!(
+        told.iter().any(|t| t.contains("changes are requested")),
+        "{told:?}"
+    );
+    // The person merges the pull request where they asked for the review.
+    assert!(f.merged_requests().is_empty());
+    assert_eq!(f.card(1).unwrap().column, columns::IN_REVIEW);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn an_approval_a_person_asks_for_is_written_and_left_for_them_to_merge() {
+    let (f, card, head) = ready().await;
+    let change = f.server.app.followed_change(&card).unwrap().unwrap();
+    let (app, id) = (f.server.app.clone(), change.id);
+    let run = tokio::task::spawn_blocking(move || {
+        app.review_outside_change(&Actor::first_owner(), &ReviewerRuns, id, "")
+    })
+    .await
+    .unwrap()
+    .unwrap();
+    f.reviewer_ends(&card, &run, &said("approve", "Looks right.", json!([])))
+        .await;
+
+    let posts = f.fake.review_posts.lock().unwrap().clone();
+    assert_eq!(posts.len(), 1, "{posts:?}");
+    assert_eq!(posts[0]["event"], "APPROVE");
+    assert_eq!(posts[0]["commit_id"], json!(head));
+    let round = &f.server.app.store.external_reviews(change.id).unwrap()[0];
+    assert_eq!(
+        (round.kind.as_str(), round.state.as_str()),
+        ("person", "posted")
+    );
+    assert_eq!(round.verdict.as_deref(), Some("approve"));
+    // Nothing merges on the strength of a review a person asked for.
+    assert!(f.merged_requests().is_empty());
+    assert_eq!(f.card(1).unwrap().column, columns::IN_REVIEW);
+    let told = f.on_the_issue();
+    assert!(told.iter().any(|t| t.contains("approved")), "{told:?}");
+}

@@ -603,8 +603,10 @@ impl App {
     }
 
     /// A person has the Reviewer read the pull request someone else opened that the change follows: the request's head is
-    /// fetched again and a `review` run of the card starts on it, whose findings are in the card's thread. Recorded as a
-    /// `review_change` decision. The run is the card's, but starts no further work: nothing moves the card.
+    /// fetched again and a `review` run of the card starts on it, whose findings are in the card's thread and, once the
+    /// run ends, written on the forge as a review like the author's round, except that nothing is merged. Recorded as a
+    /// `review_change` decision. The run is the card's, but starts no further work: nothing moves the card. A round whose
+    /// run cannot start ends `failed` with the reason the run gave, and the owner is asked to look at the pull request.
     pub fn review_outside_change(
         self: &std::sync::Arc<Self>,
         by: &crate::decide::Actor,
@@ -678,8 +680,14 @@ impl App {
                 .start_external_review(round, run.id, 0, (&head, &base))?;
             Ok(run)
         })();
-        if started.is_err() {
-            let _ = self.store.move_external_review(round, "starting", "failed");
+        if let Err(e) = &started {
+            // The person's decision stands; the round keeps why its run could not start, and the owner is asked to
+            // look at the pull request, as for a review that could not be made.
+            let why = format!("the review could not be started: {e}");
+            let _ = self
+                .store
+                .set_external_review_verdict(round, "failed", "", &why, &[]);
+            let _ = self.ask_owner_about_a_round(&change, &why);
         }
         started
     }

@@ -25,7 +25,6 @@ impl App {
     /// - A round `posting` for over [`POSTING_SECONDS`] ends `failed` and the owner is asked to look: the review may
     ///   be on the forge in part, so it is never written again by itself.
     /// - A round `running` for a pull request that was closed or merged ends `failed`, and its run is stopped.
-    /// - A review a person asked for ends once its run did.
     pub fn sweep_external_reviews(&self, now: i64, restart: bool) -> Result<()> {
         for round in self
             .store
@@ -44,10 +43,6 @@ impl App {
                 }
                 "running" if change.state != "open" => {
                     self.end_round(&round, "the pull request was closed")?;
-                }
-                "running" if round.kind == "person" && self.run_ended(&round)? => {
-                    self.store
-                        .move_external_review(round.id, "running", "ended")?;
                 }
                 _ => {}
             }

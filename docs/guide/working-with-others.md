@@ -51,7 +51,10 @@ For the owner, on their server, once:
   card moves to **In review**, the head of the pull request is kept in the local branch `moebius/pr-<number>`, and an
   Inbox item "outside change" names you. The owner's server follows a request only when it is against the default branch and you may write to the repository or are assigned to the issue; a stranger's fork that says "Fixes #12" is ignored. The owner's column scripts do not run for the card while the request is open.
 - **The owner reviews it.** **Review with agent** (`POST /v1/changes/{id}/review`) has the Reviewer read the pull
-  request. **Merge** is refused, `the checks of pull request #n have not passed`, while its checks are pending, unread for its current head or
+  request. When its run ends, what it found is written on the pull request as a review, and the answer on the issue
+  names the verdict, as for the author's `/done`; nothing is merged and the card does not move, so the owner merges the
+  request themselves. A review whose run cannot start is noted in the Inbox (`review_not_possible`), with what the run
+  said. **Merge** is refused, `the checks of pull request #n have not passed`, while its checks are pending, unread for its current head or
   failing; a request with no checks may be merged.
 - **It ends.** When the pull request is merged on the forge, or by the owner, the card goes to Done. When it is closed
   without a merge, the change is closed, the Inbox item is resolved, and the card goes back to the column it was in
