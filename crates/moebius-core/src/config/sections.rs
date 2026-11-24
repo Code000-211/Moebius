@@ -246,6 +246,31 @@ impl Default for LocalizeConfig {
     }
 }
 
+/// How much of a pull request someone else opened the Reviewer is given (see `app::review_context`): what does not fit
+/// is never given cut in half, so a file that is too large is given as its part of the diff instead.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ReviewConfig {
+    /// How large the diff of the pull request may be, in bytes.
+    pub diff_limit: usize,
+    /// How large one changed file may be to be given whole, in bytes.
+    pub file_limit: usize,
+    /// How large the changed files given whole may be together, in bytes.
+    pub files_limit: usize,
+    /// The most files the pull request may change.
+    pub files_at_most: usize,
+}
+
+impl Default for ReviewConfig {
+    fn default() -> Self {
+        Self {
+            diff_limit: 60_000,
+            file_limit: 40_000,
+            files_limit: 150_000,
+            files_at_most: 60,
+        }
+    }
+}
+
 /// Where Pi packages are found and fetched from (see `harness::packages`).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PackagesConfig {

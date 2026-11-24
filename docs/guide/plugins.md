@@ -135,6 +135,7 @@ let mut app = App::new(store.clone(), host.clone(), &config.data_dir);
 app.decisions.share_routed(routed);
 app.checks_timeout = config.checks_timeout;
 app.localize = config.localize;
+app.review = config.review;
 app.packages = config.packages.clone();
 plugins::route_deciders(&app.decisions, &config);
 ```

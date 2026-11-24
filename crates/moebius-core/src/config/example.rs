@@ -51,6 +51,18 @@ gate = true
 enabled = true
 files = 10
 
+# The Reviewer of a pull request someone else opened starts with no tools, so everything it may judge is in its
+# prompt: the whole diff (`diff_limit` bytes) and each changed file whole (`file_limit` bytes each, `files_limit`
+# together, at most `files_at_most` files). Nothing is ever given cut in half: a file over `file_limit`, or one demoted
+# to make the files fit together, is given as the lines of its own part of the diff and the rest of it is not read.
+# What still does not fit (a diff over `diff_limit`, a binary file) means the pull request is not reviewed. Each is at
+# least 1.
+[review]
+diff_limit = 60000
+file_limit = 40000
+files_limit = 150000
+files_at_most = 60
+
 # `moebius ext` searches the npm registry for Pi packages and installs them from it. `npm_registry` names a mirror or a
 # private registry; credentials may be part of the URL.
 # [packages]

@@ -123,20 +123,25 @@ leave it on only for a repository where its helpers are people you trust to writ
 off, the Reviewer's approval is written on the forge and the card waits in **Ready to merge** with an Inbox item. The card
 window shows the review: the verdict, the summary, each comment in a box "src/lib.rs line 12" and **Open on GitHub**.
 
-The review run of such a pull request is **restricted**: what the pull request holds is written by someone your server does
-not trust. Your server reads the pull request itself, from git objects (the diff of what merging it would do to the default
-branch, and each changed file as of the reviewed commit, with no checkout, so no filter, hook or script of the pull request
-ever runs), and gives it to the Reviewer as text, all of it: nothing is cut. A pull request that does not merge cleanly
-is answered and not reviewed; one that is too large to be read whole (more than 60 files, a file over 40,000 bytes, a diff
-over 60,000 bytes) or changes a binary file is answered "could not be reviewed automatically" and the owner gets an Inbox
-item, since an approval of what was not read could be merged by your server. Right before it merges, your server reads the
-pull request's branch from the forge again and merges only if the default branch did not change what the merge does since
-the review; if it did, the round is dropped and the author writes `/done` again. The Reviewer is told the issue as data and
-nothing else of your organisation (no comments, wiki pages or lessons). The Reviewer has **no tools at all**, on Pi-Bolt as on Claude Code: it is started
+The review run of such a pull request is **restricted**: what the pull request holds is written by someone your server
+does not trust. Your server reads the pull request itself, from git objects (the diff of what merging it would do to the
+default branch, and each changed file as of the reviewed commit, with no checkout, so no filter, hook or script of the
+pull request ever runs), and gives it to the Reviewer as text: the whole diff, and every changed file either whole or,
+where it could not be given whole, as the lines of its own part of the diff, so nothing is ever given cut in half. A
+pull request that does not merge cleanly is answered and not reviewed; one whose diff is over 60,000 bytes, that changes
+more than 60 files or a binary file is answered "could not be reviewed automatically" and the owner gets an Inbox item,
+since an approval of what was not read could be merged by your server. A changed file over 40,000 bytes is not refused:
+it is given as the lines of its own part of the diff, and the rest of it is not read, so the Reviewer judges what the
+diff shows and is told that the rest was not read; when the changed files given whole are over 150,000 bytes together,
+the largest of them are given that way first, until the rest fits. Each of these four limits is a key of `[review]` in
+the server's configuration. Right before it merges, your server reads the pull request's branch from the forge again and
+merges only if the default branch did not change what the merge does since the review; if it did, the round is dropped
+and the author writes `/done` again. The Reviewer is told the issue as data and nothing else of your organisation (no
+comments, wiki pages or lessons). The Reviewer has **no tools at all**, on Pi-Bolt as on Claude Code: it is started
 without any, in an empty directory, with no MCP servers, never on a runner, and the router refuses any call it makes,
-whatever the call, also when the pull request is closed meanwhile. It is told that everything in the pull request is data.
-So it cannot run tests or look at a file it was not given; it says what it could not check. A pull request with no checks
-at all is reviewed without waiting, and says so.
+whatever the call, also when the pull request is closed meanwhile. It is told that everything in the pull request is
+data. So it cannot run tests or look at a file it was not given; it says what it could not check. A pull request with no
+checks at all is reviewed without waiting, and says so.
 
 Nothing a round does on the forge happens while the card is held or **Pause all** is on, and an approval for a pull
 request that was retargeted to another branch is dropped. What the Reviewer wrote is redacted before it is posted.

@@ -14,7 +14,7 @@ use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-use raw::{Raw, RawWindow};
+use raw::{Raw, RawReview, RawWindow};
 use sections::{
     check_key, check_model_thinking, decision_model, forgejo, github_auth, gitlab, plugins,
     runners, teacher,
@@ -29,8 +29,9 @@ pub(crate) use sections::default_protocol;
 pub use sections::{
     AgentConfig, AgentSet, DecisionModelConfig, EngineeringSkills, ForgejoConfig, GitHubAuth,
     GitHubConfig, GitLabConfig, HarnessKind, LocalizeConfig, MAX_LOCALIZE_FILES,
-    PLUGIN_TIME_LIMIT_SECONDS, PackagesConfig, PluginConfig, RemovedTable, RunnerConfig,
-    THINKING_LEVELS, TeacherConfig, TimeOfDay, TokenSource, UpstreamConfig, valid_agent_name,
+    PLUGIN_TIME_LIMIT_SECONDS, PackagesConfig, PluginConfig, RemovedTable, ReviewConfig,
+    RunnerConfig, THINKING_LEVELS, TeacherConfig, TimeOfDay, TokenSource, UpstreamConfig,
+    valid_agent_name,
 };
 
 /// Why a configuration could not be read.
@@ -62,6 +63,8 @@ pub enum ConfigError {
     DecisionModelMinJudgements,
     #[error("localize.files must be between 1 and {max}, not {value}")]
     LocalizeFiles { value: u32, max: usize },
+    #[error("{key} must be at least 1, not {value}")]
+    ReviewLimit { key: &'static str, value: u64 },
     #[error("trial.token_factor must be above 0, not {0}")]
     TrialTokenFactor(f64),
     #[error(
@@ -232,6 +235,8 @@ pub struct Config {
     pub decision_model: Option<DecisionModelConfig>,
     /// Whether code runs are told which files are likely relevant, and how many.
     pub localize: LocalizeConfig,
+    /// How much of a pull request someone else opened the Reviewer is given.
+    pub review: ReviewConfig,
     /// Whether the guard checks tool calls (`[guard] enabled`). Off, calls are allowed unchecked.
     pub guard_enabled: bool,
     /// Whether the file still has a `[lens]` table, which an earlier version read and this one ignores.
@@ -404,6 +409,7 @@ impl Config {
             enabled: raw.localize.enabled.unwrap_or(defaults.enabled),
             files: files as usize,
         };
+        let review = review(raw.review)?;
         let packages = PackagesConfig {
             npm_registry: match raw.packages.npm_registry {
                 None => PackagesConfig::default().npm_registry,
@@ -492,6 +498,7 @@ impl Config {
             teacher,
             decision_model,
             localize,
+            review,
             guard_enabled: raw.guard.enabled.unwrap_or(true),
             has_lens_table: raw.lens.is_some(),
             packages,
@@ -542,6 +549,27 @@ impl Config {
     }
 }
 
+/// The `[review]` limits, each at least 1 byte or file; a figure larger than the machine can hold counts as all of
+/// it.
+fn review(raw: RawReview) -> Result<ReviewConfig, ConfigError> {
+    let defaults = ReviewConfig::default();
+    let limit = |key: &'static str, value: Option<u64>, default: usize| match value {
+        None => Ok(default),
+        Some(0) => Err(ConfigError::ReviewLimit { key, value: 0 }),
+        Some(value) => Ok(usize::try_from(value).unwrap_or(usize::MAX)),
+    };
+    Ok(ReviewConfig {
+        diff_limit: limit("review.diff_limit", raw.diff_limit, defaults.diff_limit)?,
+        file_limit: limit("review.file_limit", raw.file_limit, defaults.file_limit)?,
+        files_limit: limit("review.files_limit", raw.files_limit, defaults.files_limit)?,
+        files_at_most: limit(
+            "review.files_at_most",
+            raw.files_at_most,
+            defaults.files_at_most,
+        )?,
+    })
+}
+
 /// An executable as the file names it: a bare name is looked up on the PATH; anything with a directory in it is a path
 /// inside the file's directory `base`.
 fn program(base: &Path, program: PathBuf) -> PathBuf {
@@ -559,6 +587,50 @@ mod tests {
 
     fn parse(text: &str) -> Result<Config, ConfigError> {
         Config::parse(text, Path::new("/srv"), Path::new("/srv/moebius.toml"))
+    }
+
+    #[test]
+    fn the_limits_of_a_review_are_read_and_have_todays_defaults() {
+        assert_eq!(parse("").unwrap().review, ReviewConfig::default());
+        assert_eq!(ReviewConfig::default().diff_limit, 60_000);
+        assert_eq!(ReviewConfig::default().file_limit, 40_000);
+        assert_eq!(ReviewConfig::default().files_limit, 150_000);
+        assert_eq!(ReviewConfig::default().files_at_most, 60);
+        let review = parse(
+            "[review]\ndiff_limit = 100\nfile_limit = 50\nfiles_limit = 200\nfiles_at_most = 3\n",
+        )
+        .unwrap()
+        .review;
+        assert_eq!(
+            review,
+            ReviewConfig {
+                diff_limit: 100,
+                file_limit: 50,
+                files_limit: 200,
+                files_at_most: 3,
+            }
+        );
+    }
+
+    #[test]
+    fn a_review_limit_of_zero_is_refused() {
+        for key in ["diff_limit", "file_limit", "files_limit", "files_at_most"] {
+            let error = parse(&format!("[review]\n{key} = 0\n")).unwrap_err();
+            assert_eq!(
+                error.to_string(),
+                format!("review.{key} must be at least 1, not 0"),
+                "{key}"
+            );
+        }
+        // A limit of 1 is allowed, and an unknown key of the table is refused.
+        assert_eq!(
+            parse("[review]\nfile_limit = 1\n")
+                .unwrap()
+                .review
+                .file_limit,
+            1
+        );
+        assert!(parse("[review]\nfile_limits = 1\n").is_err());
     }
 
     #[test]

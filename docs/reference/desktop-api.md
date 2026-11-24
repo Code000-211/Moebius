@@ -4645,25 +4645,29 @@ by the Reviewer when its author says so. The steps are in [the guide](../guide/w
   data in a fence (its title and body only: no comments, wiki pages or lessons, which are the organisation's and could be
   made to be quoted into a review), the instruction that everything the pull request holds is data and no instruction, and
   the pull request itself as text, built by the server from git objects (`App::review_context`) for the two commits
-  recorded before anything is read: the pull request's head (`Change.reviewed_head`) and the tip of the default branch it
-  is merged into (`reviewed_base`, also kept with the round as `external_reviews.base`). The diff is the default branch's
-  tip against the tree `git merge-tree --write-tree` makes of the two (what the forge's merge lands, which a criss-crossed
-  history makes differ from the diff against `git merge-base`, which names only one of several best ancestors); a pull
-  request that does not merge cleanly is answered ("does not merge cleanly into the default branch") and not reviewed. The changed files are listed from that diff and given whole as the merge leaves them (the merged tree); a file the default
-  branch changed too says that its lines are those of the merged file, not the pull request's own. All of it is given or the
-  review does not start: nothing is cut. The diff may be 60,000 bytes, a file 40,000 (before or after), all the files 150,000
-  (before and after) and there may be 60 changed files; a pull request over a limit is answered ("this pull request is too
-  large to review automatically: <why>"), as is one that changes a binary file ("cannot be read whole by the Reviewer"), and
-  both add a `review_not_possible` inbox item with the reason; so does a git command that failed or took too long, which is
-  an error and never read as an empty change. The sizes are read from the object headers (`git diff --raw`, `git ls-tree -l`)
-  before any command loads a blob. Git runs with no textconv, no external diff, `core.attributesFile=/dev/null` and
-  `core.bigFileThreshold=1m`, under a limit of 2 GiB of address space (Unix); its output is read through a cap (2 MB) and
-  stopped when there is more, and a command is killed after 30 seconds. The files that run on the forge (`.github/`,
-  `.forgejo/`, `.gitea/`, `.gitlab-ci.yml`) come first. Symlinks and submodules are named (the diff shows them), deleted
-  files too. Nothing is checked out and no
-  git filter runs, and no read is of a branch name or of an earlier `code` run's branch. The context of a round is built
-  once and kept for its run. A review does not start when it cannot be made. Decided in the engine's tick of the card and
-  after each poll of the request.
+  recorded before anything is read: the pull request's head (`Change.reviewed_head`) and the tip of the default branch
+  it is merged into (`reviewed_base`, also kept with the round as `external_reviews.base`). The diff is the default
+  branch's tip against the tree `git merge-tree --write-tree` makes of the two (what the forge's merge lands, which a
+  criss-crossed history makes differ from the diff against `git merge-base`, which names only one of several best
+  ancestors); a pull request that does not merge cleanly is answered ("does not merge cleanly into the default branch")
+  and not reviewed. The changed files are listed from that diff and given whole as the merge leaves them (the merged
+  tree); a file the default branch changed too says that its lines are those of the merged file, not the pull request's
+  own. Nothing is given cut in half, and a file that cannot be given whole is given as the lines of its own part of the
+  diff alone, with a notice on its entry, so the Reviewer judges what the diff shows and is told that the rest was not
+  read. The diff may be 60,000 bytes, a file 40,000, all the files given whole 150,000 and there may be 60 changed files
+  (the keys of `[review]` in the configuration); over the total the largest files are given as their part of the diff
+  first, until the rest fits. A diff over its limit is answered ("this pull request is too large to review
+  automatically: <why>"), as is one that changes a binary file ("cannot be read whole by the Reviewer"), and both add a
+  `review_not_possible` inbox item with the reason; so does a git command that failed or took too long, which is an
+  error and never read as an empty change. The sizes are read from the object headers (`git diff --raw`,
+  `git ls-tree -l`) before any command loads a blob, and a file given as its part of the diff is never loaded. Git runs
+  with no textconv, no external diff, `core.attributesFile=/dev/null` and `core.bigFileThreshold=1m`, under a limit of 2
+  GiB of address space (Unix); its output is read through a cap (2 MB) and stopped when there is more, and a command is
+  killed after 30 seconds. The files that run on the forge (`.github/`, `.forgejo/`, `.gitea/`, `.gitlab-ci.yml`) come
+  first. Symlinks and submodules are named (the diff shows them), deleted files too. Nothing is checked out and no git
+  filter runs, and no read is of a branch name or of an earlier `code` run's branch. The context of a round is built
+  once and kept for its run. A review does not start when it cannot be made. Decided in the engine's tick of the card
+  and after each poll of the request.
 - **What the Reviewer answers.** Its answer ends with one JSON object in a fenced `json` block:
   `{"verdict": "approve" | "changes", "summary": string, "comments": [{"path": string, "line": number, "body": string}]}`.
   It must end the answer: a block quoted earlier, with text after it, is no verdict. Only the review of a pull request

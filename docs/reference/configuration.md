@@ -178,6 +178,25 @@ A project decides for itself in the file `localize` of its settings (as `test-fi
 and `files <n>` (1 to 10) says how many files it names. A line that says anything else is ignored. A project that wants no hint for its
 coding writes `off` there.
 
+## `[review]`
+
+How much of a pull request someone else opened the Reviewer is given (see
+[Working with others](../guide/working-with-others.md) and
+[ADR 0029](../adr/0029-the-reviewer-reads-a-pull-request-when-its-author-says-done.md)). The Reviewer starts with no
+tools, so everything it may judge is in its prompt, and nothing is ever given cut in half: a changed file that is too
+large to be given whole is given as the lines of its own part of the diff, and the rest of it is not read. The table is
+optional; a change needs a restart.
+
+| Key | Type | Default | Meaning and validation |
+|---|---|---|---|
+| `review.diff_limit` | integer | `60000` | How large the diff of the pull request may be, in bytes; a larger one is not reviewed at all. At least 1. |
+| `review.file_limit` | integer | `40000` | How large a changed file may be, in bytes, as the merge leaves it, to be given whole; a larger file is given as the lines of its own part of the diff alone, and the Reviewer is told so on its entry. At least 1. |
+| `review.files_limit` | integer | `150000` | How large the changed files that are given whole may be together, in bytes. Over it the largest of them are given as their part of the diff, one at a time, until the rest fits. At least 1. |
+| `review.files_at_most` | integer | `60` | How many files the pull request may change; one that changes more is not reviewed. At least 1. |
+
+A diff over `review.diff_limit` and a binary file are still refused, with a `review_not_possible` item in the Inbox: an
+approval of what the Reviewer did not read could be merged.
+
 ## `[guard]`
 
 The guard is the built-in decider of `tool_call`: it refuses a call that breaks a built-in safety pattern or a rule (see

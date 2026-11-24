@@ -246,6 +246,7 @@ impl Server {
         app.decisions.share_routed(routed);
         app.checks_timeout = config.checks_timeout;
         app.localize = config.localize;
+        app.review = config.review;
         app.packages = config.packages.clone();
         plugins::route_deciders(&app.decisions, &config);
         // Whether the hint is asked for at all is the routing of `localize`, which can change while the server runs.

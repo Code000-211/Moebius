@@ -1,5 +1,12 @@
 # The Reviewer reads a pull request when its author says it is done
 
+Amended 2026-11-24: the four limits are the keys of `[review]` in the configuration (`diff_limit`, `file_limit`,
+`files_limit`, `files_at_most`), and a changed file over the file limit no longer refuses the round: it is given as the
+lines of its own part of the diff, with a notice on its entry and its blob never loaded, so a large file that the pull
+request barely touches no longer costs the review. When the files given whole are over the total, the largest of them
+are given that way first, until the rest fits. Nothing is given halfway either way: a diff over its limit and a binary
+file are refused as below.
+
 [0027](0027-working-with-people-on-other-servers-through-the-forge.md) follows a pull request someone else opened as a
 change in review, and the owner has the Reviewer read it and merges it by hand. [0028](0028-helpers-take-issues-with-commands-in-comments.md)
 gives helpers `/done`, which with a followed pull request only said thanks. This record has `/done` of the pull request's
