@@ -15,7 +15,7 @@ import { ExternalReview } from "./ExternalReview";
 import { changeOf, forgeName, pullRequestOf } from "./model";
 
 /** The states in which a round holds its pull request or waits for its turn. */
-const ROUND_GOING = new Set(["wanted", "starting", "running", "posting", "approved"]);
+export const ROUND_GOING = new Set(["wanted", "starting", "running", "posting", "approved"]);
 
 export function FollowedRequest({
   board,
