@@ -75,7 +75,8 @@ export function NeedsYouBlock({
     outside && review?.verdict === "changes" && review.state === "posted" && review.current;
   // While a review round holds the pull request, its outcome decides the next step: neither a merge nor another
   // review is offered until it ends (or is ended from the card).
-  const roundGoing = outside && review !== undefined && review !== null && ROUND_GOING.has(review.state);
+  const roundGoing =
+    outside && review !== undefined && review !== null && ROUND_GOING.has(review.state);
   const author = card.change?.outside_author;
   const number = card.number;
   const ready = reason.trim() !== "";
