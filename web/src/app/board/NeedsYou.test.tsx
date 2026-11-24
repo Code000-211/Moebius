@@ -175,6 +175,39 @@ describe("the Moebius needs you block", () => {
     expect(screen.getByRole("button", { name: "Merge" })).toBeTruthy();
   });
 
+  it("offers neither a merge nor another review while a review round is going", () => {
+    const review = {
+      round: 1,
+      round_limit: 3,
+      state: "running" as const,
+      verdict: null,
+      summary: "",
+      comments: [],
+      url: null,
+      head: "abc",
+      current: true,
+    };
+    const change = {
+      id: 8,
+      state: "open",
+      checks: "success" as const,
+      review_verdict: null,
+      outside_author: "alice",
+      external_review: review,
+    };
+    show(item("outside_change", { change: 8 }), null, { change });
+    expect(screen.getByTestId("round-going").textContent).toContain("A review round is going");
+    expect(screen.queryByRole("button", { name: "Merge" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Review with agent" })).toBeNull();
+    // Once the round is over, the choices are back.
+    cleanup();
+    show(item("outside_change", { change: 8 }), null, {
+      change: { ...change, external_review: { ...review, state: "stale" as const } },
+    });
+    expect(screen.queryByTestId("round-going")).toBeNull();
+    expect(screen.getByRole("button", { name: "Merge" })).toBeTruthy();
+  });
+
   it("asks what to do with an issue its assignee says is done: close it, give it back, or release it", () => {
     const { onDecide } = show(
       item("done_asked", { login: "alice", reason: "The assets are cached now." }),

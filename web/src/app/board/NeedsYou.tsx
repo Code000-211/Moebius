@@ -10,6 +10,7 @@ import { Button } from "../../ui/components/Button";
 import { ago } from "../../ui/lib/format";
 import { useNow } from "../../ui/lib/useNow";
 import type { Decision } from "./decisions";
+import { ROUND_GOING } from "./FollowedRequest";
 import {
   DONE_ASKED,
   OUTSIDE_CHANGE,
@@ -72,6 +73,10 @@ export function NeedsYouBlock({
   const review = card.change?.external_review;
   const waitingForAuthor =
     outside && review?.verdict === "changes" && review.state === "posted" && review.current;
+  // While a review round holds the pull request, its outcome decides the next step: neither a merge nor another
+  // review is offered until it ends (or is ended from the card).
+  const roundGoing =
+    outside && review !== undefined && review !== null && ROUND_GOING.has(review.state);
   const author = card.change?.outside_author;
   const number = card.number;
   const ready = reason.trim() !== "";
@@ -97,6 +102,11 @@ export function NeedsYouBlock({
       {waitingForAuthor && (
         <p data-testid="waiting-for-author" className="m-0 text-base text-secondary">
           {`Waiting for @${author ?? "the author"} to push changes after the review. Merge is back once they do.`}
+        </p>
+      )}
+      {roundGoing && (
+        <p data-testid="round-going" className="m-0 text-base text-secondary">
+          A review round is going. Merge is back once it ends.
         </p>
       )}
       {item.kind === DONE_ASKED && reasonOf(item) !== "" && (
@@ -159,7 +169,7 @@ export function NeedsYouBlock({
               </Button>
             </>
           )}
-          {outside && change !== null && (
+          {outside && change !== null && !roundGoing && (
             <>
               <Button
                 variant="secondary"
