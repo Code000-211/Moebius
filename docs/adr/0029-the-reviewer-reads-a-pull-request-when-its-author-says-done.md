@@ -1,11 +1,11 @@
 # The Reviewer reads a pull request when its author says it is done
 
-Amended 2026-11-24: the four limits are the keys of `[review]` in the configuration (`diff_limit`, `file_limit`,
-`files_limit`, `files_at_most`), and a changed file over the file limit no longer refuses the round: it is given as the
-lines of its own part of the diff, with a notice on its entry and its blob never loaded, so a large file that the pull
-request barely touches no longer costs the review. When the files given whole are over the total, the largest of them
-are given that way first, until the rest fits. Nothing is given halfway either way: a diff over its limit and a binary
-file are refused as below.
+Amended 2026-11-24: the reviewer's paragraph below, **The Reviewer reads all of it or nothing**, is rewritten: the four
+limits are the keys of `[review]` in the configuration (`diff_limit`, `file_limit`, `files_limit`, `files_at_most`), and
+a changed file over the file limit no longer refuses the round as it once said, since it is given as the lines of its own
+part of the diff, with a notice on its entry and its blob never loaded, so a large file that the pull request barely
+touches no longer costs the review. When the files given whole are over the total, the largest of them are given that way
+first, until the rest fits. Nothing is given halfway either way: a diff over its limit and a binary file are refused.
 
 [0027](0027-working-with-people-on-other-servers-through-the-forge.md) follows a pull request someone else opened as a
 change in review, and the owner has the Reviewer read it and merges it by hand. [0028](0028-helpers-take-issues-with-commands-in-comments.md)
@@ -64,13 +64,15 @@ server merge what the Reviewer approves. A pull request is somebody else's code,
   commit is recorded before anything is read and every read is of that commit, never of a branch name that may move, so the
   Reviewer reads the tree that is merged, whatever earlier work the card has.
 - **The Reviewer reads all of it or nothing.** An approval of what was not read could be merged by the server, so nothing
-  is cut: the whole diff (60,000 bytes) and every changed file whole (40,000 bytes each, 150,000 together, 60 files) fit,
-  or the pull request is refused with the reason, and so is one that changes a binary file, which no text shows. A refused
-  pull request is answered on the forge and the owner gets a `review_not_possible` inbox item; it is the owner's to read.
-  The sizes are asked of the object headers (`git diff --raw`, `git ls-tree -l`) before any command loads a blob, every
-  command runs with `core.bigFileThreshold=1m`, a limit on its address space (Unix) and a time limit, and a command that
-  does not succeed is an error, never an empty change: a killed git cannot read as "it changes no file". Files that run on
-  the forge (`.github/`, `.forgejo/`, `.gitea/`, `.gitlab-ci.yml`) come first.
+  is cut: the whole diff fits (`diff_limit`, 60,000 bytes), at most `files_at_most` (60) files change, and every changed
+  file is given whole (`file_limit`, 40,000 bytes each) or, over that or where the whole ones are over `files_limit`
+  (150,000 bytes) together, as the lines of its own part of the diff, with a notice on its entry that the rest was not
+  read. A pull request that fits in neither way is refused with the reason, and so is one that changes a binary file, which
+  no text shows; a refused one is answered on the forge and the owner gets a `review_not_possible` inbox item, the owner's
+  to read. The sizes are asked of the object headers (`git diff --raw`, `git ls-tree -l`) before any command loads a blob,
+  every command runs with `core.bigFileThreshold=1m`, a limit on its address space (Unix) and a time limit, and a command
+  that does not succeed is an error, never an empty change: a killed git cannot read as "it changes no file". Files that
+  run on the forge (`.github/`, `.forgejo/`, `.gitea/`, `.gitlab-ci.yml`) come first.
 - **The merge is of what was read.** Besides the pinned head, the server reads the pull request's base from the forge right
   before it merges, brings the clone up to date and merges only if the merge of the head into the default branch's tip
   now does what the merge into the tip that was read did (the same paths become the same files). Otherwise the round is
