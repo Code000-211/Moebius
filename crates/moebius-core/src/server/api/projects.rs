@@ -547,7 +547,7 @@ mod tests {
         assert_eq!(columns.len(), 7);
         assert_eq!(
             columns[4],
-            json!({"name": "Ready for testing", "counts_as": "In review", "custom": true, "script": "testing.luau"})
+            json!({"name": "Ready for testing", "counts_as": "In review", "custom": true, "script": "testing.luau", "lane": false})
         );
         assert_eq!(
             harness.project_file("radiance", "kanban.toml").unwrap(),

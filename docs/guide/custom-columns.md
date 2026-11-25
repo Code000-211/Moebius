@@ -108,6 +108,21 @@ end
 
 The files are also in [`examples/custom-columns/`](../../examples/custom-columns/), where a test runs them.
 
+## A column that queues a job for the test lane
+
+A column that counts as `In review` can say `lane = true`. A card that enters it, once the Reviewer approved its code, is
+queued for the project's [test lane](test-lane.md), which builds, tests and measures the change on a machine of yours;
+the Reviewer's `approve_code` moves a card to a column called `Ready for testing` when the project has one, so that is the
+one to mark:
+
+<!-- kanban -->
+```toml
+[[column]]
+name = "Ready for testing"
+after = "In review"
+lane = true
+```
+
 ## What counts as what
 
 A card in `Ready for testing` or `Being measured` counts as In review, so:

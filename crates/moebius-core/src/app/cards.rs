@@ -415,6 +415,7 @@ impl App {
         });
         self.notify_moved(card_id, &from, column, by);
         self.set_waiting(card_id, None);
+        self.lane_entered(card_id, column);
         self.card(card_id)
     }
 
@@ -448,6 +449,7 @@ impl App {
         });
         self.notify_moved(card_id, from, column, by);
         self.set_waiting(card_id, None);
+        self.lane_entered(card_id, column);
         self.card(card_id).map(Some)
     }
 

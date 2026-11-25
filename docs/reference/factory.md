@@ -40,6 +40,7 @@ source, whatever froze it:
 | `measurement` | `measured: true` on the `merged` line whose `data.change` it names | A measurement came with the change, for a part that keeps its own. |
 | `revert` | a revert | A change was reverted; `detail` is why. |
 | `frozen` | something frozen | What was frozen, and why. |
+| `lane`, `lane_paused` | `lane` of the repository's section | What the [test lane](lanes.md#the-log-and-the-digest) did for a card (`detail` is `<state>: <summary>`), and that a lane paused itself. The section also says, for as long as the repository's lane is not isolated everywhere, `Test lane <name> runs with isolation <value>` with the warning. |
 
 A line is told in the first digest made after it was written, and in no other.
 

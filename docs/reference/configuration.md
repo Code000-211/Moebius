@@ -524,6 +524,38 @@ key must be in the server user's `known_hosts`.
 | `runners.bin_dir` | string | none | An absolute path on the machine where `pi-bolt` and `claude` are; without it they are looked up on the machine's `PATH` for a non-interactive login. |
 | `runners.ssh` | path | `ssh` | The `ssh` program. See [Paths](#paths). |
 
+## `[[lanes]]`
+
+A test lane: a machine on which a change is built, tested and measured once the Reviewer approved its code
+([ADR 0035](../adr/0035-a-test-lane-measures-on-the-owners-own-gpus.md); the contract of what a lane does is
+[the lane](lanes.md)). A lane is one of the [`[[runners]]`](#runners), reached over SSH, or the server itself. A repository
+uses the lane its "Test lane" settings name (`PUT /v1/repositories/{id}/lane`); a lane that no repository names has no
+jobs. Lanes are read when the server starts. There are none by default.
+
+A lane that is a runner needs, on its machine, `sshd` with key login, `git`, `sh`, `timeout` and `sha256sum`, and the
+container program when its isolation asks for one. A lane that is the server needs the same on the server.
+
+| Key | Type | Default | Meaning and validation |
+|---|---|---|---|
+| `lanes.name` | string | required | The name a repository's settings assign it by: letters, digits, `-` and `_`, not `local`, and not the name of another lane (compared without case). |
+| `lanes.runner` | string | none | The `[[runners]]` entry the lane is reached through. Without one, the lane is the server itself. A name that is no runner refuses the file. |
+| `lanes.work_dir` | string | none | An absolute path on the machine, without quotes, backslashes or line breaks, under which the lane keeps its bare clones (`repos/repo-<repository id>.git`) and the directory of each job (`jobs/<id>`). Without it, `<runner's working_dir>/lanes/<name>`. **A lane that is the server itself must name it, and outside `data_dir`** (links followed, and not on the disk of `data_dir` either: see `shared_disk`): a job that fills its disk must not be able to stop the server's store, so the file is refused without it, or with one inside the data directory. Put it on a disk of its own. |
+| `lanes.isolation` | string | `always` | `always`: every command of a job runs in a fresh container. `external_only`: a job for a pull request someone else opened runs in a container and a job for the server's own change runs directly on the machine. `off`: every job runs directly on the machine. While it is not `always` the repository's settings show a warning and the daily digest tells it every day. See [isolation](lanes.md#isolation). |
+| `lanes.runtime` | string | `podman` | The container program on the machine, `podman` or `docker`, or the path of one; one word that does not start with `-`. Looked up on the machine's `PATH` for a non-interactive login. |
+| `lanes.image` | string | none | The container image the commands of a job run in, which must hold the toolchain, since the container has no network. Required unless `isolation` is `off`. One word that does not start with `-`. |
+| `lanes.devices` | array of strings | `["/dev/kfd", "/dev/dri"]` | The device files passed to the container (`--device`), the ones ROCm needs. Absolute paths. |
+| `lanes.groups` | array of strings | `["video", "render"]` | The groups the container's user is added to (`--group-add`), which the devices need. |
+| `lanes.user` | string | `65534:65534` | The unprivileged user and group a container runs as (`--user`). |
+| `lanes.timeout_seconds` | integer | `7200` | How long a job may take altogether, 60 to 86400. A job past it ends `errored`. |
+| `lanes.memory` | string | `16g` | The memory of a container, swap included (`--memory` and `--memory-swap` the same, `--oom-score-adj 1000`, so the kernel stops the container first when the machine runs short). A size such as `16g`, `512m` or a number of bytes, not zero. The container's `/tmp`, which is in memory, is no larger than this nor than 8 GiB. |
+| `lanes.cpus` | string | none | The processors of a container (`--cpus`), a number above zero such as `8` or `2.5`. Without it, all of them. |
+| `lanes.disk` | string | `20g` | A size. The most a job may write altogether (the size of its directory is read every two seconds, and a command that passes it is killed: `the job wrote more than ...`), the largest single file a command may write (`--ulimit fsize`), and the free space the lane's directory needs for a job to start, **besides a reserve of 5 % of the disk's blocks and of its inodes** (checked with `df`; a job that finds less ends `errored` and does not run). A command is also killed when the disk falls under that reserve. The size is the number `timeout 20 du -skx` prints, whatever its exit status (it exits 1 when a file vanishes during the scan, as a build's temporary files do, and that is ignored); a `du` that times out, prints no number or says `Permission denied` (a directory the job made that the machine cannot read, which `du` reports as `cannot read directory 'x': Permission denied`) counts as over the limit; other errors, such as a file or directory that vanished during the scan, are ignored. `du` is run with `LC_ALL=C`, so that its messages are the same on a runner whose account has another language. The disk's blocks and inodes are watched by a loop of their own, with a marker of its own. The size is of the whole directory of the job, so what the head left there can make the command of the merge base that comes next the one that passes it; that is the change's (`failed`, `the change left the job's disk full`), not an error of the lane. A command of the merge base stopped because the **disk of the lane** fell under its reserve is the lane's (`errored`) unless the directory of the job, measured again at that moment, is over its limit, which is the change's as above. When a command of the head has run in the job already, it is `errored` but not counted towards pausing the lane for a pull request someone else opened (its `failed_step` is `disk of the lane`). A container is run with `--log-driver none`, so that the runtime keeps no copy of its output on its own disk. |
+| `lanes.shared_disk` | boolean | `false` | A lane that is the server itself keeps its directory on a disk of its own: at the start of the server, and again before each job, a `work_dir` on the same disk (the same device, links followed) as `data_dir` is refused, since a job that fills it would stop the store. `true` allows it, for a machine with one disk. |
+| `lanes.gpus` | string | none | What a report says of the machine's cards, such as `2x MI300X`. |
+| `lanes.power_cap` | string | none | What a report says of the power cap, such as `750 W`. |
+| `lanes.rocm` | string | none | The ROCm version a report names. |
+| `lanes.driver` | string | none | The driver version a report names, for a machine without ROCm. |
+
 ## `[github]`
 
 Repositories on GitHub are reached in one of two ways, and exactly one is configured, else the file is refused:

@@ -196,3 +196,61 @@ async fn the_digest_tells_nobody_what_a_private_project_holds_unless_they_are_it
         );
     }
 }
+
+// A lane's pause is not a lane's secret to tell: what a card's job printed is not in the Inbox, the log or the digest of
+// anyone who does not see the card.
+#[cfg(unix)] // the helper that pauses a lane for a test runs where the lane tests do
+#[tokio::test]
+async fn what_a_lane_says_of_a_private_card_is_not_in_the_inbox_or_the_digest_of_those_who_do_not_see_it()
+ {
+    let (_dir, state, addr) = start().await;
+    let private = private(&state);
+    let store = &state.app.store;
+    let secret = store.card(private.card).unwrap().unwrap();
+    store
+        .set_repository_lane(private.repository, Some("gpu1"))
+        .unwrap();
+    store
+        .note_activity(
+            "lane",
+            Some(private.repository),
+            Some(secret.number),
+            Some("gpu1"),
+            "failed: the step LANESECRET failed",
+            &json!({ "card": secret.id, "title": secret.title, "job": 1 }),
+        )
+        .unwrap();
+    state.app.pause_lane_for_test(
+        "gpu1",
+        "3 jobs in a row ended; the last: LANESECRET printed a token",
+        Some(secret.id),
+    );
+    let day = store.today().unwrap();
+    let app = state.app.clone();
+    tokio::task::spawn_blocking(move || app.make_digest(&day, None))
+        .await
+        .unwrap()
+        .unwrap()
+        .unwrap();
+    let inbox = |token: String| {
+        let addr = addr.clone();
+        async move {
+            let (_, snapshot) = send(&addr, &token, "GET", "/v1/snapshot").await;
+            snapshot["inbox"].to_string()
+        }
+    };
+    // A member of the project reads the lane's line of its card in the digest.
+    let lea = inbox(private.lea.clone()).await;
+    assert!(lea.contains("LANESECRET"), "{lea}");
+    for token in [&private.ben, &private.olga] {
+        let text = inbox(token.clone()).await;
+        assert!(!text.contains("LANESECRET"), "{text}");
+        assert!(!text.contains(&secret.title), "{text}");
+        // The Inbox still says that a lane stopped, to everyone who sees the Inbox: that is not the card's.
+        assert!(text.contains("stopped itself"), "{text}");
+    }
+    assert!(
+        !lea.contains("printed a token"),
+        "the Inbox item has the public text only: {lea}"
+    );
+}

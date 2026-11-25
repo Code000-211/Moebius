@@ -223,6 +223,23 @@ fn the_custom_columns_example_waits_for_the_measurement_and_then_for_a_label() {
 }
 
 #[test]
+fn the_lane_example_is_a_definition_and_a_column_that_queues_a_job() {
+    let definition =
+        moebius_core::app::lane::definition::parse(&example("lane/lane.toml")).unwrap();
+    let names: Vec<&str> = definition.steps.iter().map(|s| s.name.as_str()).collect();
+    assert_eq!(
+        names,
+        ["build", "card-free tests", "gpu selftests", "measure"]
+    );
+    assert!(definition.measures());
+    let measure = definition.steps[3].measure.as_ref().unwrap();
+    assert!(measure.runs >= 3);
+    let board = moebius_core::app::columns::parse(&example("lane/kanban.toml")).unwrap();
+    let column = board.column("Ready for testing").unwrap();
+    assert!(column.lane && column.counts_as == "In review");
+}
+
+#[test]
 fn the_large_cards_script_gives_a_large_card_the_machine_to_itself() {
     let (_dir, app, engine, repository) =
         engine_with_ready_script(&example("scripts/ready-large-cards-alone.luau"));

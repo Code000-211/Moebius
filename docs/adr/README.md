@@ -36,4 +36,5 @@ One record per decision, numbered in the order they were taken. Where the spec a
 - [0031](0031-one-merge-gate-and-a-brake-for-the-factory.md) one merge gate and a brake for the factory
 - [0032](0032-the-factory-keeps-the-owners-work-small.md) the factory keeps the owner's work small
 - [0033](0033-measurements-and-reviews-flow-without-the-owners-clicks.md) measurements and reviews flow without the owner's clicks
+- [0035](0035-a-test-lane-measures-on-the-owners-own-gpus.md) a test lane measures on the owner's own GPUs
 - [0034](0034-templates-and-agents-that-work-on-the-forge.md) templates for everything written on a forge, and agents that work there as people do

@@ -26,6 +26,7 @@ import type { Decision } from "./decisions";
 import { FollowedRequest } from "./FollowedRequest";
 import { FrozenNotice } from "./FrozenNotice";
 import { CardThread, EditIssueDialog, ReplyField } from "./IssueSections";
+import { LaneReport } from "./LaneReport";
 import {
   type CardStatus,
   cardStatus,
@@ -281,6 +282,7 @@ export function CardContent({
           }}
         />
 
+        <LaneReport card={card.id} />
         <PullFields change={card.change} />
 
         <div className="px-6 pb-6">

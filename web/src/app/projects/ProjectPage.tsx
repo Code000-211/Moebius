@@ -36,6 +36,7 @@ import { ReviewFlow } from "./ReviewFlow";
 import { SettingsPanel } from "./SettingsPanel";
 import { StaleHandling } from "./StaleHandling";
 import { Templates } from "./Templates";
+import { TestLane } from "./TestLane";
 import { WorkingWithOthers } from "./WorkingWithOthers";
 
 export function ProjectPage() {
@@ -150,6 +151,7 @@ function RepositoryView({ repository, projectId }: { repository: Repository; pro
           />
         )}
         {filesOf === null && onForge(repository) && <ReviewFlow repository={repository.id} />}
+        {filesOf === null && onForge(repository) && <TestLane repository={repository.id} />}
         {filesOf === null && onForge(repository) && <StaleHandling repository={repository.id} />}
         {filesOf === null && onForge(repository) && <Templates repository={repository.id} />}
         <PluginSettings repository={repository.id} />

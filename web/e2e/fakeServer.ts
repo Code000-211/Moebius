@@ -16,6 +16,7 @@ import { createFakeChat, type FakeChat } from "./fake/chat";
 import { type CyclesFake, createCyclesFake } from "./fake/cycles";
 import { createFactoryFake, type FactoryFake } from "./fake/factory";
 import { createKindsFake, type KindsFake } from "./fake/kinds";
+import { createLaneFake, type LaneFake } from "./fake/lane";
 import { createMilestonesFake, type MilestonesFake } from "./fake/milestones";
 import { createPackagesFake, type PackagesFake } from "./fake/packages";
 import { createPagesAFake, type PagesAFake } from "./fake/pages-a";
@@ -86,6 +87,8 @@ export interface FakeServer {
   milestones: MilestonesFake;
   /** A repository's stale settings and a project's backlog (e2e/fake/factory.ts). */
   factory: FactoryFake;
+  /** A repository's test lane, the lanes and a card's report of their jobs (e2e/fake/lane.ts). */
+  lane: LaneFake;
   /** The saved views (e2e/fake/views.ts). */
   views: ViewsFake;
   /** The Inbox, Projects, Fleet, Usage, Get started and Settings routes (e2e/fake/pages-a.ts). */
@@ -194,6 +197,7 @@ export async function startFakeServer(): Promise<FakeServer> {
   const cycles = createCyclesFake(broadcast);
   const milestones = createMilestonesFake(broadcast);
   const factory = createFactoryFake();
+  const lane = createLaneFake();
   const views = createViewsFake();
   const pagesB = createPagesBFake();
   const pagesC = createPagesCFake(broadcast);
@@ -381,6 +385,7 @@ export async function startFakeServer(): Promise<FakeServer> {
     if (await cycles.handle(request, response, path)) return;
     if (await milestones.handle(request, response, path)) return;
     if (await factory.handle(request, response, path)) return;
+    if (await lane.handle(request, response, path)) return;
     if (await views.handle(request, response, path)) return;
     if (await packages.handle(request, response, path)) return;
     if (await pagesB.handle(request, response, path)) return;
@@ -485,6 +490,7 @@ export async function startFakeServer(): Promise<FakeServer> {
     cycles,
     milestones,
     factory,
+    lane,
     views,
     pagesA,
     pagesB,

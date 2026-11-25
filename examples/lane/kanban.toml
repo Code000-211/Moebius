@@ -1,0 +1,6 @@
+# The column the Reviewer moves a card to when the code is right and the measurement is missing. A card that enters it is
+# queued for the project's test lane once the Reviewer has approved the code of its change.
+[[column]]
+name = "Ready for testing"
+after = "In review"
+lane = true

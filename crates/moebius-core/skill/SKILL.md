@@ -50,6 +50,7 @@ back here for the exact page it names:
 | A setting, a model, an upstream | `reference/configuration.md` | `"$MOEBIUS" settings set <key>=<value>` | `"$MOEBIUS" settings`; it says when a restart is needed |
 | A repository, an issue, a card moved on | `guide/kanban.md`, `reference/desktop-api.md` | `"$MOEBIUS" repo add`, `issue create`, `inbox act` | `"$MOEBIUS" board` |
 | A project's backlog file made into issues, stale issues and pull requests handled, the daily digest | `guide/software-factory.md`, `reference/factory.md` | `"$MOEBIUS" backlog set\|sync`, `"$MOEBIUS" upkeep`, `"$MOEBIUS" digest` | `"$MOEBIUS" backlog sync <project> --dry-run` says what a sync would do |
+| A repository's pull requests built, tested and measured on the owner's own GPU machine, and how isolated that is | `guide/test-lane.md`, `reference/lanes.md` | `"$MOEBIUS" api PUT /v1/repositories/<id>/lane` (a person only), the lane in `moebius.toml`, `lane.toml` in the project's settings | `"$MOEBIUS" api GET /v1/repositories/<id>/lane` shows the lane, its warning and the latest jobs |
 | A number improved, or an idea turned into issues | `guide/autoresearch.md`, `guide/grilling.md` | `"$MOEBIUS" research new ...`, or a grilling chat | `"$MOEBIUS" research <id>` |
 | Something only the desktop API can do | `guide/desktop-api.md`, `reference/desktop-api.md` | `"$MOEBIUS" api <METHOD> <route> --body <json>` | The answer, and reading the state again |
 

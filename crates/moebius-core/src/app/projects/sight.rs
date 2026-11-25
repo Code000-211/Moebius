@@ -48,6 +48,15 @@ impl Sight {
         }
     }
 
+    /// A sight that hides the projects `ids` (for the tests that need a Unix program).
+    #[cfg(all(test, unix))]
+    pub(crate) fn hiding(ids: &[i64]) -> Self {
+        Self {
+            hidden: ids.iter().copied().collect(),
+            ..Self::default()
+        }
+    }
+
     /// Whether nothing is hidden, so that a list need not be filtered.
     pub fn hides_nothing(&self) -> bool {
         self.hidden.is_empty()

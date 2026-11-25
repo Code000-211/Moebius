@@ -5,6 +5,7 @@
 //! checks of each, and `registries` the package registries.
 
 mod example;
+mod lanes;
 mod raw;
 mod registries;
 mod sections;
@@ -24,6 +25,7 @@ use crate::harness::mcp::valid_variable;
 use crate::router::{Classes, ModelThinking, check_class};
 
 pub use example::EXAMPLE;
+pub use lanes::{Isolation, LANE_TIMEOUT_AT_MOST, LaneConfig, work_dir_problem};
 pub use registries::{DEFAULT_REGISTRY, DEFAULT_REGISTRY_URL, RegistryConfig};
 pub(crate) use sections::default_protocol;
 pub use sections::{
@@ -178,6 +180,8 @@ pub enum ConfigError {
     RunnerMaxRuns { name: String },
     #[error("agents.{agent}: there is no runner named {runner:?}")]
     AgentRunner { agent: String, runner: String },
+    #[error("lanes: the lane {name:?} {what}")]
+    Lane { name: String, what: String },
 }
 
 /// The server's configuration, with every default applied and every path made absolute against the file's directory.
@@ -251,6 +255,8 @@ pub struct Config {
     pub plugins: Vec<PluginConfig>,
     /// The machines that run harnesses over SSH, with their key files made absolute.
     pub runners: Vec<RunnerConfig>,
+    /// The test lanes (ADR 0035).
+    pub lanes: Vec<LaneConfig>,
     /// The package registries, the default one first.
     pub registries: Vec<RegistryConfig>,
     pub agents: BTreeMap<String, AgentConfig>,
@@ -367,6 +373,7 @@ impl Config {
             .unwrap_or_else(|| PathBuf::from("pi-bolt"));
         let plugins = plugins(raw.plugins, base)?;
         let runners = runners(raw.runners, base)?;
+        let lanes = lanes::lanes(raw.lanes, &runners, &data_dir)?;
         let registries = registries::registries(raw.registries, base)?;
         for (name, agent) in &raw.agents {
             if let Some(runner) = &agent.runner
@@ -508,6 +515,7 @@ impl Config {
             workflow_http_hosts,
             plugins,
             runners,
+            lanes,
             registries,
             agents: raw.agents,
             data_dir,

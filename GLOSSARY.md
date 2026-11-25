@@ -102,6 +102,12 @@ A repository's brake: while it is frozen it starts no review round, merges nothi
 person, the label `factory:freeze` or a breaker freezes it; only a person lifts what a person or a breaker froze.
 _Avoid_: lock, pause (which stops all agents at once)
 
+**Test lane**:
+A named machine (one of the runners, or the server itself) on which a change is built, tested and measured at its pinned
+head, once the Reviewer approved its code, one job at a time. The job is the project's `lane.toml`; the lane's isolation
+(`always`, `external_only` or `off`) says whether it runs in a container with no network or directly on the machine.
+_Avoid_: CI, test runner, benchmark box
+
 **Review brief**:
 The files of a repository's default branch that are its rules for the Reviewer of a pull request someone else opened, read
 at the commit the review is of and never from the pull request.

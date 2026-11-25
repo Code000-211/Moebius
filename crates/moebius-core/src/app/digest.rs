@@ -49,6 +49,8 @@ struct Section {
     released: Vec<Line>,
     upkeep: Vec<Line>,
     frozen: Vec<Line>,
+    /// What the test lane did, and its warning while it is not isolated everywhere (ADR 0035).
+    lane: Vec<Line>,
     /// How many lines were left out of each list, by the list's name.
     more: BTreeMap<String, usize>,
 }
@@ -64,6 +66,7 @@ impl Section {
             && self.released.is_empty()
             && self.upkeep.is_empty()
             && self.frozen.is_empty()
+            && self.lane.is_empty()
     }
 
     /// Cuts every list to [`LIST_LIMIT`] lines and remembers how many it cut.
@@ -82,6 +85,7 @@ impl Section {
         cut("released", &mut self.released);
         cut("upkeep", &mut self.upkeep);
         cut("frozen", &mut self.frozen);
+        cut("lane", &mut self.lane);
     }
 }
 
@@ -291,6 +295,23 @@ impl App {
                     ..Line::default()
                 });
             }
+            // A lane that is not isolated everywhere is told every day, for as long as it is so.
+            if let Some(lane) = self
+                .store
+                .repository_lane(repository.id)?
+                .and_then(|name| self.lanes.lane(&name))
+                && let Some(warning) = lane.isolation.warning()
+            {
+                section.lane.push(Line {
+                    title: format!(
+                        "Test lane {} runs with isolation {}",
+                        lane.name,
+                        lane.isolation.as_str()
+                    ),
+                    detail: warning.into(),
+                    ..Line::default()
+                });
+            }
             for card in self.store.cards(repository.id)? {
                 if let Some(held) = &card.held
                     && !card.closed
@@ -382,6 +403,15 @@ impl App {
                 section.upkeep.push(line);
             }
             "frozen" => section.frozen.push(line),
+            "lane" | "lane_paused" => {
+                if a.kind == "lane_paused" {
+                    line.title = format!(
+                        "Test lane {} paused itself",
+                        a.who.clone().unwrap_or_default()
+                    );
+                }
+                section.lane.push(line)
+            }
             _ => {}
         }
         Ok(())
@@ -480,6 +510,15 @@ pub fn digest_text(data: &Value) -> String {
         }
         for l in list(&section, "frozen") {
             out.push(format!("- held {}", name(&l)));
+        }
+        for l in list(&section, "lane") {
+            let detail = l["detail"].as_str().unwrap_or_default();
+            out.push(match l["who"].as_str() {
+                Some(lane) if l["number"].is_i64() => {
+                    format!("- test lane {lane}, {}: {detail}", name(&l))
+                }
+                _ => format!("- {}: {detail}", l["title"].as_str().unwrap_or("Test lane")),
+            });
         }
     }
     out.push(format!(

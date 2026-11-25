@@ -42,6 +42,7 @@ mod intake;
 mod issues;
 mod jira;
 mod kinds;
+pub mod lane;
 mod localize;
 mod milestones;
 mod notices;
@@ -195,6 +196,7 @@ pub use jira::{
     Counts, LinkCounts, Options as JiraOptions, Report as JiraReport, Users as JiraUsers,
 };
 pub use kinds::{CardQuery, KindView};
+pub use lane::{CardLane, LaneRequest, LaneView, RepositoryLane};
 pub use milestones::{MilestoneDetail, MilestoneFields, MilestoneProject, MilestoneView};
 pub use projects::{Member, ProjectRepository, ProjectView, Sight, UNQUOTED};
 pub use snapshot::CardLookups;
@@ -282,6 +284,8 @@ pub struct App {
     harness_repo: OnceLock<Arc<HarnessRepo>>,
     /// The columns of each project, as its `kanban.toml` last read (see `columns`).
     column_cache: Mutex<HashMap<i64, columns::Cached>>,
+    /// The test lanes of the configuration (see `lane`).
+    pub lanes: lane::Lanes,
     /// The wiki's repository, once the server has opened it; it is replaced when a person connects one that the
     /// server could not open at start.
     wiki: RwLock<Option<Arc<crate::wiki::Wiki>>>,
@@ -371,6 +375,7 @@ impl App {
             forges,
             harness_repo: OnceLock::new(),
             column_cache: Mutex::new(HashMap::new()),
+            lanes: lane::Lanes::default(),
             wiki: RwLock::default(),
             wiki_problem: Mutex::default(),
             runs: OnceLock::new(),

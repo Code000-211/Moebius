@@ -6,6 +6,8 @@
 //! script = "testing.luau"   # optional: the script of the class it counts as, when it is left out
 //! after = "In review"       # a built-in or another custom column; Backlog stays first and Done last
 //! counts_as = "In review"   # optional: the class of the column `after` names, when it is left out
+//! lane = true               # optional, only for a column that counts as In review: a card entering it is queued
+//!                           # for the project's test lane (ADR 0035)
 //! ```
 //!
 //! The result is the whole board of the project, left to right: the six built-in columns with the custom ones among
@@ -13,7 +15,7 @@
 
 use serde::Deserialize;
 
-use super::{BACKLOG, BUILT_IN, DONE, built_in};
+use super::{BACKLOG, BUILT_IN, DONE, IN_REVIEW, built_in};
 
 /// The file in a project's settings that defines its custom columns.
 pub const KANBAN_FILE: &str = "kanban.toml";
@@ -30,6 +32,8 @@ pub struct ColumnInfo {
     /// The file of its script in the project's settings (or built into the server, for a built-in one).
     pub script: String,
     pub custom: bool,
+    /// Whether a card that enters the column is queued for the test lane (`lane = true` in `kanban.toml`).
+    pub lane: bool,
 }
 
 /// What kind of problem a project's columns have, for the one who reads it.
@@ -72,6 +76,7 @@ impl Default for ProjectColumns {
                     counts_as: name,
                     script: script.into(),
                     custom: false,
+                    lane: false,
                 })
                 .collect(),
             orphans: Vec::new(),
@@ -128,6 +133,8 @@ struct Raw {
     script: Option<String>,
     after: Option<String>,
     counts_as: Option<String>,
+    #[serde(default)]
+    lane: bool,
 }
 
 /// Whether `file` can name a column's script: a plain `.luau` file name of the project's folder, which is not
@@ -157,6 +164,7 @@ pub fn parse(text: &str) -> Result<ProjectColumns, String> {
         script: Option<String>,
         after: Option<String>,
         counts_as: Option<&'static str>,
+        lane: bool,
     }
     let mut customs: Vec<Custom> = Vec::new();
     for (at, raw) in file.column.iter().enumerate() {
@@ -206,6 +214,7 @@ pub fn parse(text: &str) -> Result<ProjectColumns, String> {
             script: raw.script.clone(),
             after: raw.after.as_ref().map(|a| a.trim().to_string()),
             counts_as,
+            lane: raw.lane,
         });
     }
 
@@ -291,6 +300,15 @@ pub fn parse(text: &str) -> Result<ProjectColumns, String> {
         });
     }
 
+    for &i in &order {
+        if customs[i].lane && class_of[i] != Some(IN_REVIEW) {
+            problems.push(format!(
+                "column {:?}: `lane = true` is for a column that counts as {IN_REVIEW}",
+                customs[i].name
+            ));
+        }
+    }
+
     if !problems.is_empty() {
         return Err(format!("{KANBAN_FILE}: {}", problems.join("; ")));
     }
@@ -311,6 +329,7 @@ pub fn parse(text: &str) -> Result<ProjectColumns, String> {
                     .clone()
                     .unwrap_or_else(|| base.column(class).expect("built-in").script.clone()),
                 custom: true,
+                lane: custom.lane,
             });
         }
     }
@@ -493,5 +512,36 @@ name = "D"
         ] {
             assert!(!safe_script_name(bad), "{bad}");
         }
+    }
+
+    #[test]
+    fn a_column_marked_lane_must_count_as_in_review() {
+        let board =
+            parse("[[column]]\nname = \"Ready for testing\"\nafter = \"In review\"\nlane = true\n")
+                .unwrap();
+        let column = board.column("Ready for testing").unwrap();
+        assert!(column.lane && column.counts_as == "In review");
+        assert!(
+            !board.column("In review").unwrap().lane,
+            "a built-in column has no lane"
+        );
+        assert!(
+            board
+                .views()
+                .iter()
+                .any(|c| c.name == "Ready for testing" && c.lane)
+        );
+        // After a custom column that counts as In review, it counts as it too.
+        assert!(parse("[[column]]\nname = \"A\"\nafter = \"In review\"\n[[column]]\nname = \"B\"\nafter = \"A\"\nlane = true\n").is_ok());
+        let wrong =
+            parse("[[column]]\nname = \"Shipped\"\nafter = \"Ready to merge\"\nlane = true\n")
+                .unwrap_err();
+        assert!(
+            wrong.contains("`lane = true` is for a column that counts as In review"),
+            "{wrong}"
+        );
+        assert!(
+            parse("[[column]]\nname = \"X\"\nafter = \"In review\"\nlane = \"yes\"\n").is_err()
+        );
     }
 }

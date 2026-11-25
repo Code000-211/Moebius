@@ -120,24 +120,9 @@ impl App {
                     )));
                 }
                 Ok(files) => {
-                    // The repository's rules for its reviews are locked too, from the root: a change that rewrote
-                    // them would be believed by every review after it.
-                    let brief: Vec<String> = repository
-                        .review_brief
-                        .iter()
-                        .map(|path| format!("/{}", path.trim_start_matches('/')))
-                        .collect();
-                    let owners = repository.locked_paths.iter().map(String::as_str);
-                    let locked = paths::DEFAULT_LOCKED
-                        .iter()
-                        .copied()
-                        .chain(owners)
-                        .chain(brief.iter().map(String::as_str));
-                    let hit = files.iter().find_map(|file| {
-                        paths::locked_by(locked.clone(), file)
-                            .map(|pattern| (file, pattern.to_string()))
-                    });
-                    if let Some((file, pattern)) = hit {
+                    let harness =
+                        card.map_or_else(Vec::new, |card| self.lane_harness_patterns(card));
+                    if let Some((file, pattern)) = Self::locked_hit(repository, files, &harness) {
                         return Ok(Err(format!(
                             "the change touches {file}, which is locked by {pattern}: only a person merges it"
                         )));
@@ -155,6 +140,55 @@ impl App {
         )
     }
 
+    /// The first of `files` that a locked path of the repository holds, and the pattern that locks it. The locked paths are
+    /// the built-in ones, the owner's, and the repository's rules for its reviews, which are locked from the root: a change
+    /// that rewrote them would be believed by every review after it. `harness` are the paths of the test lane's measuring
+    /// harness (see `app::lane`), which only a person merges too.
+    pub(in crate::app) fn locked_hit(
+        repository: &Repository,
+        files: &[String],
+        harness: &[String],
+    ) -> Option<(String, String)> {
+        let brief: Vec<String> = repository
+            .review_brief
+            .iter()
+            .map(|path| format!("/{}", path.trim_start_matches('/')))
+            .collect();
+        let owners = repository.locked_paths.iter().map(String::as_str);
+        let locked = paths::DEFAULT_LOCKED
+            .iter()
+            .copied()
+            .chain(owners)
+            .chain(harness.iter().map(String::as_str))
+            .chain(brief.iter().map(String::as_str));
+        let hit = files.iter().find_map(|file| {
+            paths::locked_by(locked.clone(), file)
+                .map(|pattern| (file.clone(), pattern.to_string()))
+        });
+        // A file at the place of a directory above a harness path (a link `ci` for `ci/bench`) is a change of the harness too.
+        hit.or_else(|| {
+            files.iter().find_map(|file| {
+                harness
+                    .iter()
+                    .find(|pattern| {
+                        let path = pattern.trim_matches('/');
+                        path.starts_with(&format!("{}/", file.trim_matches('/')))
+                    })
+                    .map(|pattern| (file.clone(), pattern.clone()))
+            })
+        })
+    }
+
+    /// [`App::locked_hit`], for the tests of other modules (which need a Unix program to run).
+    #[cfg(all(test, unix))]
+    pub(crate) fn locked_hit_for_test(
+        repository: &Repository,
+        files: &[String],
+        harness: &[String],
+    ) -> Option<(String, String)> {
+        Self::locked_hit(repository, files, harness)
+    }
+
     /// Whether a measurement is accepted for the change's current head.
     fn measured(&self, change: &Change) -> Result<bool> {
         match change.head.as_deref() {
@@ -165,7 +199,7 @@ impl App {
 
     /// The paths merging the change into the default branch changes, read from git objects only; why not, when they
     /// cannot be.
-    fn merge_paths(
+    pub(in crate::app) fn merge_paths(
         &self,
         repository: &Repository,
         change: &Change,

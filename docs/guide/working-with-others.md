@@ -238,6 +238,9 @@ The output is the same, byte for byte, on all six runs.
 - The Reviewer judges the measurement against your review brief. `approve` accepts it for that commit and merges through
   the gate (or leaves the pull request in **Ready to merge** if you merge by hand); `approve_code` says it is still not
   enough and what is missing; `changes` is as ever.
+A machine of your own can make the measurement instead of a person: a [test lane](test-lane.md) builds, tests and
+measures the pull request at its pinned head and hands the numbers to the Reviewer by the same path, with no comment
+posted.
 - A new commit on the pull request makes a measurement count for nothing; the issue says so.
 - The measurement is kept in the card window (who measured which commit, and what came of it) and in the daily digest. It is
   **not** committed to your repository: the server writes no file to your default branch. A column script or your own

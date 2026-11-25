@@ -760,7 +760,7 @@ async fn events_of_a_private_project_reach_its_members_only() {
 /// a workflow, by name, a kind of issues or a template of the organisation, a person's own notice, a wiki page, its labels, its links or the pages that link to a card (a private project's pages and cards are
 /// left out by the wiki's own handlers); or that checks what it names in its own handler (a card by its key, a milestone of the
 /// organisation, whose cards are counted and listed with `App::may_see_project`).
-const UNGUARDED: [&str; 34] = [
+const UNGUARDED: [&str; 35] = [
     "/v1/cards/by-key/",
     "/v1/templates/",
     "/v1/kinds/",
@@ -797,6 +797,8 @@ const UNGUARDED: [&str; 34] = [
     "/v1/outgoing-webhooks/",
     // The digest is the owner's, no project's: it names an inbox item, and only a digest's.
     "/v1/digest/",
+    // A test lane belongs to the server, no project's: its name is in the configuration.
+    "/v1/lanes/",
     "/api/hooks/",
 ];
 

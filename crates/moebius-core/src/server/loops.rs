@@ -287,6 +287,26 @@ pub(super) async fn levels(server: Arc<Server>) {
     server.router.keep_levels(LEVELS_REFRESH).await
 }
 
+/// How often the test lane looks for cards to queue, results to hand on and jobs to start.
+const LANE_PASS: Duration = Duration::from_secs(5);
+
+/// Runs the test lane's pass every [`LANE_PASS`] (see `app::lane`) until the future is dropped; each job it starts runs
+/// on a thread of its own, so the pass is never held up by one. A server with no lane does nothing.
+pub(super) async fn lane(server: Arc<Server>) {
+    let mut interval = interval(LANE_PASS);
+    loop {
+        interval.tick().await;
+        let app = server.app.clone();
+        let _ = tokio::task::spawn_blocking(move || {
+            for job in app.lane_pass() {
+                let app = app.clone();
+                std::thread::spawn(move || app.run_lane_job(job));
+            }
+        })
+        .await;
+    }
+}
+
 /// Does `work` every `period` on a thread that may block, one at a time, until the future is dropped.
 pub(super) async fn every(server: Arc<Server>, period: Duration, work: fn(&Server)) {
     let mut interval = interval(period);

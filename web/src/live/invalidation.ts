@@ -125,6 +125,14 @@ export function invalidates(event: ServerEvent): QueryKey[] {
   }
   if (event.kind === "notice_added" || event.kind === "notice_read") stale.push(keys.notices);
   if (event.kind === "run_started" || event.kind === "run_ended") stale.push(keys.runs);
+  // A job of the test lane moves with its card (ADR 0035): the repository's settings list the latest jobs.
+  if (
+    event.kind === "card_updated" ||
+    event.kind === "card_moved" ||
+    event.kind === "repository_updated"
+  ) {
+    stale.push(keys.lanes);
+  }
   if (DIFF_KINDS.has(event.kind)) stale.push(keys.diffs);
   if (event.kind === "port_opened" || event.kind === "port_closed") stale.push(keys.ports);
   if (event.kind === "run_ended") stale.push(keys.usage, keys.analytics);
