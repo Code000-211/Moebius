@@ -204,6 +204,25 @@ program = "claude"
 # bin_dir = "/usr/local/bin"              # where pi-bolt and claude are on the machine; without it, its PATH
 # ssh = "ssh"                             # the ssh program
 
+# A test lane: a machine a change is built, tested and measured on once the Reviewer approved its code (see
+# docs/reference/lanes.md). It is the server itself, or one of the [[runners]]; a repository's settings say which lane it
+# uses. One job runs on a lane at a time.
+# [[lanes]]
+# name = "gpu1"
+# runner = "gpu-box"                      # a [[runners]] name; without it the lane is the server itself
+# work_dir = "/srv/lanes/gpu1"            # absolute, on the machine; without it, the runner's working_dir/lanes/<name>
+# isolation = "always"                    # always (a fresh container for every command), external_only or off
+# runtime = "podman"                      # or "docker"
+# image = "rocm/dev-ubuntu-24.04:6.2"     # the container image; needed unless isolation = "off"
+# devices = ["/dev/kfd", "/dev/dri"]      # passed through to the container
+# groups = ["video", "render"]
+# user = "65534:65534"                    # the unprivileged user of the container
+# timeout_seconds = 7200                  # how long a job may take altogether
+# gpus = "2x MI300X"                      # what a report says of the machine
+# power_cap = "750 W"
+# rocm = "6.2.1"
+# driver = "24.30"
+
 # A registry of packages: a git repository with an index.toml at its root (see docs/reference/packages.md). The registry
 # `moebius-plugins`, Moebius's own, is always there; an entry named like it replaces its url. `moebius pkg` installs
 # plugins, workflows, rules and skills from the registries.

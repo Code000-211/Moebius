@@ -1,0 +1,29 @@
+# The job of a test lane for a GPU inference engine whose merge bar is a measurement: build, the tests that need no card,
+# the selftests that do, then the measurement before (at the merge base) and after (at the head), three runs of each,
+# taking turns. The commands are the repository's own: change them.
+
+[[step]]
+name = "build"
+command = "./build.sh"
+timeout_seconds = 3600
+on = "both"          # the merge base is built too: the measurement needs both
+
+[[step]]
+name = "card-free tests"
+command = "tests/r4d_emu && ./sched_test && ./hyv4flash_arch_test"
+timeout_seconds = 900
+
+[[step]]
+name = "gpu selftests"
+command = "./gpu_selftest.sh"
+timeout_seconds = 1800
+
+[[step]]
+name = "measure"
+command = "./kbench.sh"
+timeout_seconds = 1200
+[step.measure]
+runs = 3                          # at least three of each side
+prefix = "MEASURE "               # lines such as `MEASURE decode_tps 41.5 tok/s`
+json = "out/kbench.json"          # and the rows of this file
+parity_file = "out/logits.bin"    # its bytes must be the same in every run, before and after

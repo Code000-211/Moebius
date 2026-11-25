@@ -524,6 +524,34 @@ key must be in the server user's `known_hosts`.
 | `runners.bin_dir` | string | none | An absolute path on the machine where `pi-bolt` and `claude` are; without it they are looked up on the machine's `PATH` for a non-interactive login. |
 | `runners.ssh` | path | `ssh` | The `ssh` program. See [Paths](#paths). |
 
+## `[[lanes]]`
+
+A test lane: a machine on which a change is built, tested and measured once the Reviewer approved its code
+([ADR 0035](../adr/0035-a-test-lane-measures-on-the-owners-own-gpus.md); the contract of what a lane does is
+[the lane](lanes.md)). A lane is one of the [`[[runners]]`](#runners), reached over SSH, or the server itself. A repository
+uses the lane its "Test lane" settings name (`PUT /v1/repositories/{id}/lane`); a lane that no repository names has no
+jobs. Lanes are read when the server starts. There are none by default.
+
+A lane that is a runner needs, on its machine, `sshd` with key login, `git`, `sh`, `timeout` and `sha256sum`, and the
+container program when its isolation asks for one. A lane that is the server needs the same on the server.
+
+| Key | Type | Default | Meaning and validation |
+|---|---|---|---|
+| `lanes.name` | string | required | The name a repository's settings assign it by: letters, digits, `-` and `_`, not `local`, and not the name of another lane (compared without case). |
+| `lanes.runner` | string | none | The `[[runners]]` entry the lane is reached through. Without one, the lane is the server itself. A name that is no runner refuses the file. |
+| `lanes.work_dir` | string | none | An absolute path on the machine, without quotes, backslashes or line breaks, under which the lane keeps its bare clones (`repos/repo-<repository id>.git`) and the directory of each job (`jobs/<id>`). Without it, `<runner's working_dir>/lanes/<name>`, or `<data_dir>/lanes/<name>` for the server. |
+| `lanes.isolation` | string | `always` | `always`: every command of a job runs in a fresh container. `external_only`: a job for a pull request someone else opened runs in a container and a job for the server's own change runs directly on the machine. `off`: every job runs directly on the machine. While it is not `always` the repository's settings show a warning and the daily digest tells it every day. See [isolation](lanes.md#isolation). |
+| `lanes.runtime` | string | `podman` | The container program on the machine, `podman` or `docker`, or the path of one; one word that does not start with `-`. Looked up on the machine's `PATH` for a non-interactive login. |
+| `lanes.image` | string | none | The container image the commands of a job run in, which must hold the toolchain, since the container has no network. Required unless `isolation` is `off`. One word that does not start with `-`. |
+| `lanes.devices` | array of strings | `["/dev/kfd", "/dev/dri"]` | The device files passed to the container (`--device`), the ones ROCm needs. Absolute paths. |
+| `lanes.groups` | array of strings | `["video", "render"]` | The groups the container's user is added to (`--group-add`), which the devices need. |
+| `lanes.user` | string | `65534:65534` | The unprivileged user and group a container runs as (`--user`). |
+| `lanes.timeout_seconds` | integer | `7200` | How long a job may take altogether, 60 to 86400. A job past it ends `errored`. |
+| `lanes.gpus` | string | none | What a report says of the machine's cards, such as `2x MI300X`. |
+| `lanes.power_cap` | string | none | What a report says of the power cap, such as `750 W`. |
+| `lanes.rocm` | string | none | The ROCm version a report names. |
+| `lanes.driver` | string | none | The driver version a report names, for a machine without ROCm. |
+
 ## `[github]`
 
 Repositories on GitHub are reached in one of two ways, and exactly one is configured, else the file is refused:

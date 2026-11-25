@@ -230,6 +230,8 @@ pub(super) struct Raw {
     #[serde(default)]
     pub(super) runners: Vec<RunnerConfig>,
     #[serde(default)]
+    pub(super) lanes: Vec<super::LaneConfig>,
+    #[serde(default)]
     pub(super) registries: Vec<RegistryConfig>,
     #[serde(default)]
     pub(super) agents: BTreeMap<String, AgentConfig>,

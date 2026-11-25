@@ -412,6 +412,10 @@ const FILES: &[(&str, &str)] = &[
         include_str!("../../../../docs/guide/software-factory.md"),
     ),
     (
+        "guide/test-lane.md",
+        include_str!("../../../../docs/guide/test-lane.md"),
+    ),
+    (
         "guide/working-with-others.md",
         include_str!("../../../../docs/guide/working-with-others.md"),
     ),
@@ -454,6 +458,10 @@ const FILES: &[(&str, &str)] = &[
     (
         "reference/harness-configuration.md",
         include_str!("../../../../docs/reference/harness-configuration.md"),
+    ),
+    (
+        "reference/lanes.md",
+        include_str!("../../../../docs/reference/lanes.md"),
     ),
     (
         "reference/packages.md",

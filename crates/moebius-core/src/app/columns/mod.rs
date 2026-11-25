@@ -54,6 +54,9 @@ pub struct ColumnView {
     pub custom: bool,
     /// The file of its script in the project's settings.
     pub script: String,
+    /// Whether a card that enters it is queued for the test lane (`lane = true`).
+    #[serde(default)]
+    pub lane: bool,
 }
 
 impl ProjectColumns {
@@ -66,6 +69,7 @@ impl ProjectColumns {
                 counts_as: c.counts_as.to_string(),
                 custom: c.custom,
                 script: c.script.clone(),
+                lane: c.lane,
             })
             .collect()
     }

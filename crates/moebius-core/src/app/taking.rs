@@ -748,6 +748,8 @@ impl App {
         if let Some(old) = change.head.as_deref() {
             self.measurement_head_moved(change, old, head)?;
         }
+        // A job of the test lane for the old head counts for nothing either (ADR 0035).
+        self.lane_head_moved(change, head)?;
         Ok(())
     }
 

@@ -238,6 +238,20 @@ fn recording_api(
         lua.create_function(|_, ()| Ok(None::<Table>))?,
     )?;
 
+    let log = record.clone();
+    m.set(
+        "lane_job",
+        lua.create_function(move |lua, ()| {
+            log("asked the test lane for a job".into());
+            let table = lua.create_table()?;
+            table.set("id", 1)?;
+            table.set("state", "queued")?;
+            table.set("lane", "lane")?;
+            table.set("head", "0000000000000000000000000000000000000000")?;
+            Ok((Some(table), None::<String>))
+        })?,
+    )?;
+
     for (function, place) in [
         ("run_test", "the change"),
         ("run_test_at_base", "the base commit"),

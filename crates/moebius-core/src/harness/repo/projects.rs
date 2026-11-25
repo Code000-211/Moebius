@@ -16,6 +16,7 @@ use super::HarnessRepo;
 use super::edits::{Edit, remove_if_there};
 use super::repositories::{DIR as REPOSITORIES_DIR, reserved_name};
 use crate::app::columns::{KANBAN_FILE, safe_script_name};
+use crate::app::lane::definition::{self as lane_definition, LANE_FILE};
 use crate::app::{App, AppError, Result};
 use crate::board::{Kanban, built_in_script};
 use crate::decide::Actor;
@@ -38,10 +39,14 @@ const MOVE_WORKFLOWS_KIND: &str = "move_workflows";
 const RENAME_KIND: &str = "rename_project";
 
 /// Whether `file` is one of a project's files: the script of a column of the default Kanban, such as `ready.luau`,
-/// the project's `kanban.toml` that defines its custom columns, or a script file such a column names (a plain
+/// the project's `kanban.toml` that defines its custom columns, its `lane.toml` that defines the job of its test lane,
+/// or a script file such a column names (a plain
 /// `.luau` file name, see `app::columns::safe_script_name`).
 pub fn is_project_file(file: &str) -> bool {
-    built_in_script(file).is_some() || file == KANBAN_FILE || safe_script_name(file)
+    built_in_script(file).is_some()
+        || file == KANBAN_FILE
+        || file == LANE_FILE
+        || safe_script_name(file)
 }
 
 /// Whether the project name `name` can be a folder on every system: not empty, not starting with a dot, not ending
@@ -125,6 +130,12 @@ impl HarnessRepo {
                 .find(|p| p.name == name)
                 .ok_or_else(|| AppError::NotFound(format!("project {name}")))?;
             app.check_kanban_save(&project, text)?;
+        }
+        if file == LANE_FILE
+            && let Some(text) = text
+        {
+            // What a lane runs on the owner's machine is checked before it is kept.
+            lane_definition::parse(text).map_err(AppError::Invalid)?;
         }
         let path = format!("{DIR}/{name}/{file}");
         context.insert("project".into(), name.into());

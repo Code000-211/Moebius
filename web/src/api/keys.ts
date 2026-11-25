@@ -26,6 +26,11 @@ export const keys = {
   backlog: (project: number) => ["backlog", project] as const,
   /** A repository's review flow (ADR 0033). */
   flow: (repository: number) => ["flow", repository] as const,
+  /** Every read of the test lane (ADR 0035): a repository's settings and its jobs go stale with the cards. */
+  lanes: ["lane"] as const,
+  repositoryLane: (repository: number) => ["lane", "repository", repository] as const,
+  /** A card's report of the lane: under `cards`, so a card's events make it stale. */
+  cardLane: (card: number) => ["card", card, "lane"] as const,
   /** What a repository's files page has read: directories, one file, the paths for "Go to file", a search. */
   files: (repository: number) => ["files", repository] as const,
   tree: (repository: number, directory: string) =>

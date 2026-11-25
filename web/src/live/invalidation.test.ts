@@ -95,6 +95,14 @@ describe("invalidates", () => {
     }
   });
 
+  it("makes the test lane's reads stale with a card's events, and a card's report with the card", () => {
+    for (const kind of ["card_updated", "card_moved", "repository_updated"]) {
+      expect(invalidates({ kind, data: {} })).toContainEqual(keys.lanes);
+    }
+    expect(keys.cardLane(7).slice(0, keys.cards.length)).toEqual([...keys.cards]);
+    expect(keys.repositoryLane(3).slice(0, keys.lanes.length)).toEqual([...keys.lanes]);
+  });
+
   it("makes the notices stale when one is added or read, and who follows a card with the card", () => {
     expect(invalidates({ kind: "notice_added", data: {} })).toContainEqual(keys.notices);
     expect(invalidates({ kind: "notice_read", data: {} })).toContainEqual(keys.notices);

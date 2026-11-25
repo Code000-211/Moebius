@@ -119,7 +119,7 @@ fn all_blocks(language: &str) -> Vec<Block> {
 
 // ---- The pages -----------------------------------------------------------------------------------------------
 
-const PAGES: [&str; 15] = [
+const PAGES: [&str; 16] = [
     "README.md",
     "column-scripts.md",
     "custom-columns.md",
@@ -135,6 +135,7 @@ const PAGES: [&str; 15] = [
     "running-moebius.md",
     "desktop-app.md",
     "workflows.md",
+    "test-lane.md",
 ];
 
 #[test]
@@ -186,6 +187,7 @@ fn every_toml_block_is_a_configuration_unless_it_says_skip() {
     let mut agent_files = 0;
     let mut workflows = 0;
     let mut kanbans = 0;
+    let mut lanes = 0;
     for block in all_blocks("toml") {
         match block.marker.as_deref() {
             Some("skip") => continue,
@@ -199,6 +201,12 @@ fn every_toml_block_is_a_configuration_unless_it_says_skip() {
                 moebius_core::app::columns::parse(&block.text)
                     .unwrap_or_else(|e| panic!("{}: {e}", block.name()));
                 kanbans += 1;
+                continue;
+            }
+            Some("lane") => {
+                moebius_core::app::lane::definition::parse(&block.text)
+                    .unwrap_or_else(|e| panic!("{}: {e}", block.name()));
+                lanes += 1;
                 continue;
             }
             Some("workflow") => {
@@ -225,6 +233,7 @@ fn every_toml_block_is_a_configuration_unless_it_says_skip() {
     assert!(agent_files >= 2, "only {agent_files} agent files found");
     assert!(workflows >= 1, "only {workflows} workflow files found");
     assert!(kanbans >= 1, "no kanban.toml found");
+    assert!(lanes >= 1, "no lane.toml found");
 }
 
 #[test]

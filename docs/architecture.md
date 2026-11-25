@@ -603,6 +603,15 @@ At the top:
 | `app/factory/gate.rs` | The merge gate every merge the server makes goes through (`merge_one`): frozen, hold and pause, checks, measurement, locked paths and the rules as the decision `merge_check`; a refusal puts the card in Ready to merge with an Inbox item that names the reason. |
 | `app/factory/freeze.rs` | Freezing a repository: by a person, by the label `factory:freeze`, or by a breaker (two reverts in seven days, 80% of the day's tokens, a failed nightly check); what a frozen repository does not do, and who lifts it. |
 | `app/factory/paths.rs` | Path globs for the paths that never merge without a person, and the built-in list. |
+| `app/lane/mod.rs` | The test lane ([ADR 0035](adr/0035-a-test-lane-measures-on-the-owners-own-gpus.md)): the lanes of the configuration, kept where the app can ask for them, and the modules of the part. |
+| `app/lane/definition.rs` | A project's job, `projects/<project>/lane.toml`: steps with commands and time limits, which of them measure, and the checks that refuse a definition as a whole. |
+| `app/lane/request.rs` | Queueing a job for a change at its head (a card entering a `lane = true` column, `moebius.lane_job()`, a person, the lane's pass) and everything that stops one: freeze, hold, pause, locked path, no review verdict yet; and the pass that starts the next job of each free lane. |
+| `app/lane/exec.rs` | Running a command on a lane's machine, the server or a runner over SSH, with nothing of the server's environment; the arguments of the container every command of an isolated job runs in; sending the pinned commits to the machine. |
+| `app/lane/job.rs` | Running one job: the preflight (a missing container runtime refuses the job), the pinned checkouts, the steps, a measuring step's runs of the merge base and the head by turns, and the end of the job. |
+| `app/lane/rows.rs` | The rows of a measurement read from a step's output lines or a JSON file it wrote, treated as data. |
+| `app/lane/report.rs` | The report of a job (the machine, the steps, every run), the measurement text the Reviewer reads, the section of its prompt, and the one reply written on the pull request when a step fails. |
+| `app/lane/results.rs` | What the end of a job does: the failure answered and the card sent back to the author, the measurement handed to the Reviewer by the path of a measurer's comment, a lane that paused itself, and what a new push cancels. |
+| `app/lane/view.rs` | The lane as the API shows it: a repository's "Test lane" settings and a card's report. |
 | `app/review_sweep.rs` | Ending the rounds of the Reviewer that cannot end by themselves: the sweep of rounds left starting or writing a review, a closed pull request's rounds, and a person's end of a round. |
 | `app/review_context.rs` | What the Reviewer of a pull request someone else opened is given to read: the diff and the changed files as of the reviewed commit, built from git objects alone (no checkout, no filters; a changed file too large to give whole is given as the lines of its own part of the diff, and over the total the largest whole files are given so first, sizes read from object headers first), as text for its prompt, and the check that the default branch did not change what the merge does since the review. |
 | `app/taking.rs` | Working with people on other servers through the forge ([ADR 0027](adr/0027-working-with-people-on-other-servers-through-the-forge.md)): taking an issue assigns the person on the forge, an issue someone else took is left alone, the ready label kept on the issues that are ready, and the pull requests of people on other servers followed to their merge or close. |
@@ -671,6 +680,7 @@ At the top:
 | `config/raw.rs` | The file as it is written: every key optional, unknown keys refused. |
 | `config/registries.rs` | The package registries from `[[registries]]`, with the default one first. |
 | `config/sections.rs` | The types of the sections (the router's upstreams, the GitHub App or access token, the teacher, the decision model, the agents) and their checks. |
+| `config/lanes.rs` | The test lanes (`[[lanes]]`): where each is, how it isolates (`always`, `external_only`, `off`), what a report says of its machine, and their checks. |
 
 `router/`, the model provider:
 
@@ -716,6 +726,7 @@ At the top:
 | `store/tending.rs` | What the store keeps for the software factory: the log the digest reads, the days a digest was made, when each issue was taken, a repository's stale settings and a project's backlog. |
 | `store/commands.rs` | What the store keeps for commands in issue comments: the repository's settings for them, the newest comment read per issue, the login a card was taken by command, and how many issues a login holds. |
 | `store/flow.rs` | What keeps measurements and reviews flowing: each repository's flow settings, the measurements a measurer posted as comments, when the checks of a head turned green, and the pull requests that name no issue. |
+| `store/lane.rs` | What the test lane keeps: which lane a repository uses, the jobs of every lane with the lock that lets one run at a time, and the lanes that paused themselves. |
 | `store/factory.rs` | The software factory's state: a repository's factory settings and freeze, the commit a change merged as, accepted measurements, reverts kept once and the breakers that tripped. |
 | `store/reviews.rs` | The rounds of the Reviewer on followed pull requests (state, head, verdict, summary, comments on lines, the review's address) and the repository's `merge_reviewed`. |
 | `store/taking.rs` | What a server knows of who took an issue: a person's logins on the forges, the logins an issue is assigned to, why an assignment failed, and a repository's settings for working with others. |
@@ -759,7 +770,7 @@ At the top:
 |---|---|
 | `server/mod.rs` | Wires everything from the configuration and serves the desktop API, the router and the loops. |
 | `server/leftovers.rs` | What a server that stopped left going, ended at the next start: its runs failed and their worktrees removed, its Retros, research and trials set back. |
-| `server/loops.rs` | The board's tick, the polls of GitHub, GitLab and Forgejo (also at once when a webhook wakes one), the refresh of the clones every 30 seconds, and the hour's ask of the upstreams for the reasoning level names their models take. |
+| `server/loops.rs` | The board's tick, the polls of GitHub, GitLab and Forgejo (also at once when a webhook wakes one), the test lane's pass every few seconds, the refresh of the clones every 30 seconds, and the hour's ask of the upstreams for the reasoning level names their models take. |
 | `server/plugins.rs` | Starting the plugins in their own process that `[[plugins]]` names, with their standard error in `<data_dir>/plugins/<name>.log`, redacted; holding one that is off with the manifest it last sent (`<data_dir>/plugins/<name>.manifest.json`); routing the deciders and building the launchers from the plugins that are on; and turning a plugin off or on while the server runs (`set_enabled`). |
 | `server/packages/mod.rs` | The package manager: the errors, the registries' catalog, the choice of a version, and search, info, list, install, update and remove (see `docs/reference/packages.md`). |
 | `server/packages/version.rs` | Versions and the ranges of Moebius versions a package works with. |
@@ -778,6 +789,7 @@ At the top:
 | `server/commands_tests.rs` | For the tests only: commands in issue comments, against the fake GitHub. |
 | `server/taking_tests.rs` | For the tests only: working with people on other servers, against the fake GitHub. |
 | `server/flow_tests.rs` | For the tests only: measurements read from comments, review on green checks and pull requests that name no issue, against the fake GitHub. |
+| `server/lane_tests.rs` | For the tests only: the test lane against the fake GitHub, a fake `ssh` and a fake container runtime that records its arguments. |
 | `server/status_tests.rs` | For the tests only: status labels on issues following moves and the finer states, against the fake GitHub. |
 | `server/factory_tests.rs` | For the tests only: the merge gate, the freeze and its breakers, the review brief and `approve_code`, against the fake GitHub. |
 | `server/reviews_tests.rs` | For the tests only: the review of a followed pull request after `/done`, against the fake GitHub. |
@@ -791,6 +803,7 @@ At the top:
 | `server/api/assignees.rs` | The routes that give a card or an inbox item to people. |
 | `server/api/issues.rs` | The issue tracker's routes: the issue list and one issue, parent, labels, blockers, claim, close and reopen, comments. |
 | `server/api/factory.rs` | The software factory's routes: a repository's stale settings, a project's backlog and its sync, and making the digest now. |
+| `server/api/lane.rs` | The test lane's routes: a repository's lane, the lanes and resuming one, and a card's report. |
 | `server/api/repositories.rs` | Adding and editing repositories, and their column scripts and files. |
 | `server/api/analytics.rs` | The analytics of a window of days, narrowed by repository and agent. |
 | `server/api/cycles.rs` | The cycles: a project's list, making, reading, editing, deleting and closing one, and a card's cycle. |

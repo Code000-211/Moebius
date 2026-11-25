@@ -33,6 +33,10 @@
 //!   names their repositories, and moves the card to "Done"; the judgement is recorded as the column's script
 //!   (`script:<column>`). The optional `reason` says why. A merge that fails stops the rest: the card waits where it is,
 //!   marked with an inbox item `merge_stopped`, and the call returns nil and why (see `App::merge_card`).
+//! - `moebius.lane_job() -> job, why`: asks the test lane for a job for the card's change at its head (see `app::lane`):
+//!   `job` is the card's latest job for that head, a table with `id`, `state` (`queued`, `running`, `measured`, `passed`,
+//!   `failed`, `errored` or `cancelled`), `lane`, `head`, `step`, `failed_step` and `summary`, or nil when none can be
+//!   queued, and `why` says why not (no lane, a hold, a freeze, a pause, a locked path, no review verdict yet).
 //! - `moebius.ask(kind, reason)`: puts the card in the inbox for a person (once) and leaves it where it is.
 //! - `moebius.stuck(reason)`: puts the card in the inbox as stuck (once).
 //! - `moebius.record_outcome(outcome) -> count`: sets the outcome of the card's judgements that have none.
@@ -273,6 +277,27 @@ impl Engine {
                     }
                 }
                 Ok(Some(table))
+            })?,
+        )?;
+
+        let (app, clock) = (self.app.clone(), deadline.clone());
+        m.set(
+            "lane_job",
+            lua.create_function(move |lua, ()| {
+                let request = outside_script(&clock, || app.request_lane_job(card_id))
+                    .map_err(mlua::Error::external)?;
+                let Some(job) = request.job else {
+                    return Ok((None::<Table>, request.why));
+                };
+                let table = lua.create_table()?;
+                table.set("id", job.id)?;
+                table.set("state", job.state)?;
+                table.set("lane", job.lane)?;
+                table.set("head", job.head)?;
+                table.set("step", job.step)?;
+                table.set("failed_step", job.failed_step)?;
+                table.set("summary", job.summary)?;
+                Ok((Some(table), request.why))
             })?,
         )?;
 

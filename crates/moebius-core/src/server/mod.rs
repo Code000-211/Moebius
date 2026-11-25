@@ -21,6 +21,9 @@ mod fake_github;
 mod fake_gitlab;
 #[cfg(test)]
 mod flow_tests;
+// Unix only: the fake `ssh` and the fake container runtime are scripts started by their `#!` line, and a job runs `sh`.
+#[cfg(all(test, unix))]
+mod lane_tests;
 mod leftovers;
 pub(crate) mod loops;
 pub mod outgoing;
@@ -318,6 +321,10 @@ impl Server {
         app.set_rules_file(config.rules_path());
         app.set_day_budget(config.day_tokens);
         let app = Arc::new(app);
+        app.lanes
+            .configure(config.lanes.clone(), config.runners.clone());
+        // A job a stopped server left running is not running: it waits its turn again.
+        let _ = app.store.requeue_interrupted_lane_jobs();
         router.set_checker(check::Checker::new(app.clone(), config.rules_path()));
         let runners = Arc::new(Runners::new(config.runners.clone()));
         leftovers::end_runs_of_a_previous_server(&app, &runners)?;
@@ -489,6 +496,7 @@ impl Server {
             () = loops::poll(self.clone()) => Ok(()),
             () = loops::refresh(self.clone()) => Ok(()),
             () = loops::levels(self.clone()) => Ok(()),
+            () = loops::lane(self.clone()) => Ok(()),
             () = ports::watch(self.app.clone(), ports::PERIOD) => Ok(()),
             () = schedule::run(self.clone()) => Ok(()),
             () = self.live.restart_asked() => Ok(()),

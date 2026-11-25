@@ -43,6 +43,7 @@ mod intake;
 mod issues;
 mod judgements;
 mod kinds;
+mod lane;
 mod lessons;
 mod links;
 mod localize;
@@ -101,6 +102,7 @@ pub use intake::IntakeRequest;
 pub use issues::Comment;
 pub use judgements::{Judgement, NewJudgement};
 pub use kinds::{FieldDef, FieldType, Kind, KindField};
+pub use lane::{INFRASTRUCTURE_FAILURES, LaneJob, LanePause};
 pub use lessons::{Lesson, NewLesson};
 pub use links::{DUPLICATE, Link, RELATED};
 pub use localize::IndexedFile;
@@ -549,6 +551,7 @@ UPDATE cards SET moved_at = COALESCE((SELECT MAX(at) FROM card_moves WHERE card_
     factory::SCHEMA,
     tending::SCHEMA,
     flow::SCHEMA,
+    lane::SCHEMA,
 ];
 
 #[cfg(test)]

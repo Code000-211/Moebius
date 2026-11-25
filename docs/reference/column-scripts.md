@@ -368,6 +368,9 @@ repository's locked paths, hold and pause, and the rest: a refusal is the second
 without a person overrides `merge.luau` with a call to this function as its last statement; the default `merge.luau`
 waits for a person instead. The time this call takes does not count against the time limit.
 
+`moebius.lane_job()` returns two values: the card's latest job of the [test lane](lanes.md) for its change's head, as a table with `id`, `state`, `lane`, `head`, `step`, `failed_step` and `summary`, or nil when no job can be queued; and why not, as a string. `state` is `queued`, `running`, `measured`, `passed`, `failed`, `errored` or `cancelled`, and `step` is the step a running job is at.
+: Asks the lane the repository uses for a job for the card's change at its head: a followed pull request needs a round of the Reviewer that ended `approve` or `approve_code` for that head, and a change of Moebius's own needs the card's latest review to approve. A job is queued, unless one is there for this head already (then that one is returned, with the reason `a job for this version is there already`) or something stops it: no lane for the repository, a lane that is not configured, no open change, no valid `lane.toml` in the project, a frozen repository, a pause of all agents, a held card, a locked path, no verdict yet. A job that is queued is started by the lane's own pass, not by the script. The call does not wait for the job: a script calls it at each tick and reads `state`. When a job of a change of Moebius's own fails, the lane moves the card to `In progress` with the failure as its note. See [the lane](lanes.md#triggering).
+
 `moebius.ask(kind, reason)`
 : Puts the card in the inbox for a person, with `kind` as the item's kind, the card's title as its title and
 `{reason = reason}` as its data. It does this once: nothing is added while an item of that kind is open for the card.
@@ -544,6 +547,7 @@ Every `[[column]]` has these keys, and no other key is accepted:
 | `script` | no | The column's script, a file of the project's folder: a plain file name ending in `.luau`, of letters, digits, `-`, `_`, `.` and spaces, not starting or ending with a dot or a space, without `..` and without a folder. Left out, the column runs the script file of its class (`review.luau` for a column that counts as `In review`), so a project's own `review.luau` serves it too. |
 | `after` | one of `after` and `counts_as` | The column this one comes after: a built-in column other than `Done`, or another custom column of the file. Left out, the column comes after the built-in column that its `counts_as` names. |
 | `counts_as` | no | The column's class: one of `Backlog`, `Not started`, `In progress`, `In review`, `Ready to merge` or `Done`, spelled exactly so. Left out, the class of the column it comes after (the class of the built-in column, or the class the other custom column has). |
+| `lane` | no | `true` makes a card that enters the column queue a job for the project's [test lane](lanes.md) (default `false`). Only for a column whose class is `In review`. |
 
 **Order.** The board is Backlog, then each built-in column followed by the custom columns that come after it, and Done
 last. A custom column that comes after another custom column comes right behind it, before the later columns that come
@@ -582,6 +586,7 @@ separated by `; `. The classes of mistake are:
 | `column "<name>": after "<column>" names no column` | An `after` that is no built-in or custom column. |
 | `column "<name>": nothing comes after Done` | `after = "Done"`. |
 | ``column "<name>": the `after` columns lead round in a circle`` | Custom columns that come after each other in a loop. |
+| ``column "<name>": `lane = true` is for a column that counts as In review`` | A column marked `lane` whose class is another. |
 
 **Saving it.** A save is refused with `422` when the file is not valid (the messages above), and with `409` when it would
 remove a column while cards are in it: `kanban.toml would remove the column "<name>" while cards are in it (#12, #15);

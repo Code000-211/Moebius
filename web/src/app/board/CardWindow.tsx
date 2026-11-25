@@ -26,6 +26,7 @@ import type { Decision } from "./decisions";
 import { FollowedRequest } from "./FollowedRequest";
 import { FrozenNotice } from "./FrozenNotice";
 import { CardThread, EditIssueDialog, ReplyField } from "./IssueSections";
+import { LaneReport } from "./LaneReport";
 import {
   type CardStatus,
   cardStatus,
@@ -279,6 +280,8 @@ export function CardContent({
             if (change !== undefined) onDecide({ kind: "end_round", change, number: card.number });
           }}
         />
+
+        <LaneReport card={card.id} />
 
         <div className="px-6 pb-6">
           <CardThread

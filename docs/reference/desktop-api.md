@@ -188,6 +188,12 @@ keep their rows: the role is checked before the `410`.
 | `PUT /v1/repositories/{id}/upkeep` | owner | yes |
 | `GET /v1/repositories/{id}/flow` | viewer | yes |
 | `PUT /v1/repositories/{id}/flow` | owner | no |
+| `GET /v1/repositories/{id}/lane` | viewer | yes |
+| `PUT /v1/repositories/{id}/lane` | owner | no |
+| `GET /v1/lanes` | viewer | yes |
+| `POST /v1/lanes/{name}/resume` | owner | no |
+| `GET /v1/cards/{id}/lane` | viewer | yes |
+| `POST /v1/cards/{id}/lane` | member | yes |
 | `GET /v1/projects/{id}/backlog` | viewer | yes |
 | `PUT /v1/projects/{id}/backlog` | owner | yes |
 | `DELETE /v1/projects/{id}/backlog` | owner | yes |
@@ -539,6 +545,7 @@ same change failing again keeps it, another stop replaces it) and
 `review_not_possible` (`data.change`, `data.pull_request`, `data.author`, `data.repository`, `data.reason`: the pull request the card follows could not be given to the Reviewer, because it is too large to be read whole, changes a binary file, git could not read it, its repository's review brief is more than 40 KB or could not be read, or the run of a review a person asked for could not start; resolved when the request is merged or closed; the same choices as for `outside_change`) and
 `merge_refused` (`data.change`, `data.branch`, `data.pull_request`, `data.repository`, `data.reason`: [the merge gate](#the-merge-gate) refused to merge the change, and the card is in `Ready to merge`; asked again with the same reason it stays one item, another reason replaces it, and a merge resolves it) and
 `factory_frozen` (`data.repository`, `data.repository_id`, `data.reason`, `data.source`; no card: the repository is frozen, see [the software factory](#the-software-factory); resolved when a person unfreezes it) and
+`lane_paused` (`data.lane`, `data.reason`; no card: a [test lane](lanes.md#a-lane-that-stopped-itself) paused itself after three jobs in a row that ended for a reason of its own; resolved when a person resumes it with `POST /v1/lanes/{name}/resume`) and
 `daily_digest` (`data.day`, `data.repositories`, `data.tokens`, `data.needs_a_person`, `data.text`; no card: the owner's digest of what happened since the last one, see [the factory](factory.md#the-digest); the owner dismisses it) and
 `done_asked` (`data.login`, `data.reason`, `data.repository`: the assignee of the issue, `login`, wrote `/done` in a comment and `reason` is the rest of that comment; resolved by the owner's answer, `POST /v1/cards/{id}/done`, or when the assignee is released; see [Commands in issue comments](#commands-in-issue-comments)) and
 `proposal` (`data.proposal`, `data.branch`, `data.trials`: an array of `{"card", "outcome", "reason"}` for the cards it
@@ -949,11 +956,11 @@ The run token of the Moebius agent and of a Grilling partner sees what the perso
 without such a person sees no private project. The training export leaves private projects out unless asked (see
 [the training export](training-export.md)).
 
-A `Column` is `{"name": string, "counts_as": string, "custom": bool, "script": string}`: the project's board left to
+A `Column` is `{"name": string, "counts_as": string, "custom": bool, "script": string, "lane": bool}`: the project's board left to
 right, the six built-in columns with the project's custom ones among them (see [custom
 columns](column-scripts.md#custom-columns)); `counts_as` is the built-in column the column counts as (its own name for
 a built-in one), `custom` whether the project's `kanban.toml` defines it, and `script` the file of its script in the
-project's settings (`ready.luau`, `testing.luau`). `columns_problem` is left out when nothing is wrong, and otherwise says
+project's settings (`ready.luau`, `testing.luau`); `lane` is whether a card that enters it is queued for the [test lane](lanes.md) (`lane = true` in the file). `columns_problem` is left out when nothing is wrong, and otherwise says
 what is: the `kanban.toml` is not valid (the columns last known are in force), or cards are in columns it no longer has
 (they run the script of their class). A project with no `kanban.toml` has the six built-in columns.
 
@@ -4594,6 +4601,62 @@ with `run` null from now on, as for a chat. The decision is recorded (kind `dele
 `research`, `repository`, `goal`, `status`, `experiments`, `runs`, `changes`, `branches` and `usage_kept`) and announced
 as `research_deleted`. Request: `{"reason": string}` (optional). Response: the deleted research (as it was stored).
 Errors: `403` for an agent's run token; `404` no such research; `409` as above.
+
+## The test lane
+
+A named machine that builds, tests and measures a change at its pinned head once the Reviewer approved its code ([ADR
+0035](../adr/0035-a-test-lane-measures-on-the-owners-own-gpus.md); the contract is [the lane](lanes.md), the keys of
+`[[lanes]]` are in the [configuration](configuration.md#lanes), the steps in [the guide](../guide/test-lane.md)). Which
+lane a repository uses is the "Test lane" box of its settings in the web app.
+
+A `LaneJob` is `{"id", "repository_id", "card_id", "change_id", "lane", "head", "base", "external", "state",
+"failed_step", "summary", "report", "step", "delivered", "queued_at", "started_at", "ended_at"}`; `state` is `queued`,
+`running`, `measured`, `passed`, `failed`, `errored` or `cancelled`, `step` is the step a running job is at,
+`delivered` whether what came of it was handed on, and `report` is [the report](lanes.md#the-report). A `Lane` is
+`{"name", "runner", "isolation", "warning", "runtime", "image", "gpus", "power_cap", "rocm", "driver", "devices",
+"timeout_seconds", "queued", "running", "paused"}`: `warning` is the text shown while `isolation` is not `always`
+(otherwise null), `queued` the jobs that wait, `running` the `LaneJob` that runs, and `paused` null or `{"since",
+"reason"}` while the lane has stopped itself.
+
+### `GET /v1/repositories/{id}/lane`
+
+The "Test lane" settings of a repository: `{"lane": string or null, "current": Lane or null, "lanes": [Lane],
+"definition": {"present": bool, "problem": string or null, "steps": [string], "measures": bool}, "jobs": [LaneJob]}`.
+`lane` is the lane the repository uses, `current` that lane as it is now, `lanes` every lane of the configuration,
+`definition` what the repository's home project's `lane.toml` is (`problem` says why it is not valid) and `jobs` the
+latest ten jobs of the repository, newest first. Any role that may see the repository.
+
+### `PUT /v1/repositories/{id}/lane`
+
+Owner, and a person: an agent's token is `403`. Request: `{"lane": string or null, "reason": string}`; `null` or an empty
+text stops the repository from using a lane. `422` for a name that is no lane of the configuration. Answers the settings as
+`GET` does, and sends `repository_updated`. Recorded as an `edit_lane` decision (context `repository`, `lane`); an edit
+that changes nothing records nothing.
+
+### `GET /v1/lanes`
+
+Every lane of the configuration as a `Lane`, in the order of the file. Any role.
+
+### `POST /v1/lanes/{name}/resume`
+
+Owner, and a person. Request: `{"reason": string}`, optional. Lifts the pause of a lane that stopped itself and starts its
+count of failures over, resolves its `lane_paused` inbox item, and answers every `Lane`. Recorded as a `resume_lane`
+decision. `404` for a name that is no lane.
+
+### `GET /v1/cards/{id}/lane`
+
+The lane's report of a card: `{"lane": string or null, "jobs": [LaneJob], "head": string or null, "waiting": string or
+null}`. `jobs` are those of the card's changes, oldest first; a job whose `head` is not `head` (the head of the card's open
+change now) is out of date. `waiting` says why no job is queued for `head` when the repository uses a lane and none is
+(`the Reviewer has not approved the code of this version yet, and the review comes first`, `the repository is frozen: ...`,
+`the card is held`, `all agents are paused`, `the change touches <file>, which is locked by <pattern>: ...`).
+
+### `POST /v1/cards/{id}/lane`
+
+Member. Asks for a job for the card's change at its head, as `moebius.lane_job()` does: `{"job": LaneJob or null, "why":
+string or null}`. A job that is queued, or the reason there is none (`this repository uses no test lane`, `the card has no
+open change`, the reasons of `waiting`, `a job for this version is there already` with that job). It starts nothing by
+itself: the lane's pass does, when the lane is free.
 
 ## The software factory
 
