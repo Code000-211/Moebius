@@ -1,6 +1,6 @@
 /**
  * The part of the fake server for the software factory (ADR 0032): a repository's stale settings
- * (`GET` and `PUT /v1/repositories/{id}/upkeep`), a project's backlog and its sync (`/v1/projects/{id}/backlog`), with
+ * (`GET` and `PUT /v1/repositories/{id}/upkeep`), a repository's review flow (`/flow`, ADR 0033), a project's backlog and its sync (`/v1/projects/{id}/backlog`), with
  * the JSON the real server sends. The digest item itself is the board fake's (`seedDigest`), since the Inbox reads it
  * from the snapshot.
  */
@@ -19,6 +19,14 @@ interface Upkeep {
   release_after_days: number;
   stale_after_days: number;
   close_after_days: number;
+}
+
+interface Flow {
+  review_on_green: boolean;
+  green_wait_minutes: number;
+  unbound_close_days: number;
+  status_labels: boolean;
+  status_prefix: string;
 }
 
 interface Backlog {
@@ -52,6 +60,14 @@ function reply(response: ServerResponse, status: number, body: unknown): true {
 export function createFactoryFake(): FactoryFake {
   const requests: FactoryFake["requests"] = [];
   const upkeep = new Map<number, Upkeep>();
+  const flows = new Map<number, Flow>();
+  const flowDefaults = (): Flow => ({
+    review_on_green: false,
+    green_wait_minutes: 5,
+    unbound_close_days: 14,
+    status_labels: false,
+    status_prefix: "status:",
+  });
   let backlog: Backlog | null = null;
   const defaults = (): Upkeep => ({
     release_after_days: 14,
@@ -75,11 +91,17 @@ export function createFactoryFake(): FactoryFake {
     async handle(request, response, path) {
       const method = request.method ?? "GET";
       const stale = /^\/v1\/repositories\/(\d+)\/upkeep$/.exec(path);
+      const flow = /^\/v1\/repositories\/(\d+)\/flow$/.exec(path);
       const mine = /^\/v1\/projects\/(\d+)\/backlog(\/sync)?$/.exec(path);
-      if (!stale && !mine) return false;
+      if (!stale && !flow && !mine) return false;
       const body: Record<string, unknown> =
         method === "GET" ? {} : JSON.parse((await readBody(request)) || "{}");
       if (method !== "GET") requests.push({ method, path, body });
+      if (flow) {
+        const id = Number(flow[1]);
+        if (method === "PUT") flows.set(id, { ...(flows.get(id) ?? flowDefaults()), ...body });
+        return reply(response, 200, flows.get(id) ?? flowDefaults());
+      }
       if (stale) {
         const id = Number(stale[1]);
         if (method === "PUT") upkeep.set(id, { ...(upkeep.get(id) ?? defaults()), ...body });

@@ -111,6 +111,7 @@ impl Polled for GitHub {
                 body: pull.body.unwrap_or_default(),
                 author: pull.user.login,
                 head: pull.head.sha,
+                branch: pull.head.branch,
                 base: pull.base.branch,
             })
             .collect())

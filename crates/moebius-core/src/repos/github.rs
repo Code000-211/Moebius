@@ -133,6 +133,9 @@ pub struct PullRequest {
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 pub struct Head {
     pub sha: String,
+    /// The branch the pull request comes from.
+    #[serde(rename = "ref", default)]
+    pub branch: String,
 }
 
 /// The branch a pull request is against.
@@ -617,6 +620,51 @@ impl GitHub {
     }
 
     /// Replaces the labels of issue `number` in `github`; GitHub makes the ones that do not exist.
+    /// Adds the label `label` to the issue or pull request `number`, keeping its others.
+    pub async fn add_issue_label(
+        &self,
+        github: &str,
+        number: i64,
+        label: &str,
+    ) -> Result<(), GitHubError> {
+        let request = json!({ "labels": [label] });
+        self.repository_do(
+            github,
+            Method::POST,
+            &format!("/issues/{number}/labels"),
+            Some(&request),
+        )
+        .await
+    }
+
+    /// Makes the label `label` with `color` in `github`; an error for one that exists.
+    pub async fn create_label(
+        &self,
+        github: &str,
+        label: &str,
+        color: &str,
+    ) -> Result<(), GitHubError> {
+        let request = json!({ "name": label, "color": color });
+        self.repository_do(github, Method::POST, "/labels", Some(&request))
+            .await
+    }
+
+    /// Takes the label `label` off the issue or pull request `number`; a label it did not have is no error.
+    pub async fn remove_issue_label(
+        &self,
+        github: &str,
+        number: i64,
+        label: &str,
+    ) -> Result<(), GitHubError> {
+        self.repository_do(
+            github,
+            Method::DELETE,
+            &format!("/issues/{number}/labels/{label}"),
+            None,
+        )
+        .await
+    }
+
     pub async fn set_issue_labels(
         &self,
         github: &str,

@@ -111,7 +111,8 @@ impl App {
         comments: &[ForgeComment],
     ) -> Result<()> {
         let repository = self.repository(card.repository_id)?;
-        if !repository.commands || repository.forge == "none" {
+        // Commands are read where they are on; measurements where measurers are registered (ADR 0033).
+        if (!repository.commands && repository.measurers.is_empty()) || repository.forge == "none" {
             return Ok(());
         }
         let seen = self.store.command_seen(repository.id, card.number)?;
@@ -124,6 +125,32 @@ impl App {
             if (comment.at > 0 && comment.at < since)
                 || self.store.comment_is_ours(card.id, comment.id)?
             {
+                continue;
+            }
+            if repository
+                .measurers
+                .iter()
+                .any(|m| m.eq_ignore_ascii_case(&comment.author))
+                && super::flow::measure::is_measurement(&comment.body)
+            {
+                let reply = self
+                    .read_measurement(&repository, card, comment)
+                    .unwrap_or_else(|e| {
+                        self.bus.publish(Event::ForgeError {
+                            repository: repository.name.clone(),
+                            message: format!(
+                                "#{}: a measurement of @{}: {e}",
+                                card.number, comment.author
+                            ),
+                        });
+                        Some("Could not read the measurement. Try again.".to_string())
+                    });
+                if let Some(reply) = reply {
+                    self.answer(&repository, card.id, &reply);
+                }
+                continue;
+            }
+            if !repository.commands {
                 continue;
             }
             let Some((command, rest)) = command_in(&comment.body) else {

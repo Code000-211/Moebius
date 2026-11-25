@@ -186,6 +186,8 @@ keep their rows: the role is checked before the `410`.
 | `GET /v1/repositories/{id}/issues` | viewer | yes |
 | `GET /v1/repositories/{id}/upkeep` | viewer | yes |
 | `PUT /v1/repositories/{id}/upkeep` | owner | yes |
+| `GET /v1/repositories/{id}/flow` | viewer | yes |
+| `PUT /v1/repositories/{id}/flow` | owner | no |
 | `GET /v1/projects/{id}/backlog` | viewer | yes |
 | `PUT /v1/projects/{id}/backlog` | owner | yes |
 | `DELETE /v1/projects/{id}/backlog` | owner | yes |
@@ -797,7 +799,7 @@ gets. `project_columns` maps the id of each project that has cards on the board 
 | `counts_as_sub_issue` | Whether the card counts as a sub-issue of its `parent` (see [only issues a person can have vouched for](#the-issue-tracker)). A client that builds stacks, counts "done of total" or decides what is next from `parent` uses only the cards where this is true; one that is false is an ordinary top-level card, whatever parent it names. |
 | `refusals` | How many tool calls of that latest run were refused (its `tool_check` and `mcp_call` run events with the decision `refuse`). |
 | `attempts` | The latest group of attempts of a card that was tried several times at once (see [column scripts](column-scripts.md#attempts)), oldest first, each `{"run", "model", "status", "result", "output", "picked", "reason"}`: `model` the model or class the attempt was started with, or null; `status` its run's status; `result` `passed`, `failed` or null before it was judged; `output` why it failed; `picked` whether it was the one kept, and `reason` why. Absent when the card has no attempts. |
-| `change` | The card's open change in its own issue's repository, `{"id", "repository", "state", "checks", "review_verdict", "outside_author", "external_review"}`, or null. `repository` is the name of the repository the change is in. `outside_author` is the forge login of whoever opened the pull request when the card follows one that someone else opened, and is left out for Moebius's own change. `checks` is `pending`, `success`, `failure` or `none`, as `card.change.checks`; `review_verdict` is `approve` or `changes` once a review ended since the latest `code` run, else null. Whether the change conflicts is not in the snapshot. `external_review` is left out unless the card follows a pull request someone else opened and the author asked for a review; it is the latest round of the Reviewer on it, `{"round", "round_limit", "state", "verdict", "summary", "comments", "url", "head", "current"}` (see [Reviews of followed pull requests](#reviews-of-followed-pull-requests)). |
+| `change` | The card's open change in its own issue's repository, `{"id", "repository", "state", "checks", "review_verdict", "outside_author", "external_review", "measurement"}`, or null. `repository` is the name of the repository the change is in. `outside_author` is the forge login of whoever opened the pull request when the card follows one that someone else opened, and is left out for Moebius's own change. `checks` is `pending`, `success`, `failure` or `none`, as `card.change.checks`; `review_verdict` is `approve` or `changes` once a review ended since the latest `code` run, else null. Whether the change conflicts is not in the snapshot. `external_review` is left out unless the card follows a pull request someone else opened and a round was asked for (by its author, by green checks or by a measurement); it is the latest round of the Reviewer on it, `{"kind", "round", "round_limit", "state", "verdict", "summary", "comments", "url", "head", "current"}` (see [Reviews of followed pull requests](#reviews-of-followed-pull-requests)). |
 | `changes` | Every open change of the card, one per repository it works in that has one, in the order the changes are merged (the order of `repositories`), each as `change` above. A card over one repository has this one change or none; `change` is the entry of its own repository. Empty for a card in Done. |
 
 A card in `Done` has `rounds` and `tokens` 0, no `run`, no `change`, no blockers and no refusals: the snapshot is read on
@@ -4610,6 +4612,23 @@ string}`; each key is optional and stays as it is when left out. A number is fro
 `close_after_days` must be more than `stale_after_days`, else `422`. Answers the settings as they are now. Recorded as
 an `edit_upkeep` decision.
 
+### `GET /v1/repositories/{id}/flow`
+
+How a repository lets reviews and pull requests flow ([ADR
+0033](../adr/0033-measurements-and-reviews-flow-without-the-owners-clicks.md); the contracts are on [the
+factory](factory.md#review-on-green-checks)), with the defaults for one that has set none: `{"review_on_green": false,
+"green_wait_minutes": 5, "unbound_close_days": 14, "status_labels": false, "status_prefix": "status:"}`. Any role that may see the repository.
+
+### `PUT /v1/repositories/{id}/flow`
+
+Owner, and a person: an agent's token is `403`. Request: `{"review_on_green": bool, "green_wait_minutes": number,
+"unbound_close_days": number, "status_labels": bool, "status_prefix": string, "reason": string}`; each key is optional
+and stays as it is when left out. `green_wait_minutes` is from 0 to 120 and `unbound_close_days` from 0 (never close) to
+365, and `status_prefix` 1 to 30 characters with no comma or new line, else `422`; `422` too for a
+repository on no forge. Answers the settings as they are now, and sends `repository_updated`. Recorded as an `edit_flow`
+decision (context `repository`, `review_on_green`, `green_wait_minutes`, `unbound_close_days`, `status_labels`, `status_prefix`); an edit that changes
+nothing records nothing.
+
 ### `GET /v1/projects/{id}/backlog`
 
 The project's backlog, or `null` when it has none: `{"project_id", "repository", "path", "pattern", "closed_marker",
@@ -4853,7 +4872,15 @@ by the Reviewer when its author says so. The steps are in [the guide](../guide/w
   itself: the card window offers "Review with agent" and "Merge" as for `outside_change`, and the Inbox row opens the card. While
   a review that asked for changes is the latest round and read the current head, the card window says it waits for the
   author and offers no "Merge".
-- **External review in the snapshot.** `ChangeView.external_review`: `round` (from 1; 0 until it starts), `round_limit` (3),
+- **Measurement in the snapshot.** `ChangeView.measurement` is left out until a registered measurer's comment was read for
+  the pull request, and then is the latest one: `{"measurer", "head", "before", "state", "current", "accepted", "at"}`.
+  `state` is `submitted` (the Reviewer has not judged it), `accepted`, `insufficient` or `invalid` (the head moved),
+  `current` whether it measured the pull request as it is now, and `accepted` whether a measurement is accepted for the
+  pull request's head now, whoever accepted it. The card window says who measured which commit and what came of it, and
+  while the pull request awaits one how it is posted (see [measurements read from
+  comments](factory.md#measurements-read-from-comments)).
+- **External review in the snapshot.** `ChangeView.external_review`: `kind` (`author` for a round the author's `/done` or green
+  checks asked for, `measurement` for one a measurement started), `round` (from 1; 0 until it starts), `round_limit` (3),
   `state` (`wanted`, `starting`, `running`, `approved`, `posting`, `posted`, `awaiting_measurement`, `merged`, `stale` or `failed`), `verdict` (`approve`, `approve_code`, `changes` or
   null), `summary`, `comments` (`{"path", "line", "body"}`), `url` (the review on the forge once it is written, else null),
   `head` (the commit it read) and `current` (whether that is the request's head now). The card window shows the verdict, the

@@ -79,6 +79,24 @@ export interface CardChange {
   outside_author?: string;
   /** The latest round of the Reviewer on that pull request (ADR 0029); absent until the author asked for one. */
   external_review?: ExternalReview;
+  /** The latest measurement a registered measurer posted on that pull request (ADR 0033); absent while there is none. */
+  measurement?: Measurement;
+}
+
+/** A measurement a registered measurer posted as a comment on the issue, as the card window shows it. */
+export interface Measurement {
+  /** The forge login of the measurer. */
+  measurer: string;
+  /** The commit it measured, and the merge base it was measured against. */
+  head: string;
+  before: string;
+  /** `submitted` waits for the Reviewer, `accepted` and `insufficient` are its answers, `invalid` means the head moved. */
+  state: "submitted" | "accepted" | "insufficient" | "invalid";
+  /** Whether it measured the pull request as it is now. */
+  current: boolean;
+  /** Whether a measurement is accepted for the pull request as it is now, whoever accepted it. */
+  accepted: boolean;
+  at: number;
 }
 
 /** A comment of a review on a line of the pull request's diff, in the file as the pull request leaves it. */
@@ -103,6 +121,8 @@ export type ExternalReviewState =
 
 /** A round of the Reviewer on a pull request someone else opened, as the card window shows it. */
 export interface ExternalReview {
+  /** `author` for a round the author or the green checks asked for, `measurement` for one a measurer's comment started. */
+  kind: "author" | "measurement";
   round: number;
   round_limit: number;
   state: ExternalReviewState;

@@ -25,12 +25,13 @@ describe("the frozen notice", () => {
 });
 
 describe("a review whose code is approved and whose measurement is missing", () => {
-  it("says so in plain words and names what starts the next round", () => {
+  it("says so in plain words and names what starts the next round, a measurer's comment", () => {
     render(
       <ExternalReview
         forge="GitHub"
         review={{
           round: 1,
+          kind: "author" as const,
           round_limit: 3,
           state: "awaiting_measurement",
           verdict: "approve_code",
@@ -46,8 +47,13 @@ describe("a review whose code is approved and whose measurement is missing", () 
     expect(review.textContent).toContain("Code approved, measurement needed");
     expect(review.textContent).not.toContain("Approved and merged");
     expect(screen.getByTestId("measurement-needed").textContent).toContain(
-      "accepts the measurement",
+      "measurement the repository asks for is missing",
     );
+    // What starts the next round is told, and it is a measurer's comment, not a click.
+    const note = screen.getByTestId("measurement-note").textContent ?? "";
+    expect(note).toContain("## Measurement");
+    expect(note).toContain("need not write /done");
+    expect(note).not.toContain("POST");
     expect(review.textContent).toContain("The kernel change is right.");
   });
 });

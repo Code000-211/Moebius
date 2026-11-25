@@ -4,6 +4,9 @@
 //! - `GET /v1/repositories/{id}/upkeep` and `PUT` `{release_after_days, stale_after_days, close_after_days, reason}`:
 //!   after how many days the stale handling releases an issue that was taken, reminds and closes a followed pull
 //!   request; 0 turns one off (see [`crate::app::Upkept`]).
+//! - `GET /v1/repositories/{id}/flow` and `PUT` `{review_on_green, green_wait_minutes, unbound_close_days, reason}`: whether a
+//!   followed pull request is reviewed once its checks have been green for a few minutes, and after how many days one that
+//!   names no issue is closed (ADR 0033).
 //! - `GET /v1/projects/{id}/backlog` (or `null`), `PUT` and `DELETE`: where the project's backlog is and how its items
 //!   are read. `POST /v1/projects/{id}/backlog/sync` `{dry_run}` makes the issues of its items.
 //! - `POST /v1/digest` `{force}`: makes today's digest now when it has none yet (or with `force` makes it again) and
@@ -16,9 +19,9 @@ use axum::{Extension, Router};
 use serde::Deserialize;
 
 use super::{ApiError, ApiState, Reason, blocking};
-use crate::app::{AppError, BacklogEdit, BacklogView, SyncReport};
+use crate::app::{AppError, BacklogEdit, BacklogView, FlowEdit, SyncReport};
 use crate::decide::Actor;
-use crate::store::{InboxItem, Upkeep};
+use crate::store::{Flow, InboxItem, Upkeep};
 
 /// The routes of the factory.
 pub(super) fn routes() -> Router<ApiState> {
@@ -27,6 +30,7 @@ pub(super) fn routes() -> Router<ApiState> {
             "/v1/repositories/{id}/upkeep",
             get(get_upkeep).put(put_upkeep),
         )
+        .route("/v1/repositories/{id}/flow", get(get_flow).put(put_flow))
         .route(
             "/v1/projects/{id}/backlog",
             get(get_backlog).put(put_backlog).delete(delete_backlog),
@@ -105,6 +109,58 @@ async fn put_upkeep(
         ]);
         app.record_action(&by, "edit_upkeep", None, None, context, &edit.reason)?;
         Ok(upkeep)
+    })
+    .await
+}
+
+/// What `PUT /v1/repositories/{id}/flow` takes; what is left out stays.
+#[derive(Debug, Deserialize)]
+pub(super) struct EditedFlow {
+    #[serde(default)]
+    review_on_green: Option<bool>,
+    #[serde(default)]
+    green_wait_minutes: Option<i64>,
+    #[serde(default)]
+    unbound_close_days: Option<i64>,
+    #[serde(default)]
+    status_labels: Option<bool>,
+    #[serde(default)]
+    status_prefix: Option<String>,
+    #[serde(default)]
+    reason: String,
+}
+
+async fn get_flow(
+    State(state): State<ApiState>,
+    UrlPath(id): UrlPath<i64>,
+) -> Result<axum::Json<Flow>, ApiError> {
+    blocking(&state.app, move |app| {
+        app.repository(id)?;
+        Ok(app.store.flow(id)?)
+    })
+    .await
+}
+
+async fn put_flow(
+    State(state): State<ApiState>,
+    Extension(by): Extension<Actor>,
+    UrlPath(id): UrlPath<i64>,
+    axum::Json(edit): axum::Json<EditedFlow>,
+) -> Result<axum::Json<Flow>, ApiError> {
+    blocking(&state.app, move |app| {
+        let flow = app.edit_flow(
+            &by,
+            id,
+            &FlowEdit {
+                review_on_green: edit.review_on_green,
+                green_wait_minutes: edit.green_wait_minutes,
+                unbound_close_days: edit.unbound_close_days,
+                status_labels: edit.status_labels,
+                status_prefix: edit.status_prefix,
+            },
+            &edit.reason,
+        )?;
+        Ok(flow)
     })
     .await
 }

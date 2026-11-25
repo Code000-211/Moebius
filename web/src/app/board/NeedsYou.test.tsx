@@ -145,6 +145,7 @@ describe("the Moebius needs you block", () => {
   it("says it waits for the author's changes after a review that asked for them, and offers no merge", () => {
     const review = {
       round: 1,
+      kind: "author" as const,
       round_limit: 3,
       state: "posted" as const,
       verdict: "changes" as const,
@@ -178,6 +179,7 @@ describe("the Moebius needs you block", () => {
   it("offers neither a merge nor another review while a review round is going", () => {
     const review = {
       round: 1,
+      kind: "author" as const,
       round_limit: 3,
       state: "running" as const,
       verdict: null,

@@ -35,6 +35,8 @@ pub struct OpenRequest {
     pub author: String,
     /// The commit at its head.
     pub head: String,
+    /// The branch it comes from, where the forge says; empty where it does not.
+    pub branch: String,
     /// The branch it is against.
     pub base: String,
 }
@@ -529,7 +531,7 @@ impl App {
     /// The requests of `requests`, each with the card it would be followed by, that pass everything but the right of
     /// its author to write: it is none of this server's people's and no change of Moebius's own that is known (a closed
     /// request of someone else that is open again counts as new); it is against the repository's default branch; it
-    /// closes an issue whose card is not done and has no open change and no run going; and the issue is not taken by
+    /// closes an issue (with a closing keyword, or by the issue its title or branch names, see `named_issues`) whose card is not done and has no open change and no run going; and the issue is not taken by
     /// someone other than its author. One request is followed by one card.
     fn followable<'a>(
         &self,
@@ -562,7 +564,12 @@ impl App {
                 continue;
             }
             let text = format!("{}\n{}", request.title, request.body);
-            for number in closing_references(&text, name) {
+            let mut named = closing_references(&text, name);
+            // A pull request without a closing keyword is bound to the one issue its title or branch names (ADR 0033).
+            if named.is_empty() {
+                named = self.named_issues(repository, request)?;
+            }
+            for number in named {
                 let Some(card) = self.store.card_by_number(repository.id, number)? else {
                     continue;
                 };
@@ -737,6 +744,10 @@ impl App {
         }
         self.store
             .set_change_head(change.id, head, crate::store::now())?;
+        // A measurement of the old head counts for nothing now (ADR 0033).
+        if let Some(old) = change.head.as_deref() {
+            self.measurement_head_moved(change, old, head)?;
+        }
         Ok(())
     }
 

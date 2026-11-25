@@ -24,6 +24,8 @@ export const keys = {
   /** A repository's stale settings and a project's backlog (ADR 0032). */
   upkeep: (repository: number) => ["upkeep", repository] as const,
   backlog: (project: number) => ["backlog", project] as const,
+  /** A repository's review flow (ADR 0033). */
+  flow: (repository: number) => ["flow", repository] as const,
   /** What a repository's files page has read: directories, one file, the paths for "Go to file", a search. */
   files: (repository: number) => ["files", repository] as const,
   tree: (repository: number, directory: string) =>

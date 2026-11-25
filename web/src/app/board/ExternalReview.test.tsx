@@ -2,13 +2,14 @@
 /** The review of a pull request someone else opened, in the card window: the verdict, the summary and the line comments. */
 import { cleanup, render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
-import type { ExternalReview as Round } from "../../api/types/board";
+import type { Measurement, ExternalReview as Round } from "../../api/types/board";
 import { ExternalReview } from "./ExternalReview";
 
 afterEach(cleanup);
 
 const round: Round = {
   round: 2,
+  kind: "author" as const,
   round_limit: 3,
   state: "posted",
   verdict: "changes",
@@ -64,5 +65,77 @@ describe("the review of a followed pull request", () => {
     expect(quiet("running")).toBe("Reviewing the pull request");
     expect(quiet("failed")).toBe("The last review gave no result");
     expect(quiet("stale")).toBe("The last review was dropped");
+  });
+});
+
+describe("the measurement of a followed pull request", () => {
+  const measurement: Measurement = {
+    measurer: "bob",
+    head: "abcdef0123456789",
+    before: "0123456789abcdef",
+    state: "submitted",
+    current: true,
+    accepted: false,
+    at: 1,
+  };
+  const measured: Round = { ...round, kind: "measurement", state: "wanted", verdict: null };
+
+  it("says the measurement waits for the checks, then that the Reviewer is reading it", () => {
+    render(<ExternalReview review={measured} forge="GitHub" measurement={measurement} />);
+    expect(screen.getByTestId("external-review").textContent).toContain(
+      "reads @bob's measurement once the checks have passed",
+    );
+    cleanup();
+    render(
+      <ExternalReview
+        review={{ ...measured, state: "running" }}
+        forge="GitHub"
+        measurement={measurement}
+      />,
+    );
+    expect(screen.getByTestId("external-review").textContent).toContain("with @bob's measurement");
+  });
+
+  it("says accepted, with the measurer and the commit, once the Reviewer approved it", () => {
+    render(
+      <ExternalReview
+        review={{ ...measured, state: "merged", verdict: "approve", summary: "Meets the bar." }}
+        forge="GitHub"
+        measurement={{ ...measurement, state: "accepted", accepted: true }}
+      />,
+    );
+    const note = screen.getByTestId("measurement-note");
+    expect(note.textContent).toBe("Measurement by @bob accepted for abcdef0.");
+    expect(note.getAttribute("data-state")).toBe("accepted");
+  });
+
+  it("says not enough when the Reviewer still wants more, and where to read what", () => {
+    render(
+      <ExternalReview
+        review={{
+          ...measured,
+          state: "awaiting_measurement",
+          verdict: "approve_code",
+          summary: "Only one GPU.",
+        }}
+        forge="GitHub"
+        measurement={{ ...measurement, state: "insufficient" }}
+      />,
+    );
+    expect(screen.getByTestId("measurement-note").textContent).toContain("is not enough");
+    expect(screen.getByTestId("external-review").textContent).toContain("Only one GPU.");
+  });
+
+  it("says a measurement of an earlier commit no longer counts", () => {
+    render(
+      <ExternalReview
+        review={{ ...round, state: "awaiting_measurement", verdict: "approve_code" }}
+        forge="GitHub"
+        measurement={{ ...measurement, state: "invalid", current: false }}
+      />,
+    );
+    const note = screen.getByTestId("measurement-note").textContent ?? "";
+    expect(note).toContain("no longer counts");
+    expect(note).toContain("abcdef0");
   });
 });

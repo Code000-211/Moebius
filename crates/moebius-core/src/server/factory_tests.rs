@@ -764,10 +764,10 @@ async fn approve_code_approves_the_code_labels_moves_and_replies_and_never_merge
         .find(|t| t.contains("measurement"))
         .unwrap_or_else(|| panic!("{told:?}"));
     assert!(reply.contains("## Measurement"), "{reply}");
-    // It promises only what works: the owner accepts the measurement; nothing reads the comment by itself yet.
-    assert!(reply.contains("accepts the measurement"), "{reply}");
-    assert!(!reply.contains("reviewed again"), "{reply}");
-    assert!(!reply.contains("@ada"), "{reply}");
+    // It says how a measurer posts one, and that nobody writes /done (ADR 0033).
+    assert!(reply.contains("@ada"), "{reply}");
+    assert!(reply.contains("Runs before:"), "{reply}");
+    assert!(reply.contains("nobody needs to write /done"), "{reply}");
     // The same head is not read again, and nothing merged since.
     f.author_says_done().await;
     assert_eq!(f.reviews_of(&card).len(), 1);

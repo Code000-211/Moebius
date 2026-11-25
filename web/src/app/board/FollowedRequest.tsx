@@ -60,7 +60,11 @@ export function FollowedRequest({
         </div>
       )}
       {author && card.change?.external_review && (
-        <ExternalReview review={card.change.external_review} forge={forge} />
+        <ExternalReview
+          review={card.change.external_review}
+          forge={forge}
+          measurement={card.change.measurement}
+        />
       )}
       {author &&
         onEndRound &&

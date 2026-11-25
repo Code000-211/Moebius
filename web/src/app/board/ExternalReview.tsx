@@ -5,16 +5,24 @@
  * checks or the Reviewer reads, one quiet line says so.
  */
 import { ArrowSquareOutIcon } from "@phosphor-icons/react";
-import type { ExternalReview as Round } from "../../api/types/board";
+import type { Measurement, ExternalReview as Round } from "../../api/types/board";
 import { StatusIcon } from "../../ui/page/StatusIcon";
 
+const short = (commit: string) => commit.slice(0, 7);
+
 /** What a round that has no verdict yet or came to nothing says, or null when it has a verdict to show. */
-function pending(review: Round): string | null {
+function pending(review: Round, measurement?: Measurement): string | null {
+  const measured =
+    review.kind === "measurement" && measurement ? `@${measurement.measurer}'s ` : "";
   switch (review.state) {
     case "wanted":
-      return "Review starts once the checks have passed";
+      return measured
+        ? `The Reviewer reads ${measured}measurement once the checks have passed`
+        : "Review starts once the checks have passed";
     case "running":
-      return "Reviewing the pull request";
+      return measured
+        ? `Reviewing the pull request with ${measured}measurement`
+        : "Reviewing the pull request";
     case "failed":
       return "The last review gave no result";
     default:
@@ -22,8 +30,36 @@ function pending(review: Round): string | null {
   }
 }
 
-export function ExternalReview({ review, forge }: { review: Round; forge: string }) {
-  const waiting = pending(review);
+/**
+ * What the measurement of the pull request is, in a sentence: waiting for one, accepted for a commit, not enough, or
+ * counting for nothing since the pull request has a new commit. Null while there is nothing to say.
+ */
+function measurementNote(review: Round, measurement?: Measurement): string | null {
+  if (measurement?.state === "accepted" && measurement.accepted) {
+    return `Measurement by @${measurement.measurer} accepted for ${short(measurement.head)}.`;
+  }
+  if (measurement && (measurement.state === "invalid" || !measurement.current)) {
+    return `The measurement by @${measurement.measurer} was of ${short(measurement.head)} and no longer counts: the pull request has a new commit.`;
+  }
+  if (measurement?.state === "insufficient") {
+    return `The measurement by @${measurement.measurer} was read and is not enough. The review says what is missing.`;
+  }
+  if (review.verdict === "approve_code" && review.state === "awaiting_measurement") {
+    return "Waiting for a measurement. A registered measurer posts a comment that starts with ## Measurement on the issue, naming the commits before and after, the GPUs, the power cap, the ROCm or driver version, the container and at least 3 runs on each side. The next review round then starts by itself, and the author need not write /done.";
+  }
+  return null;
+}
+
+export function ExternalReview({
+  review,
+  forge,
+  measurement,
+}: {
+  review: Round;
+  forge: string;
+  measurement?: Measurement;
+}) {
+  const waiting = pending(review, measurement);
   if (waiting) {
     return (
       <p data-testid="external-review" className="m-0 text-sm text-secondary">
@@ -31,6 +67,7 @@ export function ExternalReview({ review, forge }: { review: Round; forge: string
       </p>
     );
   }
+  const note = measurementNote(review, measurement);
   const approved = review.verdict === "approve" || review.verdict === "approve_code";
   const needsMeasurement = review.verdict === "approve_code";
   const merged = review.state === "merged";
@@ -71,9 +108,17 @@ export function ExternalReview({ review, forge }: { review: Round; forge: string
       </div>
       {needsMeasurement && (
         <p data-testid="measurement-needed" className="m-0 text-sm text-secondary">
-          The code is right, but the measurement the repository asks for is missing. It is not
-          merged. A person accepts the measurement ({"POST /v1/changes/{id}/measurement"}) and then
-          merges it; a "## Measurement" comment does not start anything by itself yet.
+          The code is right, but the measurement the repository asks for is missing, so it is not
+          merged.
+        </p>
+      )}
+      {note && (
+        <p
+          data-testid="measurement-note"
+          data-state={measurement?.state ?? "waiting"}
+          className="m-0 text-sm text-secondary"
+        >
+          {note}
         </p>
       )}
       {review.summary && (

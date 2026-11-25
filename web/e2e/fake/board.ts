@@ -44,7 +44,18 @@ interface FakeCard {
     review_verdict: string | null;
     outside_author?: string;
     /** The Reviewer's latest round on a followed pull request (ADR 0029). */
+    /** The latest measurement a registered measurer posted (ADR 0033). */
+    measurement?: {
+      measurer: string;
+      head: string;
+      before: string;
+      state: string;
+      current: boolean;
+      accepted: boolean;
+      at: number;
+    };
     external_review?: {
+      kind: "author" | "measurement";
       round: number;
       round_limit: number;
       state: string;
@@ -277,6 +288,8 @@ export interface BoardFake {
    * missing (`approve_code`, `awaiting_measurement`), and returns its number.
    */
   seedFactory(): number;
+  /** Adds a followed pull request whose measurement a registered measurer posted and the Reviewer accepted; its card id. */
+  seedMeasured(): number;
   /**
    * Puts two issues `alice` took with `/take` in a comment on the board (Not started): one just taken, and one she says
    * is done, which waits for the owner with its inbox item. Returns their numbers.
@@ -939,6 +952,7 @@ export function createBoardFake(send: (event: ServerEvent) => void): BoardFake {
             review_verdict: "changes",
             outside_author: "alice",
             external_review: {
+              kind: "author",
               round: 1,
               round_limit: 3,
               state: "posted",
@@ -998,6 +1012,7 @@ export function createBoardFake(send: (event: ServerEvent) => void): BoardFake {
             review_verdict: "approve",
             outside_author: "alice",
             external_review: {
+              kind: "author",
               round: 1,
               round_limit: 3,
               state: "awaiting_measurement",
@@ -1016,6 +1031,54 @@ export function createBoardFake(send: (event: ServerEvent) => void): BoardFake {
         change(40, id, {
           pull_request: 8,
           branch: "moebius/pr-8",
+          outside_author: "alice",
+          taken_from: "In progress",
+        }),
+      );
+      return id;
+    },
+    seedMeasured() {
+      const id = Math.max(...cards.map((c) => c.id)) + 1;
+      cards.push(
+        card(id, {
+          title: "Speed up the paged attention decode",
+          column: "Ready to merge",
+          change: {
+            id: 41,
+            repository: "demo",
+            state: "open",
+            checks: "success",
+            review_verdict: "approve",
+            outside_author: "alice",
+            measurement: {
+              measurer: "bob",
+              head: "d34db33f0123456789abcdef0123456789abcdef",
+              before: "0123456789abcdef0123456789abcdef01234567",
+              state: "accepted",
+              current: true,
+              accepted: true,
+              at: NOW - 600,
+            },
+            external_review: {
+              kind: "measurement",
+              round: 2,
+              round_limit: 3,
+              state: "posted",
+              verdict: "approve",
+              summary:
+                "The decode kernel is right, and the measurement meets the merge bar: three runs each side on 2x MI300X at a 750 W cap, 9.8% faster, the output byte for byte the same.",
+              comments: [],
+              url: "https://github.test/acme/demo/pull/9#pullrequestreview-93",
+              head: "d34db33f0123456789abcdef0123456789abcdef",
+              current: true,
+            },
+          },
+        }),
+      );
+      changes.push(
+        change(41, id, {
+          pull_request: 9,
+          branch: "moebius/pr-9",
           outside_author: "alice",
           taken_from: "In progress",
         }),

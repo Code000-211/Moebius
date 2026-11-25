@@ -19,6 +19,8 @@ mod fake_forgejo;
 mod fake_github;
 #[cfg(test)]
 mod fake_gitlab;
+#[cfg(test)]
+mod flow_tests;
 mod leftovers;
 pub(crate) mod loops;
 pub mod outgoing;
@@ -30,6 +32,8 @@ mod reviews_tests;
 pub(crate) mod schedule;
 pub mod settings;
 pub mod setup;
+#[cfg(test)]
+mod status_tests;
 #[cfg(test)]
 mod taking_tests;
 #[cfg(test)]

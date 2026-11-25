@@ -365,7 +365,7 @@ impl App {
             "take" => section.taken.push(line),
             "release" => section.released.push(line),
             "auto_release" | "stale_reminder" | "stale_closed" | "stale_failed"
-            | "backlog_clash" => {
+            | "unbound_closed" | "backlog_clash" => {
                 line.detail = match a.kind.as_str() {
                     "auto_release" => format!("released: {}", a.detail),
                     "stale_reminder" => format!("reminded: {}", a.detail),

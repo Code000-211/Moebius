@@ -68,6 +68,7 @@ describe("what the window says of someone else's work", () => {
         outside_author: "alice",
         external_review: {
           round: 1,
+          kind: "author" as const,
           round_limit: 3,
           state: "posted",
           verdict: "changes",
@@ -99,6 +100,7 @@ describe("what the window says of someone else's work", () => {
           outside_author: "alice",
           external_review: {
             round: 1,
+            kind: "author" as const,
             round_limit: 3,
             state,
             verdict: state === "posted" ? "changes" : null,
