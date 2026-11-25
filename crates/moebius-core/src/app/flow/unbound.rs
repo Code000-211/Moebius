@@ -14,6 +14,71 @@ use crate::store::{Repository, now};
 const DAY: i64 = 86_400;
 
 impl App {
+    /// A pull request that names an issue but is not followed: the label that said it names none goes, and when the
+    /// issue cannot take it up for a lasting reason (it is done or closed, somebody else took it, or it has a pull
+    /// request already) the pull request is told once. A pull request that cannot be followed for another reason (its
+    /// author may not write and is no assignee, a run is going) is left as it is.
+    fn settle_named(
+        &self,
+        repository: &Repository,
+        request: &OpenRequest,
+        named: &BTreeSet<i64>,
+    ) -> Result<()> {
+        let seen = self.store.unbound(repository.id, request.number)?;
+        let forge = self.forge(repository)?;
+        let report = |what: &str, e: &dyn std::fmt::Display| {
+            self.bus.publish(Event::ForgeError {
+                repository: repository.name.clone(),
+                message: format!("pull request #{}: {what}: {e}", request.number),
+            });
+        };
+        if seen.is_some_and(|s| s.labelled) {
+            match forge.remove_request_label(repository, request.number, UNBOUND_LABEL) {
+                Ok(()) => {
+                    self.store
+                        .set_unbound_done(repository.id, request.number, "unlabelled")?
+                }
+                Err(e) => report("the label unbound could not be taken off", &e),
+            }
+        }
+        if seen.is_some_and(|s| s.explained) {
+            return Ok(());
+        }
+        let Some(number) = named.iter().next().copied() else {
+            return Ok(());
+        };
+        let Some(card) = self.store.card_by_number(repository.id, number)? else {
+            return Ok(());
+        };
+        let why = if card.closed
+            || self.column_class(card.project_id, &card.column) == crate::app::columns::DONE
+        {
+            format!("#{number} is done or closed")
+        } else if let Some(taker) = card
+            .taken_by
+            .as_deref()
+            .filter(|t| !t.eq_ignore_ascii_case(&request.author))
+        {
+            format!("#{number} is taken by @{taker}")
+        } else if !self.open_changes(&card)?.is_empty() {
+            format!("#{number} already has a pull request")
+        } else {
+            return Ok(());
+        };
+        self.store.note_unbound(repository.id, request.number)?;
+        let text = format!(
+            "Thanks @{}! This pull request names an issue, but it is not taken up: {why}. The owner can look at it.",
+            request.author
+        );
+        match forge.comment_request(repository, request.number, &text) {
+            Ok(_) => self
+                .store
+                .set_unbound_done(repository.id, request.number, "explained")?,
+            Err(e) => report("the comment that says why it is not taken up", &e),
+        }
+        Ok(())
+    }
+
     /// Looks at the open pull requests of `repository` after the poll followed those that name an issue: asks the others
     /// to name one, takes the label off one that was bound since, and closes one that waited long enough.
     pub fn nudge_unbound_requests(
@@ -70,10 +135,19 @@ impl App {
             if !active
                 || people.contains(&request.author.to_lowercase())
                 || request.base != repository.default_branch
-                || !closing_references(&text, name).is_empty()
                 || self.frozen(repository.id)?.is_some()
                 || self.runs_paused()?.is_some()
             {
+                continue;
+            }
+            // A pull request that names an issue, by a closing keyword, a backlog item's ID or `#N`, is not unbound even
+            // when it cannot be followed now.
+            let mut named = closing_references(&text, name);
+            if named.is_empty() {
+                named = self.named_issues(repository, request)?;
+            }
+            if !named.is_empty() {
+                self.settle_named(repository, request, &named)?;
                 continue;
             }
             if self.store.unbound(repository.id, request.number)?.is_none() {

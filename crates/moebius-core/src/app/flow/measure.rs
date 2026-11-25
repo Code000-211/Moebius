@@ -374,6 +374,10 @@ impl App {
         else {
             return Ok(());
         };
+        // What was accepted stays accepted for its head, whatever a later look at the round finds.
+        if report.state == "accepted" {
+            return Ok(());
+        }
         if verdict != "approve" || change.head.as_deref() != Some(report.head.as_str()) {
             let state = if verdict == "approve" {
                 "invalid"

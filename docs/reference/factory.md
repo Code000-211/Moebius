@@ -243,7 +243,8 @@ it. The issue is told the measurement was read.
 | `changes` | As for any round; the report is `insufficient`. |
 
 **A new head.** A push makes the pull request's head another: a round of a measurement that was not started yet, or whose
-verdict is not written, ends `stale` and the report `invalid`; a measurement that was accepted is accepted for its own head
+verdict is not written, ends `stale` and the report `invalid`; an approval that waited for the checks and finds another head is
+dropped, `stale`, and never merged; a measurement that was accepted stays `accepted`, for its own head
 only, so the gate finds none for the next. The issue is told once ("no longer counts"). A measurement that names the old
 head after the push is answered with the new commit.
 
@@ -268,7 +269,7 @@ The wait starts at the first poll that finds the checks of the head `success` fo
 red or no checks do not count (a repository with none is left to `/done`), and a push is another head with its own wait.
 When the wait is over, the head has no round of the pull request counted or going, and no round was asked for for this head
 by green checks before (`green_heads.asked`, so a round that failed is not made again), a round is asked for as `/done`
-asks for one, and the issue says so. The round limit holds (the owner is asked instead), and the round does not start while
+asks for one, and the issue says so. The round limit holds (the owner is asked instead, once for each head, so an item the owner resolved is not made again), and the round does not start while
 the card is held, the repository is frozen or all agents are paused. `/done` works as before: whichever comes first adds the
 round, and the other finds it asked for or read. The settings are a person's: an agent's `PUT` is `403`.
 
@@ -277,6 +278,11 @@ round, and the other finds it asked for or read. The settings are a person's: an
 A pull request that has no closing keyword (`Fixes #N`, `Closes #N`, `Resolves #N`) for an issue of the repository is looked
 at once at each poll, after the pull requests that name one were followed.
 
+0. **Not unbound.** A pull request that names an issue (a closing keyword, a backlog item's ID or `#N` as below) is never
+   asked, labelled or closed as unbound, even when it cannot be followed now. The label `unbound` it had goes. When the
+   issue cannot take it up for a lasting reason (it is done or closed, somebody else took it, or it has a pull request
+   already) the pull request is told once; any other reason (its author may not write and is no assignee, a run is going)
+   is left silent.
 1. **Bound.** When its title or branch holds the ID of a backlog item the sync made ([the
    backlog](#the-backlog)) as a word of its own, case aside (`K-47` is in `perf/k-47-cache`, not in `K-471`), and that is
    exactly one open issue of the repository, or when its title or description holds `#N` of exactly one issue its

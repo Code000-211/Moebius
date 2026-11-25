@@ -389,6 +389,21 @@ impl App {
                     if !self.may_act(card.id)? {
                         continue;
                     }
+                    // An approval counts for the head it read only: a push since makes it stale, and what was accepted
+                    // for that head stays accepted for it.
+                    if change.head.as_deref() != Some(round.head.as_str()) {
+                        if self
+                            .store
+                            .move_external_review(round.id, "approved", "stale")?
+                        {
+                            self.answer_on_request(
+                                &repository,
+                                change,
+                                "The pull request changed after it was approved, so the approval was dropped and nothing was merged. Write /done to have the new version reviewed.",
+                            );
+                        }
+                        continue;
+                    }
                     if !self
                         .store
                         .move_external_review(round.id, "approved", "posting")?

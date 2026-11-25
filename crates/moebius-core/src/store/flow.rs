@@ -44,6 +44,7 @@ CREATE TABLE unbound_requests (
     commented INTEGER NOT NULL DEFAULT 0,
     labelled INTEGER NOT NULL DEFAULT 0,
     closed_at INTEGER,
+    explained INTEGER NOT NULL DEFAULT 0,
     PRIMARY KEY (repository_id, number)
 );
 "#;
@@ -128,6 +129,8 @@ pub struct Unbound {
     pub commented: bool,
     pub labelled: bool,
     pub closed_at: Option<i64>,
+    /// Whether the pull request was told once why an issue it names cannot take it up.
+    pub explained: bool,
 }
 
 impl Store {
@@ -292,7 +295,7 @@ impl Store {
         Ok(self
             .read()
             .query_row(
-                "SELECT first_seen, commented, labelled, closed_at FROM unbound_requests \
+                "SELECT first_seen, commented, labelled, closed_at, explained FROM unbound_requests \
                  WHERE repository_id = ?1 AND number = ?2",
                 params![repository_id, number],
                 |r| {
@@ -301,6 +304,7 @@ impl Store {
                         commented: r.get(1)?,
                         labelled: r.get(2)?,
                         closed_at: r.get(3)?,
+                        explained: r.get(4)?,
                     })
                 },
             )
@@ -316,7 +320,7 @@ impl Store {
         Ok(())
     }
 
-    /// Records what was done about the pull request: `commented`, `labelled` or `closed`.
+    /// Records what was done about the pull request: `commented`, `labelled`, `unlabelled`, `explained` or `closed`.
     pub fn set_unbound_done(&self, repository_id: i64, number: i64, what: &str) -> Result<()> {
         let sql = match what {
             "commented" => {
@@ -327,6 +331,9 @@ impl Store {
             }
             "unlabelled" => {
                 "UPDATE unbound_requests SET labelled = 0 WHERE repository_id = ?1 AND number = ?2"
+            }
+            "explained" => {
+                "UPDATE unbound_requests SET explained = 1 WHERE repository_id = ?1 AND number = ?2"
             }
             _ => {
                 "UPDATE unbound_requests SET closed_at = CAST(strftime('%s', 'now') AS INTEGER) WHERE repository_id = ?1 AND number = ?2"

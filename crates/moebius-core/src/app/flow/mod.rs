@@ -149,11 +149,13 @@ impl App {
         {
             return Ok(());
         }
-        if self.store.external_review_rounds(change.id)? >= super::ROUND_LIMIT {
-            return self.ask_owner_to_look(card, change);
-        }
+        // The head is asked for once, and so is the owner for it: an Inbox item the owner resolved is not made again
+        // at every tick.
         if !self.store.ask_green_review(change.id, head)? {
             return Ok(());
+        }
+        if self.store.external_review_rounds(change.id)? >= super::ROUND_LIMIT {
+            return self.ask_owner_to_look(card, change);
         }
         self.store.add_external_review(change.id, head)?;
         self.answer(

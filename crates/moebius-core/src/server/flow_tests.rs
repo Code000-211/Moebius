@@ -713,6 +713,23 @@ async fn review_on_green_obeys_the_round_limit_freeze_hold_and_pause() {
                     .has_open_inbox_item(card.id, ROUNDS_SPENT)
                     .unwrap()
             );
+            // The owner resolves the item: it is not made again at every tick, once for the head.
+            f.server
+                .app
+                .store
+                .resolve_inbox_kind_for_card(card.id, ROUNDS_SPENT)
+                .unwrap();
+            for _ in 0..3 {
+                f.server.poll_github().await;
+            }
+            assert!(
+                !f.server
+                    .app
+                    .store
+                    .has_open_inbox_item(card.id, ROUNDS_SPENT)
+                    .unwrap(),
+                "asked once for the head"
+            );
         } else {
             assert_eq!(runs.len(), round);
             run = runs.last().unwrap().clone();
@@ -1032,5 +1049,96 @@ async fn only_a_person_changes_the_flow_settings_and_values_are_checked() {
     assert_eq!(
         (after.green_wait_minutes, after.unbound_close_days),
         (5, 14)
+    );
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn an_approval_that_waited_for_the_checks_is_dropped_after_a_push_and_the_accepted_measurement_stays()
+ {
+    let (f, card, head) = awaiting().await;
+    f.fake.comment(1, "bob", &f.measurement(&head));
+    f.server.poll_github().await;
+    let run = f.reviews_of(&card).remove(1);
+    // The checks are pending when the Reviewer approves, so the approval waits for them.
+    f.checks_are("in_progress", "");
+    f.server.poll_github().await;
+    f.reviewer_ends(&card, &run, &said("approve", "Meets the bar.", json!([])))
+        .await;
+    let change = f.change_of(&card);
+    assert_eq!(f.rounds(&card)[1].state, "approved");
+    assert_eq!(f.reports(&card)[0].state, "accepted");
+    // A push, then green checks again: the old approval is dropped, not merged, and the report stays accepted.
+    let pushed = push_to_the_pull_request(&f);
+    f.checks_are("completed", "success");
+    f.server.poll_github().await;
+    f.server.poll_github().await;
+    assert!(f.merged_requests().is_empty());
+    assert_eq!(f.rounds(&card)[1].state, "stale");
+    assert_eq!(f.reports(&card)[0].state, "accepted");
+    assert!(
+        f.server
+            .app
+            .store
+            .has_measurement(change.id, &head)
+            .unwrap()
+    );
+    assert!(
+        !f.server
+            .app
+            .store
+            .has_measurement(change.id, &pushed)
+            .unwrap()
+    );
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_pull_request_that_names_an_issue_it_cannot_take_up_is_not_called_unbound() {
+    // Issue 1 is taken by bob; alice may write and names it by its backlog item.
+    let (f, _) = unbound_fixture(Some("bob")).await;
+    f.opens(request("K-47: cache the plan", "", "alice", "alice/x"))
+        .await;
+    assert!(!f.follows());
+    let told = f.on_the_pull_request();
+    assert_eq!(told.len(), 1, "{told:?}");
+    assert!(told[0].contains("taken by @bob"), "{}", told[0]);
+    assert!(!told[0].contains("names none"), "{}", told[0]);
+    assert!(f.fake.label_adds.lock().unwrap().is_empty());
+    // Once, and never closed for naming no issue.
+    f.server
+        .app
+        .store
+        .set_unbound_first_seen(f.repository.id, 7, now() - 99 * 86_400)
+        .unwrap();
+    f.server.poll_github().await;
+    f.server.poll_github().await;
+    assert_eq!(f.on_the_pull_request().len(), 1);
+    assert!(f.fake.state_writes.lock().unwrap().is_empty());
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn the_unbound_label_goes_once_the_pull_request_names_an_issue_even_if_it_is_not_followed() {
+    let (f, _) = unbound_fixture(None).await;
+    f.opens(request("Some change", "", "carol", "carol/x"))
+        .await;
+    assert_eq!(f.fake.label_adds.lock().unwrap().len(), 1);
+    // Carol may not write and is no assignee, so naming the item does not get it followed, but it is no longer unbound.
+    f.opens(request("K-47: some change", "", "carol", "carol/x"))
+        .await;
+    assert!(!f.follows());
+    assert_eq!(
+        *f.fake.label_removes.lock().unwrap(),
+        vec![(7, "unbound".to_string())]
+    );
+    f.server.poll_github().await;
+    assert_eq!(f.fake.label_removes.lock().unwrap().len(), 1);
+    // A closing keyword counts the same.
+    let (g, _) = unbound_fixture(None).await;
+    g.opens(request("Some change", "", "carol", "carol/x"))
+        .await;
+    g.opens(request("Some change", "Fixes #1", "carol", "carol/x"))
+        .await;
+    assert_eq!(
+        *g.fake.label_removes.lock().unwrap(),
+        vec![(7, "unbound".to_string())]
     );
 }
