@@ -81,6 +81,20 @@ export interface CardChange {
   external_review?: ExternalReview;
   /** The latest measurement a registered measurer posted on that pull request (ADR 0033); absent while there is none. */
   measurement?: Measurement;
+  /** True while the pull request is a draft (ADR 0034); absent otherwise. */
+  draft?: boolean;
+  /** What the pull request's body says, read by the repository's pull request template (ADR 0034); absent until it was read. */
+  pull?: PullFields;
+}
+
+/** A pull request body read by its template: the sections by the slug of their heading, and what it lacks. */
+export interface PullFields {
+  fixes: number[];
+  fields: Record<string, string>;
+  tests: { done: boolean; text: string }[];
+  measurement: { state: string; reason: string } | null;
+  /** The required parts of the template the body lacks, as the template writes them. */
+  missing: string[];
 }
 
 /** A measurement a registered measurer posted as a comment on the issue, as the card window shows it. */

@@ -96,6 +96,7 @@ end
 | `card.review.verdict` | string | `approve` or `changes`. Read from the review run's summary (see below). |
 | `card.review.findings` | string | The summary without its verdict line; for a review with no verdict, the text `The review gave no verdict.`; for a `changes` verdict without findings, `The review asked for changes but gave no findings.` |
 | `card.review.judgements` | string | For a two-axis review, the judgement calls of both axes, each with its evidence; empty for a `review` run and when there are none. |
+| `card.review.comments` | table (array of tables) | The findings of the review that name a line (`FILE: <path>:<line>` after a finding), each with `path`, `line` (of the file as the change leaves it) and `body`; empty when none does. `moebius.post_review` writes them as comments on the pull request. |
 | `card.review.standards`, `card.review.spec` | table | Only for a two-axis review: that axis's `verdict` (`approve` or `changes`), `findings` (its blocking findings), `judgements` (its judgement calls) and `dropped` (how many findings were dropped for lacking evidence). |
 | `card.note` | string or nil | Why the card was sent back to coding: the findings of a review, the failing checks or a conflict, as the script that moved the card wrote them (the second argument of `moebius.move`). A `code` run that succeeds clears it; one that fails keeps it, so the retry gets it too. |
 | `card.repositories` | table (array of strings) | The names of the repositories the card works in, in the order it names them: its own issue's repository first (the forge's for an issue of a forge; the project's files for a card of a project without repositories), then those a person or the Moebius agent named (`PUT /v1/cards/{id}/repositories` in `desktop-api.md`) and those a `code` run asked for (see Cards over several repositories). Never empty. Read-only. |
@@ -104,6 +105,11 @@ end
 | `card.changes[i].branch` | string | The branch the change lives on: `moebius/card-<number>` in the card's own repository, `moebius/card-<KEY>-<number in the project>` (such as `moebius/card-WEB-24`) in another. |
 | `card.changes[i].base` | string | What the change merges into: the repository's default branch, as `main` without a forge and `origin/main` on GitHub. |
 | `card.changes[i].pull_request` | number or nil | The number of the pull request on GitHub. |
+| `card.changes[i].draft` | boolean | Whether the pull request is still a draft: Moebius opens its own as one after the first round where the repository works on the forge (`work_on_forge`), and takes it out of draft when the review approves ([ADR 0034](../adr/0034-templates-and-agents-that-work-on-the-forge.md)). |
+| `card.changes[i].fields` | table | What the pull request's body says, read by the pull request template: the text of each section by the slug of its heading (`item`, `what_the_change_does`, `tests_i_ran`, `measurement`, and a project's own), empty until the body was read. See [templates](templates.md#how-a-body-is-read). |
+| `card.changes[i].missing` | table (array of strings) | The required parts of the pull request template the body lacks, as the template writes them (`Fixes #N`, a heading); empty when it has them all. |
+| `card.changes[i].measurement` | string or nil | `measured`, `needs testing` or `not needed`, as the `Measurement` section starts; nil when it does not. |
+| `card.change` | table or nil | The first of `card.changes`, the change of the card's own repository, so a script reads `card.change.fields` and `card.change.missing`; nil until the card has a change. |
 | `card.changes[i].checks` | string | `pending`, `success`, `failure` or `none`, for the change's current commit. See Checks and conflicts. |
 | `card.changes[i].failed_checks` | string or nil | On GitHub, the failing check runs, one per line; nil unless `checks` is `failure`. |
 | `card.changes[i].check_output` | string or nil | Without a forge, the end of the output of the repository's `checks`, once they ended for the current commit. |
@@ -258,8 +264,10 @@ works in: the branch is pointed at that run's last commit there and pushed to th
 repository always has a change, on `moebius/card-<number>`, unless that change was merged and no commit was made in it
 since (the card went back for another repository): a pull request with no commits is not opened. Another repository has one, on
 `moebius/card-<KEY>-<number in the project>`, once a `code` run left commits in it beyond its default branch. The first
-time this creates the change, without a pull request: the pull request opens when the change is offered
-(`moebius.offer_change`), so not before the review approved it. Once a change has a pull request, publishing a later
+time this creates the change, without a pull request where the repository does not work on the forge: the pull request then
+opens when the change is offered (`moebius.offer_change`), so not before the review approved it. Where it does (the setting
+`work_on_forge`, on by default for GitHub, GitLab and Forgejo, see [templates](templates.md#working-on-the-forge)) the
+pull request opens now, as a draft, with a body written from the pull request template. Once a change has a pull request, publishing a later
 round updates it: a push, and the title and body say what the branch does now.
 It does nothing to a change whose commit is already published, so a script may call it on every tick. Publishing records
 the time, which starts the grace period of the change's `checks`, and publishes `change_updated`. Raises an error `the
@@ -340,6 +348,9 @@ picked. Without `run` (nil), none passed: the round counts in `card.rounds` as a
 it is empty) becomes the card's `note`, which the next round is told. The other attempts keep their branches. Publishes
 the event `attempts_settled` with `{card, picked, runs}`. Raises an error `the card has no open attempts`, `attempt <n>
 did not pass, so it cannot be picked` or `run <n> is not an open attempt of the card`.
+
+`moebius.post_review(review)` returns the address of the review on the forge, or nil.
+: Writes `review`, a table with `verdict` (`approve` or `changes`), `findings`, `judgements` and `comments` as `card.review` has them, on the pull request of the card's change in its own repository as a review of it: `REQUEST_CHANGES` with a comment on each of `comments` that is a line of the diff, or `APPROVE`, tied to the commit that was read; comments on other lines go into the summary; a forge that refuses a verdict on the request of its own user takes the review as one that only comments. Once for each round and head: a second call finds the first and answers nil. Does nothing, and answers nil, where the repository does not work on the forge (`work_on_forge`, [templates](templates.md#working-on-the-forge)) or the change has no pull request yet. A forge that refuses the review is reported as `forge_error` and the card goes on. The time this call takes does not count against the time limit. The default `review` script calls it before it offers the change or sends the card back.
 
 `moebius.offer_change(judgements)` returns the id (a number) of the change in the card's own repository (the first change when that one was merged and the card went back for another repository). It raises an error `the card has nothing new to offer` when every change of the card is merged. `judgements`
 is optional text, which is stored in each inbox item as `data.judgements` for the person to read.
@@ -437,7 +448,7 @@ What is left is the base functions (`assert`, `error`, `pairs`, `ipairs`, `pcall
 
 - Time: 2 seconds for one run of a script, loading included. Only the time a script itself spends counts. The time
   spent inside `moebius.decide`, `moebius.start_run`, `moebius.publish_change`, `moebius.open_pull_request`,
-  `moebius.run_checks`, `moebius.reproduction`, `moebius.run_test`, `moebius.run_test_at_base`, `moebius.offer_change`
+  `moebius.run_checks`, `moebius.reproduction`, `moebius.run_test`, `moebius.run_test_at_base`, `moebius.post_review`, `moebius.offer_change`
   and `moebius.merge_change` is added back to the deadline, so a slow decider, harness start, push or merge does not fail a
   script, nor does the time Moebius takes to describe the card (`card.changes` needs git).
 - Memory: 16 MiB for one run of a script.
@@ -466,7 +477,7 @@ this page, but records its calls instead of acting:
 - `moebius.start_run` returns 1, then 2 and so on. `moebius.start_runs` returns the next `n` numbers, `moebius.check_attempt` returns
   `status` `pending` with an empty `output`. `moebius.has_agent` says yes for every name.
 - `moebius.publish_change` and `moebius.run_checks` return a change on branch `moebius/card-1` whose `checks` is `none`.
-  `moebius.offer_change` returns 1 and `moebius.merge_change` returns a made-up commit (forty zeros). `moebius.record_outcome` returns 0. `moebius.reproduction` returns nil, and
+  `moebius.post_review` returns nil and `moebius.offer_change` returns 1 and `moebius.merge_change` returns a made-up commit (forty zeros). `moebius.record_outcome` returns 0. `moebius.reproduction` returns nil, and
   `moebius.run_test` and `moebius.run_test_at_base` return `status` `pending` with an empty `output`.
 - `moebius.agent_budget` returns nil, `moebius.tokens_today` and `moebius.runs_active` return 0, and the limits are the
   defaults.
@@ -490,6 +501,7 @@ The output is one line for each call that does something, in the order of the ca
 | `archived the card`, `held the card: <reason>`, `told the card's people (<kind>): <text>` | `moebius.archive`, `moebius.hold`, `moebius.notify` |
 | `decided <kind>: ... the fail-closed option "<option>" was taken` | `moebius.decide` |
 | `published the change`, `started the checks of the change`, `offered the change to a person, and the card moved to Ready to merge`, `merged the change, and the card moved to Done` | `moebius.publish_change`, `moebius.run_checks`, `moebius.offer_change`, `moebius.merge_change` |
+| `wrote the review (<verdict>) on the pull request of the change` | `moebius.post_review` |
 | `recorded the outcome "<outcome>"` | `moebius.record_outcome` |
 | `started the test "<command>" on the change` or `on the base commit` | `moebius.run_test`, `moebius.run_test_at_base` |
 

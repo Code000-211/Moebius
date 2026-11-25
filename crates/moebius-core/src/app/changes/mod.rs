@@ -317,7 +317,7 @@ impl App {
     }
 
     /// Records the newer commit `head` of an open change and puts it in the inbox again, ready to merge.
-    fn offer_again(&self, change_id: i64, head: &str, title: &str) -> Result<Change> {
+    pub(crate) fn offer_again(&self, change_id: i64, head: &str, title: &str) -> Result<Change> {
         self.store.set_change_head(change_id, head, now())?;
         self.store.resolve_inbox_for_change(change_id)?;
         self.put_in_inbox(self.change(change_id)?, title, None)
@@ -361,7 +361,19 @@ impl App {
         title: &str,
         body: &str,
     ) -> Result<Change> {
-        self.offer_published_change(repository, None, branch, title, body)
+        self.offer_branch_change_noted(repository, branch, title, body, None)
+    }
+
+    /// Like `offer_branch_change`, with a note for the person that the Inbox item shows.
+    pub fn offer_branch_change_noted(
+        &self,
+        repository: &Repository,
+        branch: &str,
+        title: &str,
+        body: &str,
+        note: Option<&str>,
+    ) -> Result<Change> {
+        self.offer_published_change(repository, None, (branch, title, body), note)
     }
 
     /// Offers the branch of the workflow run `run_id` as the run's change: published through the repository's forge
@@ -374,16 +386,15 @@ impl App {
         title: &str,
         body: &str,
     ) -> Result<Change> {
-        self.offer_published_change(repository, Some(run_id), branch, title, body)
+        self.offer_published_change(repository, Some(run_id), (branch, title, body), None)
     }
 
     fn offer_published_change(
         &self,
         repository: &Repository,
         run_id: Option<i64>,
-        branch: &str,
-        title: &str,
-        body: &str,
+        (branch, title, body): (&str, &str, &str),
+        note: Option<&str>,
     ) -> Result<Change> {
         let head = git(Path::new(&repository.path), &["rev-parse", branch])?;
         let forge = self.forge(repository)?;
@@ -397,7 +408,7 @@ impl App {
                 .store
                 .add_change(repository.id, None, branch, pull_request, &head)?,
         };
-        self.put_in_inbox(change, title, None)
+        self.put_in_inbox(change, title, note)
     }
 
     /// The files that keep the change from merging cleanly into the repository's default branch, one per line; none

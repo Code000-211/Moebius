@@ -176,18 +176,25 @@ pub struct ReviewPost<'a> {
     pub body: &'a str,
     /// Comments on lines of the diff, each in the file as the request leaves it.
     pub comments: &'a [ReviewComment],
+    /// Whether the review is written without a verdict, as a review that only comments, because the forge refuses a
+    /// verdict on a request its own user opened. The summary then starts with the verdict.
+    pub comment_only: bool,
 }
 
 impl ReviewPost<'_> {
-    /// The review as one comment, for a forge that cannot hold a review with comments on lines: the verdict, the
-    /// summary and each comment under the file and line it is about.
-    pub fn as_comment(&self) -> String {
-        let verdict = if self.approve {
+    /// The verdict in words.
+    pub fn verdict(&self) -> &'static str {
+        if self.approve {
             "Approved."
         } else {
             "Changes requested."
-        };
-        let mut text = format!("**{verdict}**\n\n{}", self.body.trim());
+        }
+    }
+
+    /// The review as one comment, for a forge that cannot hold a review with comments on lines: the verdict, the
+    /// summary and each comment under the file and line it is about.
+    pub fn as_comment(&self) -> String {
+        let mut text = format!("**{}**\n\n{}", self.verdict(), self.body.trim());
         for comment in self.comments {
             text.push_str(&format!(
                 "\n\n`{}` line {}: {}",
@@ -228,6 +235,35 @@ pub trait Forge: Send + Sync {
     /// Pushes `branch` to the forge without offering it as a change: no pull request is opened. A forge without
     /// pull requests has nothing to push to.
     fn push(&self, _repository: &Repository, _branch: &str) -> Result<(), ForgeError> {
+        Ok(())
+    }
+    /// Whether the forge has drafts, requests that are open for work and not yet for review: a flag on GitHub, a
+    /// title that starts with `Draft:` on GitLab and with `WIP:` on Forgejo.
+    fn supports_drafts(&self) -> bool {
+        false
+    }
+    /// Makes the work on `branch` known as [`Forge::publish`] does, but as a draft when the request is new. A request
+    /// that exists stays as it is on the forge, a draft or not, with its title and body replaced. A forge without
+    /// drafts opens an ordinary request.
+    fn publish_draft(
+        &self,
+        repository: &Repository,
+        title: &str,
+        body: &str,
+        branch: &str,
+        pull_request: Option<i64>,
+    ) -> Result<Option<i64>, ForgeError> {
+        self.publish(repository, title, body, branch, pull_request)
+    }
+    /// Takes the request `number` out of draft, with `title` and `body` as they are to be. A forge without drafts has
+    /// nothing to do.
+    fn mark_ready(
+        &self,
+        _repository: &Repository,
+        _number: i64,
+        _title: &str,
+        _body: &str,
+    ) -> Result<(), ForgeError> {
         Ok(())
     }
     /// Merges `change` into the repository's default branch and returns the merge commit.
@@ -569,11 +605,53 @@ impl Forge for GitHubForge {
         let number = self.runtime.block_on(self.github.open_pull_request(
             name,
             title,
-            branch,
-            &repository.default_branch,
+            (branch, &repository.default_branch),
             body,
+            false,
         ))?;
         Ok(Some(number))
+    }
+
+    fn supports_drafts(&self) -> bool {
+        true
+    }
+
+    fn publish_draft(
+        &self,
+        repository: &Repository,
+        title: &str,
+        body: &str,
+        branch: &str,
+        pull_request: Option<i64>,
+    ) -> Result<Option<i64>, ForgeError> {
+        if pull_request.is_some() {
+            return self.publish(repository, title, body, branch, pull_request);
+        }
+        let name = Self::github_name(repository)?;
+        let clone = Path::new(&repository.path);
+        let header = self.origin_auth(clone, name)?;
+        self.repos.push(clone, branch, header.as_deref(), true)?;
+        let number = self.runtime.block_on(self.github.open_pull_request(
+            name,
+            title,
+            (branch, &repository.default_branch),
+            body,
+            true,
+        ))?;
+        Ok(Some(number))
+    }
+
+    fn mark_ready(
+        &self,
+        repository: &Repository,
+        number: i64,
+        _title: &str,
+        _body: &str,
+    ) -> Result<(), ForgeError> {
+        let name = Self::github_name(repository)?;
+        Ok(self
+            .runtime
+            .block_on(self.github.mark_ready_for_review(name, number))?)
     }
 
     fn merge(
@@ -925,6 +1003,36 @@ impl Forge for GitLabForge {
         Ok(Some(number))
     }
 
+    fn supports_drafts(&self) -> bool {
+        true
+    }
+
+    fn publish_draft(
+        &self,
+        repository: &Repository,
+        title: &str,
+        body: &str,
+        branch: &str,
+        pull_request: Option<i64>,
+    ) -> Result<Option<i64>, ForgeError> {
+        let prefixed = format!("Draft: {title}");
+        self.publish(repository, &prefixed, body, branch, pull_request)
+    }
+
+    fn mark_ready(
+        &self,
+        repository: &Repository,
+        number: i64,
+        title: &str,
+        body: &str,
+    ) -> Result<(), ForgeError> {
+        let project = Self::project(repository)?;
+        Ok(self.runtime.block_on(
+            self.gitlab
+                .update_merge_request(project, number, title, body),
+        )?)
+    }
+
     fn merge(
         &self,
         repository: &Repository,
@@ -1202,6 +1310,35 @@ impl Forge for ForgejoForge {
             body,
         ))?;
         Ok(Some(number))
+    }
+
+    fn supports_drafts(&self) -> bool {
+        true
+    }
+
+    fn publish_draft(
+        &self,
+        repository: &Repository,
+        title: &str,
+        body: &str,
+        branch: &str,
+        pull_request: Option<i64>,
+    ) -> Result<Option<i64>, ForgeError> {
+        let prefixed = format!("WIP: {title}");
+        self.publish(repository, &prefixed, body, branch, pull_request)
+    }
+
+    fn mark_ready(
+        &self,
+        repository: &Repository,
+        number: i64,
+        title: &str,
+        body: &str,
+    ) -> Result<(), ForgeError> {
+        let repo = Self::repo(repository)?;
+        Ok(self
+            .runtime
+            .block_on(self.forgejo.update_pull_request(repo, number, title, body))?)
     }
 
     fn merge(

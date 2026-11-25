@@ -299,6 +299,18 @@ fn recording_api(
 
     let log = record.clone();
     m.set(
+        "post_review",
+        lua.create_function(move |_, review: Table| {
+            let verdict: String = review.get("verdict")?;
+            log(format!(
+                "wrote the review ({verdict}) on the pull request of the change"
+            ));
+            Ok(None::<String>)
+        })?,
+    )?;
+
+    let log = record.clone();
+    m.set(
         "offer_change",
         lua.create_function(move |_, _: Option<String>| {
             log("offered the change to a person, and the card moved to Ready to merge".into());

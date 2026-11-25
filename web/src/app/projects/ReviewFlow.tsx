@@ -2,7 +2,8 @@
  * The "Review flow" box of a repository on a forge (ADR 0033): whether a followed pull request is reviewed once the
  * checks of its head have been green for a few minutes, without its author's /done, and after how many days a pull
  * request that names no issue is closed. A freeze, a hold and Pause all stop both; the round limit holds. Saved with one
- * button.
+ * button. Also whether Moebius's own agents work on the forge as people do (ADR 0034): a draft pull request from the first
+ * round and the verdict as a review of it.
  */
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
@@ -52,6 +53,7 @@ function Form({ repository, stored }: { repository: number; stored: Flow }) {
   const [close, setClose] = useState(String(stored.unbound_close_days));
   const [statusOn, setStatusOn] = useState(stored.status_labels);
   const [prefix, setPrefix] = useState(stored.status_prefix);
+  const [onForge, setOnForge] = useState(stored.work_on_forge);
   const [w, c] = [whole(wait, MOST_MINUTES), whole(close, MOST_DAYS)];
   const prefixOk = prefix.trim() !== "" && prefix.length <= 30 && !/[,\n]/.test(prefix);
   const valid = w !== null && c !== null && prefixOk;
@@ -61,6 +63,7 @@ function Form({ repository, stored }: { repository: number; stored: Flow }) {
       w !== stored.green_wait_minutes ||
       c !== stored.unbound_close_days ||
       statusOn !== stored.status_labels ||
+      onForge !== stored.work_on_forge ||
       prefix.trim() !== stored.status_prefix);
   const save = useMutation({
     mutationFn: () =>
@@ -70,6 +73,7 @@ function Form({ repository, stored }: { repository: number; stored: Flow }) {
         unbound_close_days: c ?? DEFAULT_FLOW.unbound_close_days,
         status_labels: statusOn,
         status_prefix: prefix.trim(),
+        work_on_forge: onForge,
       }),
     onSuccess: (next) => {
       queryClient.setQueryData(keys.flow(repository), next);
@@ -88,6 +92,18 @@ function Form({ repository, stored }: { repository: number; stored: Flow }) {
         that is held, in a frozen repository, or while all agents are paused, and a pull request is
         read at most three times.
       </p>
+      <div className="flex items-start justify-between gap-4">
+        <div className="flex min-w-0 flex-col gap-0.5">
+          <span className="text-base font-medium text-text">Work on the forge</span>
+          <span className="text-sm text-muted">
+            Moebius's own agents work the way a developer does: the pull request opens as a draft
+            after the first round, with commits that say what was done, the Reviewer's verdict is a
+            review with comments on the lines, each finding is answered, and the issue keeps only
+            its status and the link. Takes effect on forges that have drafts.
+          </span>
+        </div>
+        <Switch label="Work on the forge" checked={onForge} onChange={setOnForge} />
+      </div>
       <div className="flex items-start justify-between gap-4">
         <div className="flex min-w-0 flex-col gap-0.5">
           <span className="text-base font-medium text-text">Review when the checks are green</span>

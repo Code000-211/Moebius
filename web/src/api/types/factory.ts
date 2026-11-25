@@ -24,6 +24,8 @@ export interface Flow {
   status_labels: boolean;
   /** What a status label starts with. */
   status_prefix: string;
+  /** Whether Moebius's own agents work on the forge as people do (ADR 0034): a draft pull request from the first round, the verdict as a review. */
+  work_on_forge: boolean;
 }
 
 export const DEFAULT_FLOW: Flow = {
@@ -32,7 +34,33 @@ export const DEFAULT_FLOW: Flow = {
   unbound_close_days: 14,
   status_labels: false,
   status_prefix: "status:",
+  work_on_forge: true,
 };
+
+/** One template in effect for a repository (ADR 0034). */
+export interface TemplateInfo {
+  /** `pull_request`, or the kind of a comment such as `done`. */
+  name: string;
+  source: "default" | "project";
+  /** Where the repository keeps its copy. */
+  path: string;
+  /** What a comment of the kind starts with; empty for the pull request template. */
+  first_line: string;
+}
+
+/** `GET /v1/repositories/{id}/templates`. */
+export interface Templates {
+  templates: TemplateInfo[];
+  sections: { heading: string; required: boolean; hint: string }[];
+  /** Why the project's pull request template is not used, or null. */
+  problem: string | null;
+}
+
+/** `POST /v1/repositories/{id}/templates/sync`: the pull request that keeps the copies current, or null when they are. */
+export interface TemplateSync {
+  change: { id: number; pull_request: number | null } | null;
+  message?: string;
+}
 
 /** `GET /v1/projects/{id}/backlog`, or null when the project has none. */
 export interface Backlog {

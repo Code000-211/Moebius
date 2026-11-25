@@ -188,6 +188,8 @@ keep their rows: the role is checked before the `410`.
 | `PUT /v1/repositories/{id}/upkeep` | owner | yes |
 | `GET /v1/repositories/{id}/flow` | viewer | yes |
 | `PUT /v1/repositories/{id}/flow` | owner | no |
+| `GET /v1/repositories/{id}/templates` | viewer | yes |
+| `POST /v1/repositories/{id}/templates/sync` | member | yes |
 | `GET /v1/projects/{id}/backlog` | viewer | yes |
 | `PUT /v1/projects/{id}/backlog` | owner | yes |
 | `DELETE /v1/projects/{id}/backlog` | owner | yes |
@@ -799,7 +801,7 @@ gets. `project_columns` maps the id of each project that has cards on the board 
 | `counts_as_sub_issue` | Whether the card counts as a sub-issue of its `parent` (see [only issues a person can have vouched for](#the-issue-tracker)). A client that builds stacks, counts "done of total" or decides what is next from `parent` uses only the cards where this is true; one that is false is an ordinary top-level card, whatever parent it names. |
 | `refusals` | How many tool calls of that latest run were refused (its `tool_check` and `mcp_call` run events with the decision `refuse`). |
 | `attempts` | The latest group of attempts of a card that was tried several times at once (see [column scripts](column-scripts.md#attempts)), oldest first, each `{"run", "model", "status", "result", "output", "picked", "reason"}`: `model` the model or class the attempt was started with, or null; `status` its run's status; `result` `passed`, `failed` or null before it was judged; `output` why it failed; `picked` whether it was the one kept, and `reason` why. Absent when the card has no attempts. |
-| `change` | The card's open change in its own issue's repository, `{"id", "repository", "state", "checks", "review_verdict", "outside_author", "external_review", "measurement"}`, or null. `repository` is the name of the repository the change is in. `outside_author` is the forge login of whoever opened the pull request when the card follows one that someone else opened, and is left out for Moebius's own change. `checks` is `pending`, `success`, `failure` or `none`, as `card.change.checks`; `review_verdict` is `approve` or `changes` once a review ended since the latest `code` run, else null. Whether the change conflicts is not in the snapshot. `external_review` is left out unless the card follows a pull request someone else opened and a round was asked for (by its author, by green checks or by a measurement); it is the latest round of the Reviewer on it, `{"kind", "round", "round_limit", "state", "verdict", "summary", "comments", "url", "head", "current"}` (see [Reviews of followed pull requests](#reviews-of-followed-pull-requests)). |
+| `change` | The card's open change in its own issue's repository, `{"id", "repository", "state", "checks", "review_verdict", "outside_author", "external_review", "measurement", "draft", "pull"}`, or null. `repository` is the name of the repository the change is in. `outside_author` is the forge login of whoever opened the pull request when the card follows one that someone else opened, and is left out for Moebius's own change. `checks` is `pending`, `success`, `failure` or `none`, as `card.change.checks`; `review_verdict` is `approve` or `changes` once a review ended since the latest `code` run, else null. Whether the change conflicts is not in the snapshot. `external_review` is left out unless the card follows a pull request someone else opened and a round was asked for (by its author, by green checks or by a measurement); it is the latest round of the Reviewer on it, `{"kind", "round", "round_limit", "state", "verdict", "summary", "comments", "url", "head", "current"}` (see [Reviews of followed pull requests](#reviews-of-followed-pull-requests)). `draft` is true while the pull request is a draft (left out otherwise); `pull` is what its body says, read by the repository's [pull request template](templates.md#how-a-body-is-read): `{"fixes": [number], "fields": {slug: text}, "tests": [{"done", "text"}], "measurement": {"state", "reason"} or null, "missing": [string]}`, left out until the body was read. |
 | `changes` | Every open change of the card, one per repository it works in that has one, in the order the changes are merged (the order of `repositories`), each as `change` above. A card over one repository has this one change or none; `change` is the entry of its own repository. Empty for a card in Done. |
 
 A card in `Done` has `rounds` and `tokens` 0, no `run`, no `change`, no blockers and no refusals: the snapshot is read on
@@ -4617,17 +4619,42 @@ an `edit_upkeep` decision.
 How a repository lets reviews and pull requests flow ([ADR
 0033](../adr/0033-measurements-and-reviews-flow-without-the-owners-clicks.md); the contracts are on [the
 factory](factory.md#review-on-green-checks)), with the defaults for one that has set none: `{"review_on_green": false,
-"green_wait_minutes": 5, "unbound_close_days": 14, "status_labels": false, "status_prefix": "status:"}`. Any role that may see the repository.
+"green_wait_minutes": 5, "unbound_close_days": 14, "status_labels": false, "status_prefix": "status:", "work_on_forge": true}`. Any role that may see the repository.
 
 ### `PUT /v1/repositories/{id}/flow`
 
 Owner, and a person: an agent's token is `403`. Request: `{"review_on_green": bool, "green_wait_minutes": number,
-"unbound_close_days": number, "status_labels": bool, "status_prefix": string, "reason": string}`; each key is optional
+"unbound_close_days": number, "status_labels": bool, "status_prefix": string, "work_on_forge": bool, "reason": string}`; each key is optional
 and stays as it is when left out. `green_wait_minutes` is from 0 to 120 and `unbound_close_days` from 0 (never close) to
 365, and `status_prefix` 1 to 30 characters with no comma or new line, else `422`; `422` too for a
 repository on no forge. Answers the settings as they are now, and sends `repository_updated`. Recorded as an `edit_flow`
-decision (context `repository`, `review_on_green`, `green_wait_minutes`, `unbound_close_days`, `status_labels`, `status_prefix`); an edit that changes
+decision (context `repository`, `review_on_green`, `green_wait_minutes`, `unbound_close_days`, `status_labels`, `status_prefix`, `work_on_forge`); an edit that changes
 nothing records nothing.
+
+`work_on_forge` says whether Moebius's own agents work on the forge as people do ([ADR
+0034](../adr/0034-templates-and-agents-that-work-on-the-forge.md), [the contract](templates.md#working-on-the-forge)): a draft
+pull request from the first round with a body written from the template, the Reviewer's verdict as a review of the pull
+request, an answer to each finding, and the issue holding only its status and the link. It is on by default and has an
+effect only where the forge has drafts (GitHub, GitLab, Forgejo); a repository on none has nothing to turn on.
+
+### `GET /v1/repositories/{id}/templates`
+
+The pull request template and the comment templates in effect for the repository ([templates](templates.md)):
+`{"templates": [{"name", "source", "path", "first_line"}], "sections": [{"heading", "required", "hint"}], "problem"}`.
+`name` is `pull_request` or the kind of a comment (`measurement`, `done`, `review-answer`, `take`, `release`), `source` is
+`default` (the one Moebius ships) or `project` (the project's, in the harness configuration repository), `path` is where the
+repository keeps its copy, `first_line` is what a comment of the kind starts with (empty for the pull request template),
+`sections` are the headings of the pull request template in effect, and `problem` says why the project's pull request
+template is not used (a string) or is null. Any role that may see the repository.
+
+### `POST /v1/repositories/{id}/templates/sync`
+
+Member. Request: `{"reason": string}`, which may be left out. Opens a pull request that brings the repository's copies of the
+templates (`.github/PULL_REQUEST_TEMPLATE.md` and `.github/moebius/<name>.md`) up to date, on the branch `moebius/templates`,
+and puts it in the Inbox as `ready_to_merge` with a note that `.github/` is locked, so it waits for the owner. Answers
+`{"change": <the change>}`, or `{"change": null, "message": "the repository's templates are current"}` when the default
+branch has the files already. An open pull request of an earlier sync is updated instead of another being opened.
+Recorded as a `sync_templates` decision (context `repository`, `files`).
 
 ### `GET /v1/projects/{id}/backlog`
 

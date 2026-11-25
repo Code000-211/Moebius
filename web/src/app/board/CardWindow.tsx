@@ -37,6 +37,7 @@ import {
 } from "./model";
 import { DONE_ASKED } from "./model/inbox";
 import { NeedsYouBlock } from "./NeedsYou";
+import { PullFields } from "./PullFields";
 
 /** The status icon of a card: what it asks of a person or is doing now first, then the column it stands in. */
 export function iconOf(card: Card, status: CardStatus): StatusState {
@@ -279,6 +280,8 @@ export function CardContent({
             if (change !== undefined) onDecide({ kind: "end_round", change, number: card.number });
           }}
         />
+
+        <PullFields change={card.change} />
 
         <div className="px-6 pb-6">
           <CardThread

@@ -799,7 +799,7 @@ impl GitLab {
             )
             .await?;
         }
-        if review.approve {
+        if review.approve && !review.comment_only {
             self.project_do(
                 project,
                 Method::POST,

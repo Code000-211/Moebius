@@ -147,7 +147,7 @@ impl App {
     }
 
     /// The comments of a review that fit lines of the diff of `change`, and the text of those that do not.
-    fn split_comments(
+    pub(in crate::app) fn split_comments(
         &self,
         repository: &Repository,
         head: &str,
@@ -814,6 +814,7 @@ impl App {
             head: &round.head,
             body: body.trim(),
             comments: &comments,
+            comment_only: false,
         };
         let forge = self.forge(repository)?;
         let url = match forge.review_request(repository, number, &post) {

@@ -25,7 +25,10 @@
 //! - `card.merged`: whether a change of the card was merged, which is what tells a card that is done because its work
 //!   was merged from one that was closed.
 //! - `card.review`: the verdict and findings of the review since the card's latest `code` run, if there is one; for a
-//!   review along two axes also its `judgements` and the `standards` and `spec` axes (see `review`).
+//!   review along two axes also its `judgements`, its `comments` (the findings that name a file and a line, each with
+//!   `path`, `line` and `body`) and the `standards` and `spec` axes (see `review`).
+//! - `card.changes[i].fields`, `.missing`: what the pull request's body says, read by the pull request template (see
+//!   `app::forms::pull`).
 //! - `card.note`: why the card went back to coding, if it did and no `code` run has succeeded since.
 //! - `card.repositories`: the names of the repositories the card works in, its own issue's first (see
 //!   `app::card_repositories`).
@@ -44,7 +47,7 @@ use std::sync::Arc;
 use mlua::{Lua, Table};
 
 use super::Engine;
-use super::review::{AxisReview, two_axes};
+use super::review::{AxisReview, LineComment, two_axes};
 use crate::app::{App, CardFacts, runs_since_retry};
 use crate::store::{Card, Change, Run};
 
@@ -57,6 +60,8 @@ pub struct Review {
     pub judgements: String,
     /// The Standards and the Spec axis of a two-axis review, in that order; empty for another review.
     pub axes: Vec<AxisReview>,
+    /// The findings that name a line of the diff, for the review the server writes on the pull request.
+    pub comments: Vec<LineComment>,
 }
 
 /// Reads the verdict from the end of a review run's summary: a last line `VERDICT: approve` or `VERDICT: changes`,
@@ -78,6 +83,7 @@ fn verdict(summary: Option<&str>, restricted: bool) -> Review {
             findings: findings.trim().to_string(),
             judgements: String::new(),
             axes: Vec::new(),
+            comments: Vec::new(),
         };
     }
     let text = summary.unwrap_or("").trim_end();
@@ -100,6 +106,7 @@ fn verdict(summary: Option<&str>, restricted: bool) -> Review {
         findings: findings.into(),
         judgements: String::new(),
         axes: Vec::new(),
+        comments: Vec::new(),
     }
 }
 
@@ -146,7 +153,10 @@ impl Engine {
         )?;
         t.set("note", card.note.as_deref())?;
         t.set("repositories", card.repositories.clone())?;
-        t.set("changes", changes_table(&self.app, lua, card.id)?)?;
+        let changes = changes_table(&self.app, lua, card.id)?;
+        // The card's own repository's change, for the fields of its pull request: `card.change.fields`.
+        t.set("change", changes.get::<Option<Table>>(1)?)?;
+        t.set("changes", changes)?;
         refuse_the_old_change(lua, &t)?;
         t.set("trusted", self.app.is_trusted(card))?;
         t.set("confirmed", card.confirmed)?;
@@ -245,6 +255,15 @@ impl Engine {
             v.set("verdict", review.verdict)?;
             v.set("findings", review.findings)?;
             v.set("judgements", review.judgements)?;
+            let lines = lua.create_table()?;
+            for comment in &review.comments {
+                let c = lua.create_table()?;
+                c.set("path", comment.path.as_str())?;
+                c.set("line", comment.line)?;
+                c.set("body", comment.body.as_str())?;
+                lines.push(c)?;
+            }
+            v.set("comments", lines)?;
             for axis in review.axes {
                 let a = lua.create_table()?;
                 a.set("verdict", axis.verdict)?;
@@ -288,6 +307,22 @@ pub(super) fn changes_table(app: &Arc<App>, lua: &Lua, card_id: i64) -> mlua::Re
         c.set(
             "check_output",
             change.check_output.as_deref().filter(|_| current),
+        )?;
+        c.set("draft", change.draft)?;
+        let parsed: crate::app::forms::pull::Pull = change
+            .pull_fields
+            .as_deref()
+            .and_then(|json| serde_json::from_str(json).ok())
+            .unwrap_or_default();
+        let fields = lua.create_table()?;
+        for (name, text) in &parsed.fields {
+            fields.set(name.as_str(), text.as_str())?;
+        }
+        c.set("fields", fields)?;
+        c.set("missing", parsed.missing.clone())?;
+        c.set(
+            "measurement",
+            parsed.measurement.as_ref().map(|m| m.state.as_str()),
         )?;
         read_conflict_when_asked(lua, &c, app.clone(), change)?;
         list.push(c)?;

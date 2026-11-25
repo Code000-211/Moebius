@@ -154,6 +154,8 @@ pub(super) const ROUTES: &[(&str, &str, Access)] = &[
     ("PUT", "/v1/repositories/{id}/upkeep", OWNER),
     ("GET", "/v1/repositories/{id}/flow", VIEWER),
     ("PUT", "/v1/repositories/{id}/flow", OWNER_PERSON),
+    ("GET", "/v1/repositories/{id}/templates", VIEWER),
+    ("POST", "/v1/repositories/{id}/templates/sync", MEMBER),
     ("GET", "/v1/projects/{id}/backlog", VIEWER),
     ("PUT", "/v1/projects/{id}/backlog", OWNER),
     ("DELETE", "/v1/projects/{id}/backlog", OWNER),

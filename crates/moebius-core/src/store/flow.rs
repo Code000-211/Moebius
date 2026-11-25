@@ -70,6 +70,10 @@ pub struct Flow {
     pub status_labels: bool,
     /// What a status label starts with; the label is the prefix and the state's name.
     pub status_prefix: String,
+    /// Whether Moebius's own agents work the way people do on the forge (ADR 0034): a draft pull request from the first
+    /// round, commits that say what was done, the review as a review of the pull request, and the issue holding only
+    /// the status and the link. Only where the forge has drafts.
+    pub work_on_forge: bool,
 }
 
 impl Default for Flow {
@@ -80,6 +84,7 @@ impl Default for Flow {
             unbound_close_days: DEFAULT_UNBOUND_CLOSE_DAYS,
             status_labels: false,
             status_prefix: DEFAULT_STATUS_PREFIX.into(),
+            work_on_forge: true,
         }
     }
 }
@@ -139,7 +144,7 @@ impl Store {
         Ok(self
             .read()
             .query_row(
-                "SELECT review_on_green, green_wait_minutes, unbound_close_days, status_labels, status_prefix \
+                "SELECT review_on_green, green_wait_minutes, unbound_close_days, status_labels, status_prefix, work_on_forge \
                  FROM flow_settings WHERE repository_id = ?1",
                 [repository_id],
                 |r| {
@@ -149,6 +154,7 @@ impl Store {
                         unbound_close_days: r.get(2)?,
                         status_labels: r.get(3)?,
                         status_prefix: r.get(4)?,
+                        work_on_forge: r.get(5)?,
                     })
                 },
             )
@@ -160,15 +166,17 @@ impl Store {
     pub fn set_flow(&self, repository_id: i64, flow: &Flow) -> Result<()> {
         self.conn().execute(
             "INSERT INTO flow_settings (repository_id, review_on_green, green_wait_minutes, unbound_close_days, \
-             status_labels, status_prefix) VALUES (?1, ?2, ?3, ?4, ?5, ?6) ON CONFLICT (repository_id) DO UPDATE SET \
-             review_on_green = ?2, green_wait_minutes = ?3, unbound_close_days = ?4, status_labels = ?5, status_prefix = ?6",
+             status_labels, status_prefix, work_on_forge) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7) ON CONFLICT (repository_id) DO UPDATE SET \
+             review_on_green = ?2, green_wait_minutes = ?3, unbound_close_days = ?4, status_labels = ?5, status_prefix = ?6, \
+             work_on_forge = ?7",
             params![
                 repository_id,
                 flow.review_on_green,
                 flow.green_wait_minutes,
                 flow.unbound_close_days,
                 flow.status_labels,
-                flow.status_prefix
+                flow.status_prefix,
+                flow.work_on_forge
             ],
         )?;
         Ok(())
@@ -369,6 +377,7 @@ mod tests {
             unbound_close_days: 0,
             status_labels: true,
             status_prefix: "s/".into(),
+            work_on_forge: false,
         };
         store.set_flow(1, &own).unwrap();
         assert_eq!(store.flow(1).unwrap(), own);

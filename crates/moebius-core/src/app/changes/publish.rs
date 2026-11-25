@@ -143,7 +143,11 @@ impl App {
         open_pull_request: bool,
         judgements: Option<&str>,
     ) -> Result<Change> {
-        let opened = |c: &Change| c.pull_request.is_some() || !open_pull_request;
+        // Where the agents work on the forge as people do (ADR 0034) the pull request opens with the first round, as a
+        // draft, and is kept current after each round.
+        let draft_mode = self.works_on_forge(repository);
+        let open = open_pull_request || draft_mode;
+        let opened = |c: &Change| c.pull_request.is_some() || !open;
         if let Some(change) = existing
             .as_ref()
             .filter(|c| c.head.as_deref() == Some(head) && opened(c))
@@ -154,9 +158,22 @@ impl App {
         let clone = Path::new(&repository.path);
         self.repos.point_branch(clone, branch, head)?;
         let pull_request = existing.as_ref().and_then(|c| c.pull_request);
-        let pull_request = if open_pull_request {
-            let body = self.pull_request_body(card, repository, branch, judgements);
-            forge.publish(repository, &card.title, &body, branch, pull_request)?
+        let as_draft =
+            draft_mode && (pull_request.is_none() || existing.as_ref().is_some_and(|c| c.draft));
+        let mut written = None;
+        let pull_request = if open {
+            let body = if draft_mode {
+                let (body, template) = self.own_pull_body(card, repository);
+                written = Some((body.clone(), template));
+                body
+            } else {
+                self.pull_request_body(card, repository, branch, judgements)
+            };
+            if as_draft {
+                forge.publish_draft(repository, &card.title, &body, branch, pull_request)?
+            } else {
+                forge.publish(repository, &card.title, &body, branch, pull_request)?
+            }
         } else {
             forge.push(repository, branch)?;
             pull_request
@@ -175,6 +192,26 @@ impl App {
                     .add_change(repository.id, Some(card.id), branch, pull_request, head)?
             }
         };
+        let change = match (as_draft, pull_request) {
+            (true, Some(_)) if !change.draft => {
+                self.store.set_change_draft(change.id, true)?;
+                self.change(change.id)?
+            }
+            _ => change,
+        };
+        if let Some((body, template)) = &written {
+            // What the round's publish writes on the forge must not fail the round: it is reported.
+            if let Err(e) = self
+                .after_round_published(card, repository, &change, (body, template))
+                .and_then(|()| self.link_pull_request(card, repository, &change))
+            {
+                self.bus.publish(Event::ForgeError {
+                    repository: repository.name.clone(),
+                    message: format!("#{}: the pull request: {e}", card.number),
+                });
+            }
+        }
+        let change = self.change(change.id)?;
         self.bus.publish(Event::ChangeUpdated(change.clone()));
         Ok(change)
     }
@@ -208,6 +245,7 @@ impl App {
     ) -> Result<(Vec<Change>, bool)> {
         let seen = self.card(card_id)?.column;
         let changes = self.publish_card_changes(card_id, true, judgements)?;
+        let changes = self.make_ready(changes)?;
         if changes.is_empty() {
             return Err(AppError::Invalid(
                 "the card has nothing new to offer: its changes are merged".into(),

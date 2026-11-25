@@ -260,8 +260,10 @@ async fn done_with_a_followed_pull_request_asks_for_its_review_and_not_the_owner
     assert_eq!(card.column, "In review");
     f.commands_on(3, true);
     f.says(1, "alice", "/done").await;
+    // The body of her pull request lacks the template's sections, which it is told on the pull request (ADR 0034).
+    let on_the_issue: Vec<_> = f.answers().into_iter().filter(|(n, _)| *n == 1).collect();
     assert_eq!(
-        f.answers(),
+        on_the_issue,
         vec![(
             1,
             "Thanks, the pull request will be reviewed once its checks have passed.".to_string()

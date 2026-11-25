@@ -21,6 +21,8 @@ mod fake_github;
 mod fake_gitlab;
 #[cfg(test)]
 mod flow_tests;
+#[cfg(test)]
+mod forms_tests;
 mod leftovers;
 pub(crate) mod loops;
 pub mod outgoing;

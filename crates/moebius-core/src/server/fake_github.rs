@@ -80,6 +80,9 @@ pub(super) struct FakeGitHub {
     pub(super) fail_merges: std::sync::atomic::AtomicBool,
     /// Whether it answers a change of an issue's state (closing a pull request, say) with a server error.
     pub(super) fail_state_writes: std::sync::atomic::AtomicBool,
+    /// Whether it refuses a review that approves or asks for changes (422), as GitHub does when the reviewer opened the
+    /// pull request; a review that only comments is taken.
+    pub(super) refuse_verdicts: std::sync::atomic::AtomicBool,
     /// How many reviews it was asked to write, those it failed included.
     pub(super) review_attempts: std::sync::atomic::AtomicUsize,
 }
@@ -94,6 +97,8 @@ pub(super) const TOKEN_LOGIN: &str = "octo-user";
 pub(super) struct Pulls {
     pub(super) opened: Vec<Value>,
     pub(super) updated: Vec<Value>,
+    /// The GraphQL calls that took the pull request out of draft.
+    pub(super) ready: Vec<Value>,
     pub(super) merged: Vec<Value>,
     pub(super) pull: Value,
     pub(super) check_runs: Vec<Value>,
@@ -161,10 +166,20 @@ impl FakeGitHub {
     }
 }
 
+/// Turns `work_on_forge` off for the repository, so that its pull request opens only when the change is offered, as it
+/// did before ADR 0034.
+pub(super) fn classic_flow(app: &App, repository: &Repository) {
+    let flow = crate::store::Flow {
+        work_on_forge: false,
+        ..app.store.flow(repository.id).unwrap()
+    };
+    app.store.set_flow(repository.id, &flow).unwrap();
+}
+
 pub(super) fn pull(state: &str, merged: bool) -> Value {
     json!({ "number": 7, "state": state, "merged": merged,
             "merge_commit_sha": merged.then_some("c0ffee"), "head": { "sha": "deadbeef" },
-            "base": { "ref": "main" } })
+            "base": { "ref": "main" }, "draft": false, "node_id": "PR_kwDOfake7" })
 }
 
 pub(super) fn check(name: &str, status: &str, conclusion: &str) -> Value {
@@ -204,6 +219,7 @@ pub(super) async fn fake_github() -> (String, Arc<FakeGitHub>) {
         on_pull_read: Mutex::new(None),
         refuse_line_comments: std::sync::atomic::AtomicBool::new(false),
         fail_reviews: std::sync::atomic::AtomicBool::new(false),
+        refuse_verdicts: std::sync::atomic::AtomicBool::new(false),
         fail_merges: std::sync::atomic::AtomicBool::new(false),
         review_attempts: std::sync::atomic::AtomicUsize::new(0),
         unassign_fails: std::sync::atomic::AtomicBool::new(false),
@@ -211,6 +227,7 @@ pub(super) async fn fake_github() -> (String, Arc<FakeGitHub>) {
         pulls: Mutex::new(Pulls {
             opened: Vec::new(),
             updated: Vec::new(),
+            ready: Vec::new(),
             merged: Vec::new(),
             pull: pull("open", false),
             check_runs: Vec::new(),
@@ -504,8 +521,21 @@ pub(super) async fn fake_github() -> (String, Arc<FakeGitHub>) {
             })
             .post(
                 |State(fake): State<Arc<FakeGitHub>>, axum::Json(body): axum::Json<Value>| async move {
-                    fake.pulls.lock().unwrap().opened.push(body);
+                    let mut pulls = fake.pulls.lock().unwrap();
+                    pulls.pull["draft"] = json!(body["draft"] == true);
+                    pulls.opened.push(body);
                     (StatusCode::CREATED, axum::Json(json!({ "number": 7 })))
+                },
+            ),
+        )
+        .route(
+            "/graphql",
+            post(
+                |State(fake): State<Arc<FakeGitHub>>, axum::Json(body): axum::Json<Value>| async move {
+                    let mut pulls = fake.pulls.lock().unwrap();
+                    pulls.pull["draft"] = json!(false);
+                    pulls.ready.push(body);
+                    axum::Json(json!({ "data": { "markPullRequestReadyForReview": { "pullRequest": { "id": "PR_kwDOfake7" } } } }))
                 },
             ),
         )
@@ -570,6 +600,15 @@ pub(super) async fn fake_github() -> (String, Arc<FakeGitHub>) {
                         .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
                     if fake.fail_reviews.load(std::sync::atomic::Ordering::SeqCst) {
                         return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+                    }
+                    if fake.refuse_verdicts.load(std::sync::atomic::Ordering::SeqCst)
+                        && body["event"] != "COMMENT"
+                    {
+                        return (
+                            StatusCode::UNPROCESSABLE_ENTITY,
+                            axum::Json(json!({ "message": "Can not approve your own pull request" })),
+                        )
+                            .into_response();
                     }
                     let lines = body["comments"].as_array().is_some_and(|c| !c.is_empty());
                     if lines && fake.refuse_line_comments.load(std::sync::atomic::Ordering::SeqCst) {
@@ -904,6 +943,8 @@ mod tests {
     #[tokio::test(flavor = "multi_thread")]
     async fn the_pull_request_says_what_the_change_did_and_what_the_review_found() {
         let f = Fixture::new().await;
+        // The classic path: the pull request opens when the change is offered.
+        classic_flow(&f.server.app, &f.repository);
         let card = f.card_in_review().await;
         let run = f
             .server
@@ -994,6 +1035,8 @@ mod tests {
     #[tokio::test(flavor = "multi_thread")]
     async fn a_pull_request_is_updated_when_the_branch_moves_on() {
         let f = Fixture::new().await;
+        // The classic path: the pull request opens when the change is offered.
+        classic_flow(&f.server.app, &f.repository);
         let change = f.offered_change().await;
         assert_eq!(change.pull_request, Some(7));
 
