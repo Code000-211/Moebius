@@ -181,7 +181,7 @@ pub fn direct_script(
     );
     format!(
         "unset SSH_AUTH_SOCK SSH_AGENT_PID; cd {dir}/{side} && export HOME={dir}/home && {exports}s=$(date +%s); \
-         sh -c {inner} 2>&1; c=$?; kill -KILL -- -$(cat {pid} 2>/dev/null) 2>/dev/null; e=$(date +%s); \
+         sh -c {inner} 2>&1; c=$?; kill -KILL -$(cat {pid} 2>/dev/null) 2>/dev/null; e=$(date +%s); \
          echo \"{token} direct $c $((e-s))\"",
         dir = quote(job_dir),
         inner = quote(&inner),

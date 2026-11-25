@@ -391,8 +391,8 @@ impl Job<'_> {
         } else {
             let pid = quote(&format!("{}/pid-{n}", self.dir));
             format!(
-                "p=$(cat {pid} 2>/dev/null); [ -z \"$p\" ] && exit 0; for i in 1 2 3 4 5; do kill -KILL -- -$p 2>/dev/null; \
-                 kill -0 -- -$p 2>/dev/null || exit 0; sleep 1; done; exit 1"
+                "p=$(cat {pid} 2>/dev/null); [ -z \"$p\" ] && exit 0; for i in 1 2 3 4 5; do kill -KILL -$p 2>/dev/null; \
+                 kill -0 -$p 2>/dev/null || exit 0; sleep 1; done; exit 1"
             )
         };
         let stopped = self
