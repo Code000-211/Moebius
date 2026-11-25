@@ -34,3 +34,4 @@ One record per decision, numbered in the order they were taken. Where the spec a
 - [0029](0029-the-reviewer-reads-a-pull-request-when-its-author-says-done.md) the Reviewer reads a pull request when its author says it is done
 - [0030](0030-custom-board-columns-per-project.md) custom board columns per project
 - [0031](0031-one-merge-gate-and-a-brake-for-the-factory.md) one merge gate and a brake for the factory
+- [0032](0032-the-factory-keeps-the-owners-work-small.md) the factory keeps the owner's work small

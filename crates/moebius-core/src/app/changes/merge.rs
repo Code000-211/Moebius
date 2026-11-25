@@ -106,6 +106,15 @@ impl App {
             .resolve_inbox_kind_for_card(card.id, "merge_stopped")?;
         self.store
             .add_inbox_item("merge_stopped", Some(card.id), &card.title, &data)?;
+        // The daily digest tells why the merge stopped.
+        let _ = self.store.note_activity(
+            "merge_failed",
+            change.repository_id,
+            Some(card.number),
+            None,
+            why,
+            &json!({ "change": change.id, "card": card.id, "title": card.title }),
+        );
         Ok(())
     }
 

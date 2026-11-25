@@ -198,6 +198,17 @@ impl ReviewPost<'_> {
     }
 }
 
+/// The latest review of a pull request that decided something, and what it was written for.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ReviewMark {
+    /// `approved`, `changes_requested` or `dismissed`, in lower case.
+    pub state: String,
+    /// The commit it was written for; none when the forge does not say.
+    pub head: Option<String>,
+    /// When it was submitted, in seconds since the epoch; 0 when the forge does not say.
+    pub at: i64,
+}
+
 /// A forge as the core uses it. Its methods block, so they are called from threads that may block.
 pub trait Forge: Send + Sync {
     /// The name repositories refer to it by, such as `none` or `github`.
@@ -262,6 +273,38 @@ pub trait Forge: Send + Sync {
         _open: bool,
     ) -> Result<(), ForgeError> {
         Err(not_on_a_forge(repository))
+    }
+    /// Closes the issue `number` as not planned where the forge says why an issue was closed (GitHub); elsewhere it is
+    /// closed as any issue is.
+    fn close_issue_not_planned(
+        &self,
+        repository: &Repository,
+        number: i64,
+    ) -> Result<(), ForgeError> {
+        self.set_issue_open(repository, number, false)
+    }
+    /// Writes a comment on the pull or merge request `number` and returns its id. Where requests are issues with
+    /// their own comments (GitHub, Forgejo) it is the comment of the issue.
+    fn comment_request(
+        &self,
+        repository: &Repository,
+        number: i64,
+        body: &str,
+    ) -> Result<i64, ForgeError> {
+        self.comment_issue(repository, number, body)
+    }
+    /// The latest review of the pull or merge request `number` that approved it, asked for changes or was dismissed, with
+    /// the commit it was written for; none where the forge does not say (or there is none).
+    fn latest_review(
+        &self,
+        _repository: &Repository,
+        _number: i64,
+    ) -> Result<Option<ReviewMark>, ForgeError> {
+        Ok(None)
+    }
+    /// Closes the pull or merge request `number` without merging it.
+    fn close_request(&self, repository: &Repository, number: i64) -> Result<(), ForgeError> {
+        self.set_issue_open(repository, number, false)
     }
     /// Replaces the labels of the issue `number` on the forge.
     fn set_issue_labels(
@@ -623,6 +666,40 @@ impl Forge for GitHubForge {
             .block_on(self.github.set_issue_state(name, number, open))?)
     }
 
+    fn latest_review(
+        &self,
+        repository: &Repository,
+        number: i64,
+    ) -> Result<Option<ReviewMark>, ForgeError> {
+        let name = Self::github_name(repository)?;
+        let reviews = self.runtime.block_on(self.github.reviews(name, number))?;
+        Ok(reviews
+            .into_iter()
+            .rev()
+            .find(|r| {
+                matches!(
+                    r.state.to_uppercase().as_str(),
+                    "APPROVED" | "CHANGES_REQUESTED" | "DISMISSED"
+                )
+            })
+            .map(|r| ReviewMark {
+                state: r.state.to_lowercase(),
+                head: r.commit_id,
+                at: r.submitted_at.as_deref().map_or(0, seconds),
+            }))
+    }
+
+    fn close_issue_not_planned(
+        &self,
+        repository: &Repository,
+        number: i64,
+    ) -> Result<(), ForgeError> {
+        let name = Self::github_name(repository)?;
+        Ok(self
+            .runtime
+            .block_on(self.github.close_issue_not_planned(name, number))?)
+    }
+
     fn set_issue_labels(
         &self,
         repository: &Repository,
@@ -900,6 +977,25 @@ impl Forge for GitLabForge {
         Ok(self
             .runtime
             .block_on(self.gitlab.set_issue_state(name, number, open))?)
+    }
+
+    fn comment_request(
+        &self,
+        repository: &Repository,
+        number: i64,
+        body: &str,
+    ) -> Result<i64, ForgeError> {
+        let project = Self::project(repository)?;
+        Ok(self
+            .runtime
+            .block_on(self.gitlab.create_merge_request_note(project, number, body))?)
+    }
+
+    fn close_request(&self, repository: &Repository, number: i64) -> Result<(), ForgeError> {
+        let project = Self::project(repository)?;
+        Ok(self
+            .runtime
+            .block_on(self.gitlab.close_merge_request(project, number))?)
     }
 
     fn set_issue_labels(

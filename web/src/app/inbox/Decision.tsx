@@ -31,12 +31,14 @@ import { repositoryBoardPath } from "../pages";
 import { useRole } from "../shell/session";
 import { type Action, perform, working } from "./actions";
 import { DeleteGrilling } from "./DeleteGrilling";
+import { DigestView, digestOf } from "./DigestView";
 import {
   APPROVE_ISSUE,
   CHANGE_CLOSED,
   changeOf,
   chatOf,
   confirmable,
+  DAILY_DIGEST,
   DONE_ASKED,
   type Draft,
   doneLogin,
@@ -290,6 +292,8 @@ export function Decision({
       );
       buttons.push(plain("Dismiss", () => act({ kind: "dismissGrilling", grilling })));
       buttons.push(<DeleteGrilling key="delete" grilling={grilling} />);
+    } else if (item.kind === DAILY_DIGEST) {
+      buttons.push(primary("Dismiss", { kind: "dismissDigest", item: item.id }));
     } else if (item.kind === GRILLING_REPORT && grilling !== null) {
       buttons.push(primary("Dismiss", { kind: "dismissGrilling", grilling }));
       buttons.push(<DeleteGrilling key="delete" grilling={grilling} />);
@@ -330,6 +334,9 @@ export function Decision({
       {item.kind === PROPOSAL && <Trials item={item} />}
       {item.kind === WIKI_PROPOSAL && wikiProposalOf(item).diff !== "" && (
         <CodeBlock language="diff" code={wikiProposalOf(item).diff} />
+      )}
+      {item.kind === DAILY_DIGEST && digestOf(item) !== null && (
+        <DigestView digest={digestOf(item) as NonNullable<ReturnType<typeof digestOf>>} />
       )}
       {item.kind === GRILLING_ISSUES && <Issues drafts={drafts} onChange={setDrafts} />}
       {item.kind === GRILLING_REPORT && (

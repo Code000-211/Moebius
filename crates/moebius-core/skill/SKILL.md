@@ -49,6 +49,7 @@ back here for the exact page it names:
 | A plugin (a decider in Rust) | `guide/plugins.md`, `reference/plugin-api.md` | A Rust crate in the chat's repository | `cargo test`, and `cargo run` of its example |
 | A setting, a model, an upstream | `reference/configuration.md` | `"$MOEBIUS" settings set <key>=<value>` | `"$MOEBIUS" settings`; it says when a restart is needed |
 | A repository, an issue, a card moved on | `guide/kanban.md`, `reference/desktop-api.md` | `"$MOEBIUS" repo add`, `issue create`, `inbox act` | `"$MOEBIUS" board` |
+| A project's backlog file made into issues, stale issues and pull requests handled, the daily digest | `guide/software-factory.md`, `reference/factory.md` | `"$MOEBIUS" backlog set\|sync`, `"$MOEBIUS" upkeep`, `"$MOEBIUS" digest` | `"$MOEBIUS" backlog sync <project> --dry-run` says what a sync would do |
 | A number improved, or an idea turned into issues | `guide/autoresearch.md`, `guide/grilling.md` | `"$MOEBIUS" research new ...`, or a grilling chat | `"$MOEBIUS" research <id>` |
 | Something only the desktop API can do | `guide/desktop-api.md`, `reference/desktop-api.md` | `"$MOEBIUS" api <METHOD> <route> --body <json>` | The answer, and reading the state again |
 

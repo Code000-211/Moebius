@@ -32,6 +32,8 @@ pub mod settings;
 pub mod setup;
 #[cfg(test)]
 mod taking_tests;
+#[cfg(test)]
+mod tending_tests;
 pub mod webhooks;
 
 use std::net::SocketAddr;

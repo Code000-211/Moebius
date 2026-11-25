@@ -61,6 +61,7 @@ An absolute path is used as it is.
 | `token_file` | path | `token` | The file with the token the web app sends. Created with a random token (64 hex digits, readable by the owner only) when missing or empty. |
 | `run_limit` | integer | `3` | How many runs of cards may go at once across all boards. At least 1, else the file is refused. Chats, workflow runs and the other runs that belong to no card do not count. `moebius.start_run` and `moebius.start_runs` enforce it for every column script: over the limit they start nothing and the card waits with `the run limit is reached` until a run ends. Scripts read it as `moebius.run_limit`. |
 | `retro_at` | string | `23:30` | When the daily Retro runs, as `HH:MM` with two digits each (hour 00 to 23, minute 00 to 59) in the server's local time. The Retro of a day starts when this time has passed and the day has none (the server looks once a minute, also when it starts), so a day whose time passed while the server was off is not caught up. See [harness configuration](harness-configuration.md#the-retro). |
+| `digest_at` | string | `07:00` | When the daily digest for the owner is made, as `HH:MM` as for `retro_at`, in the server's local time. The digest of a day is made when this time has passed and the day has none (the server looks once a minute, also when it starts), so a day whose time passed while the server was off is made when it is up again the same day, and a day missed altogether is not made up. The server's first day has none, and a period with nothing in it writes none. See [the factory](factory.md#the-digest). Live: it takes effect at once. |
 | `rules_file` | path | `"rules.md"` | The server's rules, see [rules](rules.md), which the web app edits. A missing file means no server rules: only the built-in rules and the repositories' rules apply. An error together with `[harness]`: the repository's `rules.md` is the server's rules then. |
 
 ## `[harness]`
@@ -101,7 +102,8 @@ kept here have pages) does not stop the server: it starts without a wiki, and `G
 ## The clock
 
 Everything that happens by itself goes off one clock: once a minute the server looks at what is due. The Retro is
-asked when the minute reaches `retro_at`; the oldest open proposal is tried, the replays follow and the oldest
+asked when the minute reaches `retro_at`; the owner's daily digest is made when it reaches `digest_at`, with the stale
+handling of issues and pull requests just before it (see [the factory](factory.md)); the oldest open proposal is tried, the replays follow and the oldest
 confirmed research starts, inside `[trial_window]`; a chat automation fires when its cron of five fields comes due
 (see [`automation.schedule`](desktop-api.md)); the installed Moebius packages are looked at for newer ones at night;
 a chat whose Pi has waited long for its next message is paused; and a workflow on a
@@ -693,7 +695,7 @@ name (`teacher`), a `[[router.upstreams]]` table by its position (`router.upstre
 A change applies to the running server at once for these keys:
 
 - `run_limit`, `board.round_limit` and `budgets.day_tokens`: the limits column scripts and the router read;
-- `board.tick_ms`, `retro_at`, `trial_window.start` and `trial_window.end`: read by the board's loop and the schedule;
+- `board.tick_ms`, `retro_at`, `digest_at`, `trial_window.start` and `trial_window.end`: read by the board's loop and the schedule;
 - `trial.token_factor`, `regression.size` and `regression.gate`: read when a proposal's trials start;
 - `router.upstreams`, with their keys;
 - `router.classes`, set as a whole table (`{"fast": ["a", {"model": "b", "day_tokens": 100}]}`);

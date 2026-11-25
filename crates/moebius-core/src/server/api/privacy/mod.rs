@@ -211,5 +211,58 @@ pub(super) fn sees_inbox_item(app: &App, sight: &Sight, item: &InboxItem) -> Res
     Ok(true)
 }
 
+/// The lists of a digest's section that name a card.
+const DIGEST_LISTS: [&str; 8] = [
+    "merged", "refused", "reverts", "rounds", "taken", "released", "upkeep", "frozen",
+];
+
+/// A digest as `sight` may read it (ADR 0032): the sections of the repositories it sees, in them only the lines about
+/// cards it sees, and of what needs a person only the items it sees. One digest is made for the organisation, so what
+/// it holds of a private project is cut away for anyone who is no member, and the text is told again from what is left.
+pub(crate) fn seen_digest(app: &App, sight: &Sight, mut item: InboxItem) -> Result<InboxItem> {
+    if item.kind != crate::app::DIGEST_ITEM || sight.hides_nothing() {
+        return Ok(item);
+    }
+    let open: std::collections::HashMap<i64, InboxItem> = app
+        .store
+        .inbox()?
+        .into_iter()
+        .map(|each| (each.id, each))
+        .collect();
+    if let Some(sections) = item.data["repositories"].as_array_mut() {
+        sections.retain(|s| s["id"].as_i64().is_some_and(|id| sight.repository(id)));
+        for section in sections {
+            for key in DIGEST_LISTS {
+                if let Some(lines) = section[key].as_array_mut() {
+                    lines.retain(|line| match line["card"].as_i64() {
+                        Some(card) => app.sees_card(sight, card).unwrap_or(false),
+                        None => true,
+                    });
+                }
+            }
+        }
+    }
+    if let Some(groups) = item.data["needs_a_person"].as_array_mut() {
+        for group in groups.iter_mut() {
+            if let Some(items) = group["items"].as_array_mut() {
+                items.retain(|each| {
+                    each["id"]
+                        .as_i64()
+                        .and_then(|id| open.get(&id))
+                        .is_some_and(|found| sees_inbox_item(app, sight, found).unwrap_or(false))
+                });
+            }
+        }
+        groups.retain(|group| {
+            group["items"]
+                .as_array()
+                .is_some_and(|items| !items.is_empty())
+        });
+    }
+    let text = crate::app::digest_text(&item.data);
+    item.data["text"] = serde_json::Value::String(text);
+    Ok(item)
+}
+
 #[cfg(test)]
 mod tests;

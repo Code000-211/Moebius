@@ -32,6 +32,7 @@ export type RunningServer = Pick<FakeServer, "url" | "loginUrl" | "token"> & {
   broadcast?: undefined;
   notify?: undefined;
   board?: undefined;
+  factory?: undefined;
   guardLog?: undefined;
   chat?: undefined;
   runs?: undefined;

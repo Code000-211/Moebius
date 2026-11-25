@@ -539,14 +539,28 @@ impl App {
 
     /// [`App::close_card`] for a person, who is not told that the card moved.
     fn close_card_by(&self, card_id: i64, by: Option<&Actor>) -> Result<Card> {
+        self.close_card_with(card_id, by, false)
+    }
+
+    /// Closes the card's issue as not planned, where the forge says why an issue is closed, and moves its card to Done:
+    /// an item of a backlog that was dropped. Does nothing for an issue that is closed already.
+    pub(crate) fn close_card_not_planned(&self, card_id: i64, by: Option<&Actor>) -> Result<Card> {
+        self.close_card_with(card_id, by, true)
+    }
+
+    fn close_card_with(&self, card_id: i64, by: Option<&Actor>, not_planned: bool) -> Result<Card> {
         let card = self.card(card_id)?;
         if self.store.issue_closed(card_id)? {
             return Ok(card);
         }
         let repository = self.repository(card.repository_id)?;
         if repository.forge != "none" {
-            self.forge(&repository)?
-                .set_issue_open(&repository, card.number, false)?;
+            let forge = self.forge(&repository)?;
+            if not_planned {
+                forge.close_issue_not_planned(&repository, card.number)?;
+            } else {
+                forge.set_issue_open(&repository, card.number, false)?;
+            }
         }
         self.store.set_issue_closed(card_id, true)?;
         self.sub_issue_closed(&card)?;

@@ -186,6 +186,7 @@ pub(super) struct Raw {
     pub(super) token_file: Option<PathBuf>,
     pub(super) run_limit: Option<u32>,
     pub(super) retro_at: Option<String>,
+    pub(super) digest_at: Option<String>,
     pub(super) trial_window: Option<RawWindow>,
     #[serde(default)]
     pub(super) trial: RawTrial,

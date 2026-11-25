@@ -511,6 +511,7 @@ part. Every module starts with a doc comment saying what it is for; a folder's `
 | `cli/plugins.rs` | `plugin enable` and `plugin disable [--unwrap-runs] [--allow-unchecked]`: turning a plugin off or on, and how the answer is written. |
 | `cli/ext.rs` | `ext search`, `info`, `add`, `update`, `remove` and `list`: Pi packages, and how a proposed change is written. |
 | `cli/repos.rs` | `repos` and `repo add`. |
+| `cli/factory.rs` | `backlog` (where a project's backlog is, and the sync), `upkeep` and `digest`: the software factory's commands. |
 | `cli/setup.rs` | `doctor`, `settings`, `secrets set`, `usage` and `server restart`. |
 | `cli/improve.rs` | `retro`, `proposals` and `proposal`, `research`, `decision-model`, `takeovers` and `takeover`. |
 
@@ -588,6 +589,9 @@ At the top:
 | `app/issues/text.rs` | The lines of a description that hold a parent ("Part of #n") or a blocker ("Blocked by #n") where the forge has none. |
 | `app/snapshot.rs` | What the snapshot needs to know about each card (repositories, people, approvals, dependencies, open changes), read once for all cards. |
 | `app/stopping.rs` | Holding (blocking), releasing and deleting a card, which stops its runs and, for a delete, removes what it left in the clone. |
+| `app/backlog.rs` | Backlog sync ([ADR 0032](adr/0032-the-factory-keeps-the-owners-work-small.md)): a project's backlog file read as items, and the issues made, updated, labelled and closed as not planned from them, a few at a time. |
+| `app/digest.rs` | The owner's daily digest ([ADR 0032](adr/0032-the-factory-keeps-the-owners-work-small.md)): one inbox item a day with what merged, was refused, reverted, reviewed, taken and released, what the stale handling did, the tokens spent, what is held and what needs a person. |
+| `app/upkeep.rs` | Stale handling ([ADR 0032](adr/0032-the-factory-keeps-the-owners-work-small.md)): an issue taken and not worked on is released, a followed pull request nobody pushes to after a review asked for changes is reminded and then closed; never on a held card. |
 | `app/commands.rs` | Commands in issue comments ([ADR 0028](adr/0028-helpers-take-issues-with-commands-in-comments.md)): `/take`, `/release` and `/done` read once from the comments the poll read, answered on the issue, limited per login, and the owner's answers to a `/done` and release from the card. |
 | `app/reviews.rs` | The Reviewer reads a followed pull request when its author says `/done` ([ADR 0029](adr/0029-the-reviewer-reads-a-pull-request-when-its-author-says-done.md)): rounds that wait for green checks, a review run read as a structured verdict, a review with comments on lines written on the forge, and the merge pinned to the head that was read, or Ready to merge. |
 | `app/factory/mod.rs` | The software factory ([ADR 0031](adr/0031-one-merge-gate-and-a-brake-for-the-factory.md)): the settings a repository keeps for it (measurement, locked paths, review brief, testing label, measurers) and how an edit is checked, a person accepting a measurement, and the names its parts share. |
@@ -704,6 +708,7 @@ At the top:
 | `store/links.rs` | The links between issues besides parent and blockers: a duplicate to its original, and issues related in both directions. |
 | `store/issues.rs` | What an issue has besides its text: its parent, labels, claim, whether it was closed, and its comments. |
 | `store/changes.rs` | Changes: a branch offered for merging, with its pull request, checks and review. |
+| `store/tending.rs` | What the store keeps for the software factory: the log the digest reads, the days a digest was made, when each issue was taken, a repository's stale settings and a project's backlog. |
 | `store/commands.rs` | What the store keeps for commands in issue comments: the repository's settings for them, the newest comment read per issue, the login a card was taken by command, and how many issues a login holds. |
 | `store/factory.rs` | The software factory's state: a repository's factory settings and freeze, the commit a change merged as, accepted measurements, reverts kept once and the breakers that tripped. |
 | `store/reviews.rs` | The rounds of the Reviewer on followed pull requests (state, head, verdict, summary, comments on lines, the review's address) and the repository's `merge_reviewed`. |
@@ -763,6 +768,7 @@ At the top:
 | `server/fake_github.rs` | For the tests only: a fake GitHub with one repository, and a server that polls it. |
 | `server/fake_gitlab.rs` | For the tests only: a fake GitLab with one project, a server that polls it, and the tests of the GitLab forge through it. |
 | `server/fake_forgejo.rs` | For the tests only: a fake Forgejo with one repository, a server that polls it, and the tests of the Forgejo forge through it. |
+| `server/tending_tests.rs` | For the tests only: the daily digest and its clock, the stale handling and the backlog sync, against the fake GitHub. |
 | `server/commands_tests.rs` | For the tests only: commands in issue comments, against the fake GitHub. |
 | `server/taking_tests.rs` | For the tests only: working with people on other servers, against the fake GitHub. |
 | `server/factory_tests.rs` | For the tests only: the merge gate, the freeze and its breakers, the review brief and `approve_code`, against the fake GitHub. |
@@ -776,6 +782,7 @@ At the top:
 | `server/api/card_repositories.rs` | The route that names the repositories a card works in. |
 | `server/api/assignees.rs` | The routes that give a card or an inbox item to people. |
 | `server/api/issues.rs` | The issue tracker's routes: the issue list and one issue, parent, labels, blockers, claim, close and reopen, comments. |
+| `server/api/factory.rs` | The software factory's routes: a repository's stale settings, a project's backlog and its sync, and making the digest now. |
 | `server/api/repositories.rs` | Adding and editing repositories, and their column scripts and files. |
 | `server/api/analytics.rs` | The analytics of a window of days, narrowed by repository and agent. |
 | `server/api/cycles.rs` | The cycles: a project's list, making, reading, editing, deleting and closing one, and a card's cycle. |

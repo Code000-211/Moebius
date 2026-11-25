@@ -599,6 +599,10 @@ fn inbox_request(item: &Value, verb: Verb, reason: &str) -> Result<Request, Stri
             format!("/v1/grillings/{}/confirm", id(&data["grilling"])?),
             json!({ "issues": data["issues"] }),
         ),
+        ("daily_digest", Verb::Dismiss) => Request::post(
+            format!("/v1/digest/{}/dismiss", id(&item["id"])?),
+            json!({}),
+        ),
         ("grilling_issues" | "grilling_report", Verb::Dismiss) => Request::post(
             format!("/v1/grillings/{}/dismiss", id(&data["grilling"])?),
             json!({}),
@@ -610,7 +614,7 @@ fn inbox_request(item: &Value, verb: Verb, reason: &str) -> Result<Request, Stri
                 "ready_to_merge" => "merge or reject",
                 "proposal" | "wiki_proposal" | "takeover" => "merge or dismiss",
                 "grilling_issues" => "confirm or dismiss",
-                "grilling_report" => "dismiss",
+                "grilling_report" | "daily_digest" => "dismiss",
                 _ => "nothing here; use `moebius api`",
             };
             return Err(format!(

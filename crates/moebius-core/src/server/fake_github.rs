@@ -60,6 +60,10 @@ pub(super) struct FakeGitHub {
     pub(super) unassign_fails: std::sync::atomic::AtomicBool,
     /// The states it was asked to give an issue (`open` or `closed`), as issue number and state.
     pub(super) state_writes: Mutex<Vec<(u64, String)>>,
+    /// The issues it was asked to open, as number, title and body; their numbers start where no issue of a test is.
+    pub(super) created: Mutex<Vec<(u64, String, String)>>,
+    /// Why it was asked to close an issue (`state_reason`), as issue number and reason.
+    pub(super) state_reasons: Mutex<Vec<(u64, String)>>,
     /// The reviews it was asked to write on pull request 7.
     pub(super) review_posts: Mutex<Vec<Value>>,
     /// What it does once, as it is asked for pull request 7 after that many reads: a person changing a setting while a merge is being made.
@@ -69,6 +73,8 @@ pub(super) struct FakeGitHub {
     /// Whether it answers a review, or a merge, with a server error, as a forge does for a moment.
     pub(super) fail_reviews: std::sync::atomic::AtomicBool,
     pub(super) fail_merges: std::sync::atomic::AtomicBool,
+    /// Whether it answers a change of an issue's state (closing a pull request, say) with a server error.
+    pub(super) fail_state_writes: std::sync::atomic::AtomicBool,
     /// How many reviews it was asked to write, those it failed included.
     pub(super) review_attempts: std::sync::atomic::AtomicUsize,
 }
@@ -179,6 +185,9 @@ pub(super) async fn fake_github() -> (String, Arc<FakeGitHub>) {
         writers: Mutex::new(Vec::new()),
         assignable: std::sync::atomic::AtomicBool::new(true),
         label_writes: Mutex::new(Vec::new()),
+        fail_state_writes: std::sync::atomic::AtomicBool::new(false),
+        created: Mutex::new(Vec::new()),
+        state_reasons: Mutex::new(Vec::new()),
         listed_pulls: Mutex::new(Vec::new()),
         threads: Mutex::new(Default::default()),
         posted: Mutex::new(Vec::new()),
@@ -271,6 +280,28 @@ pub(super) async fn fake_github() -> (String, Arc<FakeGitHub>) {
                     }
                     ([("etag", etag)], axum::Json(issues)).into_response()
                 },
+            )
+            .post(
+                |State(fake): State<Arc<FakeGitHub>>, axum::Json(body): axum::Json<Value>| async move {
+                    let title = body["title"].as_str().unwrap_or_default().to_string();
+                    let text = body["body"].as_str().unwrap_or_default().to_string();
+                    let number = {
+                        let mut created = fake.created.lock().unwrap();
+                        let number = 100 + created.len() as u64;
+                        created.push((number, title.clone(), text.clone()));
+                        number
+                    };
+                    let mut made = issue(number, "open", "leon", &text);
+                    made["title"] = json!(title);
+                    let issues = {
+                        let mut issues = fake.issues.lock().unwrap();
+                        issues.0.push('+');
+                        issues.1.push(made);
+                        issues.1.len()
+                    };
+                    let _ = issues;
+                    (StatusCode::CREATED, axum::Json(json!({ "number": number })))
+                },
             ),
         )
         .route(
@@ -279,12 +310,21 @@ pub(super) async fn fake_github() -> (String, Arc<FakeGitHub>) {
                 |State(fake): State<Arc<FakeGitHub>>,
                  UrlPath(number): UrlPath<u64>,
                  axum::Json(body): axum::Json<Value>| async move {
+                    if fake.fail_state_writes.load(std::sync::atomic::Ordering::SeqCst) {
+                        return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+                    }
                     if let Some(state) = body["state"].as_str() {
                         let state = state.to_string();
                         fake.edit_issue(number, |issue| issue["state"] = json!(state));
                         fake.state_writes.lock().unwrap().push((number, state));
                     }
-                    axum::Json(issue(number, "closed", "leon", ""))
+                    if let Some(reason) = body["state_reason"].as_str() {
+                        fake.state_reasons
+                            .lock()
+                            .unwrap()
+                            .push((number, reason.to_string()));
+                    }
+                    axum::Json(issue(number, "closed", "leon", "")).into_response()
                 },
             ),
         )

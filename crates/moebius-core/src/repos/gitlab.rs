@@ -506,6 +506,41 @@ impl GitLab {
         Ok(created.id)
     }
 
+    /// Writes a comment on merge request `number` in `project` and returns its id.
+    pub async fn create_merge_request_note(
+        &self,
+        project: &str,
+        number: i64,
+        body: &str,
+    ) -> Result<i64, GitLabError> {
+        #[derive(Deserialize)]
+        struct Identified {
+            id: i64,
+        }
+        let request = json!({ "body": body });
+        let created: Identified = self
+            .project_call(
+                project,
+                Method::POST,
+                &format!("/merge_requests/{number}/notes"),
+                Some(&request),
+            )
+            .await?;
+        Ok(created.id)
+    }
+
+    /// Closes merge request `number` in `project` without merging it.
+    pub async fn close_merge_request(&self, project: &str, number: i64) -> Result<(), GitLabError> {
+        let request = json!({ "state_event": "close" });
+        self.project_do(
+            project,
+            Method::PUT,
+            &format!("/merge_requests/{number}"),
+            Some(&request),
+        )
+        .await
+    }
+
     /// The comments of issue `number` in `project` that people wrote, oldest first.
     pub async fn notes(&self, project: &str, number: i64) -> Result<Vec<Note>, GitLabError> {
         let mut url = format!(

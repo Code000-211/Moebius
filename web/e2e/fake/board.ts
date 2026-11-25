@@ -282,6 +282,11 @@ export interface BoardFake {
    * is done, which waits for the owner with its inbox item. Returns their numbers.
    */
   seedCommands(): { takenWith: number; asked: number };
+  /**
+   * Puts the owner's daily digest (ADR 0032) in the inbox: what merged, was refused, reviewed, taken and handled as stale
+   * in the demo repository, the tokens against the budget, and what needs a person. Returns the item's id.
+   */
+  seedDigest(): number;
   /** Makes the next request with `method` to `path` fail with `status` and `message`. */
   refuseNext(method: string, path: string, status: number, message: string): void;
   /** The non-GET requests the board routes received, in order. */
@@ -1049,6 +1054,95 @@ export function createBoardFake(send: (event: ServerEvent) => void): BoardFake {
       });
       return { takenWith: first, asked: first + 1 };
     },
+    seedDigest() {
+      const id = Math.max(...inbox.map((item) => item.id)) + 1;
+      const line = (
+        number: number | null,
+        title: string,
+        who: string | null,
+        detail = "",
+        measured = false,
+      ) => ({ number, title, who, detail, measured });
+      inbox.push({
+        id,
+        kind: "daily_digest",
+        card_id: null,
+        title: "Daily digest 2026-11-25",
+        data: {
+          day: "2026-11-25",
+          since: NOW - 86_400,
+          until: NOW,
+          repositories: [
+            {
+              id: 1,
+              name: "demo",
+              merged: [
+                line(24, "Cache the compiled plan", "moebius", "", true),
+                line(25, "Fix the login redirect", "alice"),
+                line(26, "Shorter prompts for the Reviewer", "moebius"),
+              ],
+              refused: [
+                line(27, "Speed up the build", null, "the checks of pull request 31 failed"),
+              ],
+              reverts: [
+                line(22, "Retry the fetch twice", null, "it doubled the load on the forge"),
+              ],
+              review_runs: 3,
+              rounds: [
+                line(31, "", null, "round 1: changes requested"),
+                line(31, "", null, "round 2: approved"),
+              ],
+              taken: [line(18, "Document the API", "bob"), line(19, "Add dark mode", "carol")],
+              released: [line(14, "Rework the importer", "dave")],
+              upkeep: [
+                line(
+                  14,
+                  "Rework the importer",
+                  "dave",
+                  "released: taken 15 days ago, no pull request followed",
+                ),
+                line(
+                  33,
+                  "Rota page",
+                  "erin",
+                  "reminded: no push for 14 days after a review asked for changes",
+                ),
+              ],
+              frozen: [line(8, "Migrate the settings", "person", "waiting for the release")],
+              more: {},
+            },
+          ],
+          tokens: { spent: 412_300, day_budget: 1_000_000, today: 98_000 },
+          needs_a_person: [
+            {
+              kind: "ready_to_merge",
+              reason: "Ready to merge",
+              items: [
+                { id: 2, title: "Speed up the build", card_id: 5, number: 5, repository: "demo" },
+              ],
+            },
+            {
+              kind: "approve_issue",
+              reason: "Outside issue",
+              items: [
+                {
+                  id: 1,
+                  title: "Fix the login redirect",
+                  card_id: 2,
+                  number: 2,
+                  repository: "demo",
+                },
+              ],
+            },
+          ],
+          text: "",
+        },
+        resolved_at: null,
+        assignees: [],
+        at: NOW - 30,
+      });
+      return id;
+    },
     refuseNext(method, path, status, message) {
       refusals.set(`${method} ${path}`, { status, message });
     },
@@ -1059,6 +1153,14 @@ export function createBoardFake(send: (event: ServerEvent) => void): BoardFake {
           logins = { github: "", gitlab: "", forgejo: "", ...(body as object) };
         }
         return ok(logins);
+      }
+      const dismissed = /^\/v1\/digest\/(\d+)\/dismiss$/.exec(path);
+      if (dismissed && method === "POST") {
+        requests.push({ method, path, body });
+        const item = inbox.find((i) => i.id === Number(dismissed[1]) && i.kind === "daily_digest");
+        if (!item) return fail(404, "no open digest");
+        item.resolved_at = ++clock;
+        return ok({});
       }
       if (path === "/v1/repositories/1" && method === "PUT") {
         requests.push({ method, path, body });

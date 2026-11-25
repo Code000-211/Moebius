@@ -61,6 +61,7 @@ mod reviews;
 mod runs;
 mod shadows;
 mod taking;
+mod tending;
 mod usage;
 mod views;
 mod wiki_links;
@@ -119,6 +120,11 @@ pub use reviews::{ExternalReview, ReviewComment};
 pub use runs::Run;
 pub use shadows::{NewShadow, ShadowStats, ShadowedOutcome, Takeover};
 pub use taking::{DEFAULT_READY_LABEL, LOGIN_FORGES};
+pub use tending::{
+    Activity, Backlog, DEFAULT_BACKLOG_CAP, DEFAULT_BACKLOG_PATTERN, DEFAULT_CLOSE_AFTER_DAYS,
+    DEFAULT_CLOSED_MARKER, DEFAULT_DIFFICULTY_LABEL, DEFAULT_LANE_LABEL,
+    DEFAULT_RELEASE_AFTER_DAYS, DEFAULT_STALE_AFTER_DAYS, DigestDay, Upkeep,
+};
 pub use usage::{
     ANSWERING, ActivityUsage, AgentUsage, ClassUsage, ModelUsage, NO_RUN, Scope, ToolWait, UNKNOWN,
     Usage, UsageTotals,
@@ -539,6 +545,7 @@ UPDATE cards SET moved_at = COALESCE((SELECT MAX(at) FROM card_moves WHERE card_
     reviews::SCHEMA,
     column_classes::SCHEMA,
     factory::SCHEMA,
+    tending::SCHEMA,
 ];
 
 #[cfg(test)]

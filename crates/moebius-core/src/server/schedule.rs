@@ -49,6 +49,10 @@ impl Server {
         ));
         let (window, limit) = (config.trial_window, config.run_limit);
         let regression = config.regression();
+        report(
+            self.app
+                .on_digest_schedule(config.digest_at, config.day_tokens),
+        );
         report(trial::on_schedule(
             &self.app,
             &runs,

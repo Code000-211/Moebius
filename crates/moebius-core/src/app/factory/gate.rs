@@ -277,6 +277,15 @@ impl App {
                 "reason": reason,
             }),
         )?;
+        // The daily digest tells why the gate refused (ADR 0032).
+        let _ = self.store.note_activity(
+            "merge_refused",
+            Some(repository.id),
+            card.map(|card| card.number).or(change.pull_request),
+            None,
+            reason,
+            &json!({ "change": change.id, "card": card.map(|card| card.id), "title": title }),
+        );
         if let Some(card) = card {
             // The owner can merge it where a person may: the card keeps the item that offers the merge, once.
             let offered = self.store.inbox_for_card(card.id)?.iter().any(|item| {

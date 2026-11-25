@@ -183,6 +183,12 @@ struct CheckRuns {
 pub struct Review {
     /// Upper case, such as `APPROVED`, `CHANGES_REQUESTED` or `COMMENTED`.
     pub state: String,
+    /// The commit the review was written for.
+    #[serde(default)]
+    pub commit_id: Option<String>,
+    /// When it was submitted, in RFC 3339.
+    #[serde(default)]
+    pub submitted_at: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -585,6 +591,22 @@ impl GitHub {
         } else {
             json!({ "state": "closed", "state_reason": "completed" })
         };
+        self.repository_do(
+            github,
+            Method::PATCH,
+            &format!("/issues/{number}"),
+            Some(&request),
+        )
+        .await
+    }
+
+    /// Closes issue `number` in `github` as not planned.
+    pub async fn close_issue_not_planned(
+        &self,
+        github: &str,
+        number: i64,
+    ) -> Result<(), GitHubError> {
+        let request = json!({ "state": "closed", "state_reason": "not_planned" });
         self.repository_do(
             github,
             Method::PATCH,
