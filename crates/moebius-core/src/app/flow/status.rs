@@ -93,7 +93,7 @@ impl App {
                 .iter()
                 .filter(|l| l.to_lowercase().starts_with(&prefix) && **l != wanted)
                 .collect();
-            let has = card.labels.iter().any(|l| *l == wanted);
+            let has = card.labels.contains(&wanted);
             if has && old.is_empty() {
                 continue;
             }

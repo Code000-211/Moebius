@@ -187,7 +187,7 @@ keep their rows: the role is checked before the `410`.
 | `GET /v1/repositories/{id}/upkeep` | viewer | yes |
 | `PUT /v1/repositories/{id}/upkeep` | owner | yes |
 | `GET /v1/repositories/{id}/flow` | viewer | yes |
-| `PUT /v1/repositories/{id}/flow` | owner | yes |
+| `PUT /v1/repositories/{id}/flow` | owner | no |
 | `GET /v1/projects/{id}/backlog` | viewer | yes |
 | `PUT /v1/projects/{id}/backlog` | owner | yes |
 | `DELETE /v1/projects/{id}/backlog` | owner | yes |
