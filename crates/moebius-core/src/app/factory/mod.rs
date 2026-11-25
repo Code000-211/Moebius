@@ -37,7 +37,6 @@ pub fn settings_of(repository: &Repository) -> FactorySettings {
     FactorySettings {
         require_measurement: repository.require_measurement,
         locked_paths: repository.locked_paths.clone(),
-        daily_merge_limit: repository.daily_merge_limit,
         review_brief: repository.review_brief.clone(),
         testing_label: repository.testing_label.clone(),
         measurers: repository.measurers.clone(),
@@ -95,12 +94,6 @@ fn is_login(login: &str) -> std::result::Result<(), String> {
 /// The settings `current` becomes when `edit` is applied; what is none stays. Refused, naming the setting, when a value
 /// does not fit.
 pub fn edited(current: &FactorySettings, edit: &FactoryEdit) -> Result<FactorySettings> {
-    let limit = edit.daily_merge_limit.unwrap_or(current.daily_merge_limit);
-    if !(1..=1000).contains(&limit) {
-        return Err(AppError::Invalid(format!(
-            "daily_merge_limit is a number from 1 to 1000, not {limit}"
-        )));
-    }
     let label = edit
         .testing_label
         .as_deref()
@@ -125,7 +118,6 @@ pub fn edited(current: &FactorySettings, edit: &FactoryEdit) -> Result<FactorySe
             .require_measurement
             .unwrap_or(current.require_measurement),
         locked_paths: locked,
-        daily_merge_limit: limit,
         review_brief: brief,
         testing_label: label,
         measurers,
@@ -183,7 +175,6 @@ impl super::App {
 pub struct FactoryEdit {
     pub require_measurement: Option<bool>,
     pub locked_paths: Option<Vec<String>>,
-    pub daily_merge_limit: Option<i64>,
     pub review_brief: Option<Vec<String>>,
     pub testing_label: Option<String>,
     pub measurers: Option<Vec<String>>,
@@ -197,7 +188,6 @@ mod tests {
         FactorySettings {
             require_measurement: false,
             locked_paths: Vec::new(),
-            daily_merge_limit: 10,
             review_brief: vec!["REVIEW.md".into()],
             testing_label: "ready-for-testing".into(),
             measurers: Vec::new(),
@@ -218,19 +208,11 @@ mod tests {
         assert_eq!(after.locked_paths, vec!["kernels/**".to_string()]);
         assert_eq!(after.review_brief.len(), 2);
         assert_eq!(after.measurers, vec!["ada".to_string()]);
-        assert_eq!(after.daily_merge_limit, 10);
     }
 
     #[test]
     fn a_value_that_does_not_fit_is_refused_naming_the_setting() {
         let refused = |edit: FactoryEdit| edited(&defaults(), &edit).unwrap_err().to_string();
-        assert!(
-            refused(FactoryEdit {
-                daily_merge_limit: Some(0),
-                ..Default::default()
-            })
-            .contains("daily_merge_limit")
-        );
         assert!(
             refused(FactoryEdit {
                 review_brief: Some(vec!["../secret".into()]),

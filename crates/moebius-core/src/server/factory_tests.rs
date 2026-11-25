@@ -292,34 +292,6 @@ async fn a_locked_path_is_left_for_a_person_and_the_defaults_cannot_be_unlocked(
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn the_daily_merge_limit_counts_the_last_day_and_refuses_with_its_reason() {
-    let (f, card, _) = ready().await;
-    f.factory(FactoryEdit {
-        daily_merge_limit: Some(1),
-        ..Default::default()
-    });
-    let first = f.commit_on_main("something merged earlier");
-    let earlier = f.merged_as(&first, 40);
-    let change = f.approved_for_the_owner(&card).await;
-    let error = f.merge(&owner(), change.id, "").await.unwrap_err();
-    let reason = f.refused(error);
-    assert!(
-        reason.contains("daily merge limit of 1 is reached"),
-        "{reason}"
-    );
-    assert_eq!(f.card(1).unwrap().column, columns::READY_TO_MERGE);
-    assert!(f.merged_requests().is_empty());
-    // A merge a day ago no longer counts.
-    f.server
-        .app
-        .store
-        .set_merged_at(earlier, crate::store::now() - 90_000)
-        .unwrap();
-    f.merge(&owner(), change.id, "").await.unwrap();
-    assert_eq!(f.merged_requests().len(), 1);
-}
-
-#[tokio::test(flavor = "multi_thread")]
 async fn a_frozen_repository_merges_nothing_for_anyone_until_a_person_unfreezes_it() {
     let (f, card, _) = ready().await;
     let change = f.approved_for_the_owner(&card).await;

@@ -5,7 +5,7 @@
 //!   "owner/repo"` and optionally `trusted: [logins]` it is a repository whose issues are polled from GitHub; with
 //!   `forge: "gitlab"` and `project: "group/project"`, one whose issues are polled from GitLab; with `forge: "forgejo"`
 //!   and `project: "owner/repo"`, one on Forgejo, such as Codeberg.
-//! - `PUT /v1/repositories/{id}` `{trusted, mark_ready, ready_label, agents_take, commands, command_limit, answer_on_forge, merge_reviewed, require_measurement, locked_paths, daily_merge_limit, review_brief, testing_label, measurers}`: replaces the logins a repository on a
+//! - `PUT /v1/repositories/{id}` `{trusted, mark_ready, ready_label, agents_take, commands, command_limit, answer_on_forge, merge_reviewed, require_measurement, locked_paths, review_brief, testing_label, measurers}`: replaces the logins a repository on a
 //!   forge trusts and how it works with others (each key left out stays as it is).
 //! - `POST /v1/repositories/{id}/freeze` and `/unfreeze` `{reason}`: the owner's brake on the factory (see
 //!   [`crate::app::factory::freeze`]); only a person unfreezes.
@@ -120,9 +120,6 @@ pub struct EditedRepository {
     /// The path globs that never merge without a person, besides the built-in ones; left out, they stay.
     #[serde(default)]
     pub locked_paths: Option<Vec<String>>,
-    /// How many changes the server merges in 24 hours (1 to 1000); left out, it stays.
-    #[serde(default)]
-    pub daily_merge_limit: Option<i64>,
     /// The files of the default branch that are the repository's rules for the Reviewer; left out, they stay.
     #[serde(default)]
     pub review_brief: Option<Vec<String>>,
@@ -188,7 +185,6 @@ async fn edit_repository(
             factory: crate::app::factory::FactoryEdit {
                 require_measurement: edited.require_measurement,
                 locked_paths: edited.locked_paths,
-                daily_merge_limit: edited.daily_merge_limit,
                 review_brief: edited.review_brief,
                 testing_label: edited.testing_label,
                 measurers: edited.measurers,
@@ -203,7 +199,6 @@ async fn edit_repository(
             || edit.merge_reviewed.is_some()
             || edit.factory.require_measurement.is_some()
             || edit.factory.locked_paths.is_some()
-            || edit.factory.daily_merge_limit.is_some()
             || edit.factory.review_brief.is_some()
             || edit.factory.testing_label.is_some()
             || edit.factory.measurers.is_some()
@@ -564,7 +559,6 @@ mod tests {
         let repo = a_github_repository(dir.path(), &state, &addr).await;
         // The defaults.
         assert!(!repo.require_measurement);
-        assert_eq!(repo.daily_merge_limit, 10);
         assert_eq!(repo.review_brief, ["REVIEW.md"]);
         assert_eq!(repo.testing_label, "ready-for-testing");
         assert!(repo.locked_paths.is_empty() && repo.measurers.is_empty());
@@ -583,7 +577,6 @@ mod tests {
             serde_json::json!({
                 "require_measurement": true,
                 "locked_paths": ["kernels/**", " kernels/** ", ""],
-                "daily_merge_limit": 25,
                 "review_brief": ["notes/backlog/CARDS.md", "AGENTS.md"],
                 "testing_label": "needs-bench",
                 "measurers": ["ada", "grace"],
@@ -596,7 +589,6 @@ mod tests {
         let saved: Repository = saved.json().await.unwrap();
         assert!(saved.require_measurement);
         assert_eq!(saved.locked_paths, ["kernels/**"]);
-        assert_eq!(saved.daily_merge_limit, 25);
         assert_eq!(saved.review_brief, ["notes/backlog/CARDS.md", "AGENTS.md"]);
         assert_eq!(saved.testing_label, "needs-bench");
         assert_eq!(saved.measurers, ["ada", "grace"]);
@@ -606,7 +598,7 @@ mod tests {
         // What is left out stays, and an edit that changes nothing records nothing.
         let same = put(
             person.clone(),
-            serde_json::json!({ "daily_merge_limit": 25 }),
+            serde_json::json!({ "testing_label": "needs-bench" }),
         )
         .await
         .unwrap();
@@ -619,14 +611,6 @@ mod tests {
 
         // Values that do not fit are refused, naming the setting.
         for (body, named) in [
-            (
-                serde_json::json!({ "daily_merge_limit": 0 }),
-                "daily_merge_limit",
-            ),
-            (
-                serde_json::json!({ "daily_merge_limit": 1001 }),
-                "daily_merge_limit",
-            ),
             (
                 serde_json::json!({ "review_brief": ["../x"] }),
                 "review_brief",

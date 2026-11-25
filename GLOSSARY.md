@@ -93,8 +93,7 @@ Local for models running on one's own hardware.
 _Avoid_: tier, model size, Sonnet class, Opus class
 
 **Merge gate**:
-The one check every merge the server makes goes through: the repository is not frozen, the checks have passed, the daily
-limit is not reached, a measurement is accepted when one is required, no locked path is touched without a person, and the
+The one check every merge the server makes goes through: the repository is not frozen, the checks have passed, a measurement is accepted when one is required, no locked path is touched without a person, and the
 repository's rules allow it. It refuses with a reason the owner reads in the Inbox.
 _Avoid_: merge check, merge policy
 

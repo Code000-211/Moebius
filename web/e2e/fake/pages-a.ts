@@ -1235,7 +1235,6 @@ export function createPagesAFake(send: Send, board: BoardFake): PagesAFake {
                 "merge_reviewed",
                 "require_measurement",
                 "locked_paths",
-                "daily_merge_limit",
                 "review_brief",
                 "testing_label",
                 "measurers",

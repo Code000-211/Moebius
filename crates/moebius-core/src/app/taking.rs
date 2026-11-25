@@ -347,7 +347,6 @@ impl App {
         // What holds the merges back is a person's to loosen: an agent that could turn it off would hold nothing back.
         let touches_factory = edit.factory.require_measurement.is_some()
             || edit.factory.locked_paths.is_some()
-            || edit.factory.daily_merge_limit.is_some()
             || edit.factory.review_brief.is_some()
             || edit.factory.testing_label.is_some()
             || edit.factory.measurers.is_some();
@@ -386,10 +385,6 @@ impl App {
                 factory.require_measurement.to_string(),
             ),
             ("locked_paths".into(), factory.locked_paths.join(",")),
-            (
-                "daily_merge_limit".into(),
-                factory.daily_merge_limit.to_string(),
-            ),
             ("review_brief".into(), factory.review_brief.join(",")),
             ("testing_label".into(), factory.testing_label.clone()),
             ("measurers".into(), factory.measurers.join(",")),

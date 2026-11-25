@@ -9,7 +9,7 @@ with as little of their own work as possible, which asks more of the server than
 - **Merges came by several paths with several rules.** The Reviewer's approval, a person's Merge, a column script's
   `moebius.merge_change`, the merge of a card from Ready to merge and the desktop API's route all ended in
   `App::merge_one`, which asked only whether the checks of an outsider's pull request had passed. Anything the owner
-  wanted held (a path that needs a person, a measurement, a daily limit) would have had to be added to each path, and
+  wanted held (a path that needs a person, a measurement) would have had to be added to each path, and
   would have been missing from the next.
 - **The server's merges did not answer to the rules.** An agent's tool call goes through the decision `tool_call`, and
   the repository's `rules.md` apply to it. The server's own merge went through no decision at all, so a rule such as "no
@@ -34,11 +34,10 @@ with as little of their own work as possible, which asks more of the server than
 
 - **`merge_one` asks the merge gate before anything else that changes the forge** (`app/factory/gate.rs`). The gate
   refuses with a reason, and what it cannot find out is a refusal. In this order: the repository is not frozen; for a
-  script or agent, the agents are not paused and the card is not held; the checks of the head have passed; the daily
-  merge limit is not reached; a measurement is accepted for the head, or the issue carries `no-measurement`, when the
+  script or agent, the agents are not paused and the card is not held; the checks of the head have passed; a measurement is accepted for the head, or the issue carries `no-measurement`, when the
   repository requires one; for a script or agent, no path of the change is locked; the rules allow it. A person's own
   Merge is their decision, so hold and pause do not stop it and locked paths are theirs to merge; a freeze, the
-  checks of an outsider's pull request, the limit and the measurement hold for everyone.
+  checks of an outsider's pull request and the measurement hold for everyone.
 - **Locked paths** are globs: the built-in ones (forge workflows, build files, package manifests, `AGENTS.md` and
   `CLAUDE.md`) and the owner's, which are added and never replace. The paths are those the merge into the default
   branch changes, read from git objects, so a rename or a deletion of a locked file counts.
@@ -86,8 +85,6 @@ with as little of their own work as possible, which asks more of the server than
   those merges: failing closed has a price, a visible one, since the card says why.
 - A repository with rules and no decider that answers `merge_check` merges nothing by script. That is as true of its
   tool calls; the guard answers both, and turning the guard off (knowingly) leaves both open with a note.
-- The daily limit counts the changes of the repository merged in the last 24 hours, whoever merged them, a person on the
-  forge included, since the owner's budget for risk is spent either way.
 - The label freeze is read from the issues the poll knows, so an issue the poll does not list (a closed one) does not
   freeze. Reading the repository's label list instead is possible later.
 - A breaker that freezes every repository when the day's tokens pass 80% also stops merges, which cost no tokens. That

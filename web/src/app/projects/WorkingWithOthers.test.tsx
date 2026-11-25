@@ -87,7 +87,6 @@ describe("the repository's working with others", () => {
       merge_reviewed: true,
       require_measurement: false,
       locked_paths: [],
-      daily_merge_limit: 10,
       review_brief: ["REVIEW.md"],
       testing_label: "ready-for-testing",
       measurers: [],
@@ -135,7 +134,6 @@ describe("the repository's working with others", () => {
       merge_reviewed: true,
       require_measurement: false,
       locked_paths: [],
-      daily_merge_limit: 10,
       review_brief: ["REVIEW.md"],
       testing_label: "ready-for-testing",
       measurers: [],
@@ -187,7 +185,6 @@ describe("the repository's working with others", () => {
     expect(screen.getByLabelText("Require a measurement").getAttribute("aria-checked")).toBe(
       "false",
     );
-    expect((screen.getByLabelText("Merges a day") as HTMLInputElement).value).toBe("10");
     expect((screen.getByLabelText("Review brief") as HTMLTextAreaElement).value).toBe("REVIEW.md");
     expect((screen.getByLabelText("Ready for testing") as HTMLInputElement).value).toBe(
       "ready-for-testing",
@@ -200,7 +197,6 @@ describe("the repository's working with others", () => {
     const fetcher = show({
       require_measurement: true,
       locked_paths: ["kernels/**"],
-      daily_merge_limit: 4,
       review_brief: ["notes/backlog/CARDS.md", "AGENTS.md"],
       testing_label: "needs-bench",
       measurers: ["alice"],
@@ -213,7 +209,6 @@ describe("the repository's working with others", () => {
     fireEvent.change(screen.getByLabelText("Locked paths"), {
       target: { value: "kernels/**\n\n docs/legal/** \nkernels/**" },
     });
-    fireEvent.change(screen.getByLabelText("Merges a day"), { target: { value: "7" } });
     fireEvent.change(screen.getByLabelText("Review brief"), { target: { value: "REVIEW.md" } });
     fireEvent.change(screen.getByLabelText("Ready for testing"), {
       target: { value: " bench " },
@@ -224,20 +219,10 @@ describe("the repository's working with others", () => {
     expect(sent(fetcher)).toMatchObject({
       require_measurement: false,
       locked_paths: ["kernels/**", "docs/legal/**"],
-      daily_merge_limit: 7,
       review_brief: ["REVIEW.md"],
       testing_label: "bench",
       measurers: ["alice", "bob"],
     });
-  });
-
-  it("refuses a daily limit that is no number from 1 to 1000", () => {
-    show();
-    fireEvent.change(screen.getByLabelText("Merges a day"), { target: { value: "0" } });
-    expect(screen.getByText("A number from 1 to 1000.")).toBeTruthy();
-    expect(
-      (screen.getByRole("button", { name: "Save settings" }) as HTMLButtonElement).disabled,
-    ).toBe(true);
   });
 
   it("freezes and unfreezes the repository, and says why it is frozen", async () => {

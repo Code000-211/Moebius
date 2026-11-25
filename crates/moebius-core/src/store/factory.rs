@@ -1,7 +1,7 @@
 //! The software factory's state (ADR 0031): what the store keeps so that every merge the server makes can be held to a
 //! repository's rules. A repository keeps its factory settings in columns of `repositories` (whether a measurement is
-//! required, the owner's locked paths, the daily merge limit, the review brief, the ready-for-testing label and the
-//! measurers) and, while it is frozen, why. A merged change keeps when it merged, which the daily limit counts. A
+//! required, the owner's locked paths, the review brief, the ready-for-testing label and the
+//! measurers) and, while it is frozen, why. A merged change keeps the commit its merge made. A
 //! measurement is accepted for one head of one change. A revert of a merged change is kept once, with the time of the
 //! revert commit, which the automatic freeze counts.
 
@@ -14,14 +14,12 @@ use super::{Result, Store, now};
 pub(super) const SCHEMA: &str = r#"
 ALTER TABLE repositories ADD COLUMN require_measurement INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE repositories ADD COLUMN locked_paths TEXT NOT NULL DEFAULT '[]';
-ALTER TABLE repositories ADD COLUMN daily_merge_limit INTEGER NOT NULL DEFAULT 10;
 ALTER TABLE repositories ADD COLUMN review_brief TEXT NOT NULL DEFAULT '["REVIEW.md"]';
 ALTER TABLE repositories ADD COLUMN testing_label TEXT NOT NULL DEFAULT 'ready-for-testing';
 ALTER TABLE repositories ADD COLUMN measurers TEXT NOT NULL DEFAULT '[]';
 ALTER TABLE repositories ADD COLUMN frozen_reason TEXT;
 ALTER TABLE repositories ADD COLUMN frozen_source TEXT;
 ALTER TABLE repositories ADD COLUMN frozen_at INTEGER;
-ALTER TABLE changes ADD COLUMN merged_at INTEGER;
 ALTER TABLE changes ADD COLUMN merge_commit TEXT;
 CREATE TABLE measurements (
     id INTEGER PRIMARY KEY,
@@ -67,7 +65,6 @@ pub struct Frozen {
 pub struct FactorySettings {
     pub require_measurement: bool,
     pub locked_paths: Vec<String>,
-    pub daily_merge_limit: i64,
     pub review_brief: Vec<String>,
     pub testing_label: String,
     pub measurers: Vec<String>,
@@ -77,8 +74,6 @@ pub struct FactorySettings {
 pub const DEFAULT_REVIEW_BRIEF: &str = "REVIEW.md";
 /// The default of `testing_label`.
 pub const DEFAULT_TESTING_LABEL: &str = "ready-for-testing";
-/// The default of `daily_merge_limit`.
-pub const DEFAULT_DAILY_MERGE_LIMIT: i64 = 10;
 
 fn list(text: String) -> Vec<String> {
     serde_json::from_str(&text).unwrap_or_default()
@@ -92,14 +87,13 @@ pub(super) fn read_factory(
     let settings = FactorySettings {
         require_measurement: r.get(at)?,
         locked_paths: list(r.get(at + 1)?),
-        daily_merge_limit: r.get(at + 2)?,
-        review_brief: list(r.get(at + 3)?),
-        testing_label: r.get(at + 4)?,
-        measurers: list(r.get(at + 5)?),
+        review_brief: list(r.get(at + 2)?),
+        testing_label: r.get(at + 3)?,
+        measurers: list(r.get(at + 4)?),
     };
-    let reason: Option<String> = r.get(at + 6)?;
-    let source: Option<String> = r.get(at + 7)?;
-    let since: Option<i64> = r.get(at + 8)?;
+    let reason: Option<String> = r.get(at + 5)?;
+    let source: Option<String> = r.get(at + 6)?;
+    let since: Option<i64> = r.get(at + 7)?;
     let frozen = reason.map(|reason| Frozen {
         reason,
         source: source.unwrap_or_else(|| "manual".into()),
@@ -112,12 +106,11 @@ impl Store {
     /// Replaces the repository's factory settings.
     pub fn set_repository_factory(&self, id: i64, settings: &FactorySettings) -> Result<()> {
         self.conn().execute(
-            "UPDATE repositories SET require_measurement = ?1, locked_paths = ?2, daily_merge_limit = ?3, \
-             review_brief = ?4, testing_label = ?5, measurers = ?6 WHERE id = ?7",
+            "UPDATE repositories SET require_measurement = ?1, locked_paths = ?2, \
+             review_brief = ?3, testing_label = ?4, measurers = ?5 WHERE id = ?6",
             params![
                 settings.require_measurement,
                 serde_json::to_string(&settings.locked_paths)?,
-                settings.daily_merge_limit,
                 serde_json::to_string(&settings.review_brief)?,
                 settings.testing_label,
                 serde_json::to_string(&settings.measurers)?,
@@ -148,30 +141,10 @@ impl Store {
     /// Records when a change merged and, when it is known, the commit the merge made.
     pub fn set_change_merged(&self, id: i64, commit: Option<&str>) -> Result<()> {
         self.conn().execute(
-            "UPDATE changes SET state = 'merged', merged_at = ?1, merge_commit = COALESCE(?2, merge_commit) \
-             WHERE id = ?3",
-            params![now(), commit, id],
+            "UPDATE changes SET state = 'merged', merge_commit = COALESCE(?1, merge_commit) WHERE id = ?2",
+            params![commit, id],
         )?;
         Ok(())
-    }
-
-    /// Says a change merged at `at`, for tests of what the daily limit counts.
-    #[cfg(test)]
-    pub(crate) fn set_merged_at(&self, id: i64, at: i64) -> Result<()> {
-        self.conn().execute(
-            "UPDATE changes SET merged_at = ?1 WHERE id = ?2",
-            params![at, id],
-        )?;
-        Ok(())
-    }
-
-    /// How many changes of the repository merged since `since`.
-    pub fn merged_since(&self, repository_id: i64, since: i64) -> Result<i64> {
-        Ok(self.read().query_row(
-            "SELECT COUNT(*) FROM changes WHERE repository_id = ?1 AND state = 'merged' AND merged_at >= ?2",
-            params![repository_id, since],
-            |r| r.get(0),
-        )?)
     }
 
     /// The merged change of the repository that was merged as, or whose head is, the commit `commit`.
@@ -274,7 +247,6 @@ mod tests {
         let repo = store.add_repository("r", "/r", "none", "main").unwrap();
         assert!(!repo.require_measurement);
         assert!(repo.locked_paths.is_empty());
-        assert_eq!(repo.daily_merge_limit, DEFAULT_DAILY_MERGE_LIMIT);
         assert_eq!(repo.review_brief, vec!["REVIEW.md".to_string()]);
         assert_eq!(repo.testing_label, "ready-for-testing");
         assert!(repo.measurers.is_empty());
@@ -304,14 +276,12 @@ mod tests {
     }
 
     #[test]
-    fn merges_are_counted_from_the_time_they_happened() {
+    fn a_merged_change_is_found_by_the_commit_of_its_merge() {
         let (_dir, store) = store();
         let repo = store.add_repository("r", "/r", "none", "main").unwrap();
         let a = store.add_change(repo.id, None, "b1", None, "h1").unwrap();
         let b = store.add_change(repo.id, None, "b2", None, "h2").unwrap();
         store.set_change_merged(a.id, Some("c1")).unwrap();
-        assert_eq!(store.merged_since(repo.id, now() - 60).unwrap(), 1);
-        assert_eq!(store.merged_since(repo.id, now() + 60).unwrap(), 0);
         assert_eq!(
             store.merged_change_of_commit(repo.id, "c1").unwrap(),
             Some(a.id)

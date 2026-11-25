@@ -541,7 +541,6 @@ mod tests {
             merge_reviewed: true,
             require_measurement: false,
             locked_paths: Vec::new(),
-            daily_merge_limit: 10,
             review_brief: vec!["REVIEW.md".into()],
             testing_label: "ready-for-testing".into(),
             measurers: Vec::new(),

@@ -37,7 +37,6 @@ export interface Repository {
   /** The owner's own path globs that never merge without a person, besides the ones the server always locks. */
   locked_paths?: string[];
   /** How many changes the server merges into the repository in a day; 10 until it is changed. */
-  daily_merge_limit?: number;
   /** The files of the default branch that hold the repository's review rules; `["REVIEW.md"]` until it is changed. */
   review_brief?: string[];
   /** The label an approved change gets while its measurement is missing; `ready-for-testing` until it is changed. */

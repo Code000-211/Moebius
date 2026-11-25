@@ -1,6 +1,6 @@
 /**
  * The first part of the software factory, in a real browser against the fake server: the "Working with others" box holds
- * the merging settings (required measurement, locked paths, daily limit, review brief, ready-for-testing label,
+ * the merging settings (required measurement, locked paths, review brief, ready-for-testing label,
  * measurers) and saves them; a person freezes and unfreezes the repository, and a frozen repository says "Frozen: <reason>"
  * in the card window; a followed pull request whose code the Reviewer approved while its measurement is missing says so.
  * Set MOEBIUS_SHOT_DIR to also write the pictures (light and dark, 1280 px wide, twice the pixels).
@@ -68,7 +68,6 @@ describe.skipIf(usesRealServer)("the factory", () => {
     const box = await settings();
     await box.getByLabel("Require a measurement").click();
     await box.getByLabel("Locked paths").fill("kernels/**\ndocs/legal/**");
-    await box.getByLabel("Merges a day").fill("6");
     await box.getByLabel("Review brief").fill("notes/backlog/CARDS.md\nAGENTS.md");
     await box.getByLabel("Ready for testing").fill("needs-bench");
     await box.getByLabel("Measurers").fill("alice\nbob");
@@ -87,7 +86,6 @@ describe.skipIf(usesRealServer)("the factory", () => {
     expect(put?.body).toMatchObject({
       require_measurement: true,
       locked_paths: ["kernels/**", "docs/legal/**"],
-      daily_merge_limit: 6,
       review_brief: ["notes/backlog/CARDS.md", "AGENTS.md"],
       testing_label: "needs-bench",
       measurers: ["alice", "bob"],

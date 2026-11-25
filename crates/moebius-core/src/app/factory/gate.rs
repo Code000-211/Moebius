@@ -9,10 +9,9 @@
 //! 2. for what the server does on its own account (a script or an agent; a person's own Merge is their decision): all
 //!    agents are not paused and the card is not held;
 //! 3. the checks of the head have passed;
-//! 4. the repository's merges of the last 24 hours are under its daily limit;
-//! 5. a measurement is accepted for the head, or the issue carries `no-measurement`, when the repository requires one;
-//! 6. for the same actors: no path the change touches is locked (see `paths`), which only a person merges;
-//! 7. the repository's rules, as a decision of the kind `merge_check`, decided like a tool call.
+//! 4. a measurement is accepted for the head, or the issue carries `no-measurement`, when the repository requires one;
+//! 5. for the same actors: no path the change touches is locked (see `paths`), which only a person merges;
+//! 6. the repository's rules, as a decision of the kind `merge_check`, decided like a tool call.
 //!
 //! A refusal puts the card in Ready to merge with an Inbox item `merge_refused` that names the reason (and the item
 //! `ready_to_merge`, which offers a person the merge, if the card has none), and the merge fails with
@@ -28,10 +27,7 @@ use super::{MERGE_CHECK, MERGE_REFUSED, NO_MEASUREMENT_LABEL};
 use crate::app::{App, AppError, Result, columns, review_context};
 use crate::decide::rules;
 use crate::decide::{Actor, Question};
-use crate::store::{Card, Change, Repository, now};
-
-/// The window the daily merge limit counts in.
-const DAY: i64 = 24 * 60 * 60;
+use crate::store::{Card, Change, Repository};
 
 /// A refusal: `Ok` when the gate lets the merge through, else why it does not.
 pub(crate) type Gate = std::result::Result<(), String>;
@@ -99,13 +95,6 @@ impl App {
         if (outside && (failing || unknown)) || (!by.is_person() && failing && !unknown) {
             return Ok(Err(format!(
                 "the checks of pull request #{number} have not passed"
-            )));
-        }
-        let limit = repository.daily_merge_limit;
-        let merged = self.store.merged_since(repository.id, now() - DAY)?;
-        if merged >= limit {
-            return Ok(Err(format!(
-                "the daily merge limit of {limit} is reached ({merged} merged in the last 24 hours)"
             )));
         }
         let measured = self.measured(change)?;

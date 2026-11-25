@@ -173,8 +173,6 @@ says why.
   moebius api POST /v1/changes/12/measurement --body '{"reason": "kbench rows checked"}'
   ```
 
-- **Daily merge limit** (default 10). The server stops merging once that many changes merged in the last 24 hours; the
-  rest wait in **Ready to merge**.
 - **Review brief.** The Reviewer is told your rules for a change from files of your default branch, not from the pull
   request: list them under **Review brief** (default `REVIEW.md`; for a GPU engine, `notes/backlog/CARDS.md` and
   `AGENTS.md`). The server reads them from the default branch at the commit the review is of, so a pull request that edits
@@ -210,7 +208,7 @@ to In review.
   collaborator (GitHub), a project member (GitLab) or a collaborator (Forgejo).
 - **Both servers start the same issue.** Neither person had said their login, or the label was not used. Set the logins
   and `agents_take` as above.
-- **A merge is refused.** Open its card: the Inbox item `merge_refused` names the reason (a locked path, a missing measurement, the daily limit, a freeze, checks, a hold or the rules). Fix what it names, or merge it yourself where a person may (locked paths).
+- **A merge is refused.** Open its card: the Inbox item `merge_refused` names the reason (a locked path, a missing measurement, a freeze, checks, a hold or the rules). Fix what it names, or merge it yourself where a person may (locked paths).
 - **The repository is frozen.** The card window says why. Take the label `factory:freeze` off, or unfreeze it in the box; a breaker's freeze stays until you do.
 - **A pull request is not followed.** Its author is one of your server's people, or it is already a change of the
   repository, or it names no closing keyword for an issue that has a card that is not done, or the issue's card already

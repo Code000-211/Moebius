@@ -71,7 +71,6 @@ export interface WorkingWithOthers {
   merge_reviewed: boolean;
   require_measurement?: boolean;
   locked_paths?: string[];
-  daily_merge_limit?: number;
   review_brief?: string[];
   testing_label?: string;
   measurers?: string[];

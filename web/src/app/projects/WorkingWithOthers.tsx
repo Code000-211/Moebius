@@ -6,7 +6,7 @@
  * may comment on an issue but not assign it take, release and finish issues with `/take`, `/release` and `/done`, which the
  * server does for them with its own token. A third, "Pull requests of others", says whether a pull request the Reviewer
  * approved is merged by the server. A fourth, "Merging", holds what every merge of the server passes: the paths that never merge
- * without a person, the measurement a change needs, the daily limit, the review rules read from the default branch and the
+ * without a person, the measurement a change needs, the review rules read from the default branch and the
  * people whose measurements count; a freeze stops the whole repository. Saved with one button, except the freeze.
  */
 import { useMutation, useQueryClient } from "@tanstack/react-query";
@@ -35,9 +35,6 @@ export const DEFAULT_READY_LABEL = "Ready for agent";
 export const DEFAULT_COMMAND_LIMIT = 3;
 const MAX_COMMAND_LIMIT = 50;
 
-/** How many changes the server merges in a day, until a person sets another number. */
-export const DEFAULT_DAILY_MERGE_LIMIT = 10;
-const MAX_DAILY_MERGE_LIMIT = 1000;
 export const DEFAULT_TESTING_LABEL = "ready-for-testing";
 export const DEFAULT_REVIEW_BRIEF = ["REVIEW.md"];
 
@@ -72,7 +69,6 @@ export function WorkingWithOthers({ repository }: { repository: Repository }) {
     merge: repository.merge_reviewed ?? true,
     measure: repository.require_measurement ?? false,
     locked: repository.locked_paths ?? [],
-    daily: repository.daily_merge_limit ?? DEFAULT_DAILY_MERGE_LIMIT,
     brief: repository.review_brief ?? DEFAULT_REVIEW_BRIEF,
     testing: repository.testing_label ?? DEFAULT_TESTING_LABEL,
     measurers: repository.measurers ?? [],
@@ -86,7 +82,6 @@ export function WorkingWithOthers({ repository }: { repository: Repository }) {
   const [merge, setMerge] = useState(stored.merge);
   const [measure, setMeasure] = useState(stored.measure);
   const [locked, setLocked] = useState(stored.locked.join("\n"));
-  const [daily, setDaily] = useState(String(stored.daily));
   const [brief, setBrief] = useState(stored.brief.join("\n"));
   const [testing, setTesting] = useState(stored.testing);
   const [measurers, setMeasurers] = useState(stored.measurers.join("\n"));
@@ -94,14 +89,10 @@ export function WorkingWithOthers({ repository }: { repository: Repository }) {
   const limitNumber = Number(limit);
   const limitOk =
     Number.isInteger(limitNumber) && limitNumber >= 1 && limitNumber <= MAX_COMMAND_LIMIT;
-  const dailyNumber = Number(daily);
-  const dailyOk =
-    Number.isInteger(dailyNumber) && dailyNumber >= 1 && dailyNumber <= MAX_DAILY_MERGE_LIMIT;
   const testingTrimmed = testing.trim();
   const changed =
     measure !== stored.measure ||
     !same(lines(locked), stored.locked) ||
-    (dailyOk && dailyNumber !== stored.daily) ||
     !same(lines(brief), stored.brief) ||
     testingTrimmed !== stored.testing ||
     !same(lines(measurers), stored.measurers) ||
@@ -112,7 +103,7 @@ export function WorkingWithOthers({ repository }: { repository: Repository }) {
     (limitOk && limitNumber !== stored.limit) ||
     answer !== stored.answer ||
     merge !== stored.merge;
-  const valid = trimmed !== "" && limitOk && dailyOk && testingTrimmed !== "";
+  const valid = trimmed !== "" && limitOk && testingTrimmed !== "";
   const save = useMutation({
     mutationFn: () =>
       editWorkingWithOthers(repository.id, {
@@ -125,7 +116,6 @@ export function WorkingWithOthers({ repository }: { repository: Repository }) {
         merge_reviewed: merge,
         require_measurement: measure,
         locked_paths: lines(locked),
-        daily_merge_limit: dailyNumber,
         review_brief: lines(brief),
         testing_label: testingTrimmed,
         measurers: lines(measurers),
@@ -310,21 +300,6 @@ export function WorkingWithOthers({ repository }: { repository: Repository }) {
               value={locked}
               placeholder="kernels/**"
               onChange={(e) => setLocked(e.target.value)}
-            />
-          </Field>
-          <Field
-            label="Merges a day"
-            hint={`At most this many changes are merged by the server in a day, from 1 to ${MAX_DAILY_MERGE_LIMIT}.`}
-            error={dailyOk ? undefined : `A number from 1 to ${MAX_DAILY_MERGE_LIMIT}.`}
-          >
-            <Input
-              type="number"
-              inputMode="numeric"
-              min={1}
-              max={MAX_DAILY_MERGE_LIMIT}
-              value={daily}
-              autoComplete="off"
-              onChange={(e) => setDaily(e.target.value)}
             />
           </Field>
           <Field
