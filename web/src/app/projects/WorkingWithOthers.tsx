@@ -276,8 +276,8 @@ export function WorkingWithOthers({ repository }: { repository: Repository }) {
             <p className="m-0 text-sm text-muted">
               Every merge the server makes passes the same gate: the checks of the head are green,
               the paths below are not touched, the measurement is there when it is required, the
-              day's limit is not spent, the repository is not frozen and the card is not held.
-              Refused, the card waits in Ready to merge with the reason in your Inbox.
+              repository is not frozen and the card is not held. Refused, the card waits in Ready to
+              merge with the reason in your Inbox.
             </p>
           </div>
           <div className="flex items-start justify-between gap-4">
