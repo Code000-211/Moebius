@@ -121,10 +121,10 @@ impl App {
         let said = cache
             .get(&project.id)
             .and_then(|c| c.columns.problem.clone());
-        if columns.problem.is_some() && columns.problem != said {
-            if let Some((_, problem)) = &columns.problem {
-                eprintln!("moebius: {problem}");
-            }
+        if columns.problem != said
+            && let Some((_, problem)) = &columns.problem
+        {
+            eprintln!("moebius: {problem}");
         }
         let columns = Arc::new(columns);
         cache.insert(
