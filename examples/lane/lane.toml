@@ -2,6 +2,9 @@
 # the selftests that do, then the measurement before (at the merge base) and after (at the head), three runs of each,
 # taking turns. The commands are the repository's own: change them.
 
+# What measures: taken from the merge base for the head too. A change that touches these is looked at by a person.
+harness = ["kbench.sh", "tools/rad-kbench/"]
+
 [[step]]
 name = "build"
 command = "./build.sh"

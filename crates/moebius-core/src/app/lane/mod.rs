@@ -44,6 +44,9 @@ pub const LANE_PAUSED: &str = "lane_paused";
 #[derive(Default)]
 pub struct Lanes {
     setup: RwLock<Setup>,
+    /// Variables the tests give every process of a machine (see `exec::Machine::with_environment`).
+    #[cfg(test)]
+    environment: RwLock<Vec<(String, String)>>,
 }
 
 #[derive(Default)]
@@ -56,6 +59,21 @@ impl Lanes {
     /// Sets the lanes and the runners they use, as the configuration has them.
     pub fn configure(&self, lanes: Vec<LaneConfig>, runners: Vec<RunnerConfig>) {
         *self.setup.write().unwrap_or_else(|e| e.into_inner()) = Setup { lanes, runners };
+    }
+
+    /// What the tests put in the environment of every process of a lane's machine.
+    #[cfg(test)]
+    pub fn test_environment(&self) -> Vec<(String, String)> {
+        self.environment
+            .read()
+            .unwrap_or_else(|e| e.into_inner())
+            .clone()
+    }
+
+    /// Sets what [`Lanes::test_environment`] says.
+    #[cfg(test)]
+    pub fn set_test_environment(&self, variables: Vec<(String, String)>) {
+        *self.environment.write().unwrap_or_else(|e| e.into_inner()) = variables;
     }
 
     /// The lane called `name`.

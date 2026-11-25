@@ -48,9 +48,14 @@ struct Reason {
 
 async fn get_repository_lane(
     State(state): State<ApiState>,
+    Extension(by): Extension<Actor>,
     UrlPath(id): UrlPath<i64>,
 ) -> Result<axum::Json<RepositoryLane>, ApiError> {
-    blocking(&state.app, move |app| app.repository_lane_view(id)).await
+    blocking(&state.app, move |app| {
+        let sight = app.sight(&by)?;
+        app.repository_lane_view(id, &sight)
+    })
+    .await
 }
 
 async fn put_repository_lane(
@@ -65,8 +70,11 @@ async fn put_repository_lane(
     .await
 }
 
-async fn get_lanes(State(state): State<ApiState>) -> Result<axum::Json<Vec<LaneView>>, ApiError> {
-    blocking(&state.app, |app| app.lane_views()).await
+async fn get_lanes(
+    State(state): State<ApiState>,
+    Extension(by): Extension<Actor>,
+) -> Result<axum::Json<Vec<LaneView>>, ApiError> {
+    blocking(&state.app, move |app| app.lane_views(&app.sight(&by)?)).await
 }
 
 async fn resume_lane(
@@ -78,7 +86,7 @@ async fn resume_lane(
     let reason = body.map(|b| b.0.reason).unwrap_or_default();
     blocking(&state.app, move |app| {
         app.resume_lane(&by, &name, &reason)?;
-        app.lane_views()
+        app.lane_views(&app.sight(&by)?)
     })
     .await
 }

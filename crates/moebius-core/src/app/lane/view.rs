@@ -7,7 +7,7 @@ use std::collections::BTreeMap;
 use serde::Serialize;
 
 use super::definition::{self, LANE_FILE};
-use crate::app::{App, AppError, Result};
+use crate::app::{App, AppError, Result, Sight};
 use crate::config::LaneConfig;
 use crate::decide::Actor;
 use crate::store::{LaneJob, LanePause};
@@ -30,8 +30,11 @@ pub struct LaneView {
     pub driver: Option<String>,
     pub devices: Vec<String>,
     pub timeout_seconds: u64,
-    /// How many jobs wait for it, and the one that runs.
+    /// How many jobs wait for it, and whether one runs.
     pub queued: usize,
+    pub busy: bool,
+    /// The job that runs: only for someone who may see its card, since it names the card, the commit and the step of a
+    /// repository that may be private to others. Everyone else sees `busy` and the length of the queue.
     pub running: Option<LaneJob>,
     /// Set while the lane has stopped itself after jobs that failed for its own reasons.
     pub paused: Option<LanePause>,
@@ -73,7 +76,16 @@ pub struct CardLane {
 }
 
 impl App {
-    fn lane_view(&self, lane: &LaneConfig) -> Result<LaneView> {
+    /// Whether `sight` sees the card of `job`.
+    fn sees_job(&self, sight: &Sight, job: &LaneJob) -> bool {
+        self.store
+            .card(job.card_id)
+            .ok()
+            .flatten()
+            .is_some_and(|card| sight.card(&card))
+    }
+
+    fn lane_view(&self, lane: &LaneConfig, sight: &Sight) -> Result<LaneView> {
         let queue = self.store.lane_queue(&lane.name)?;
         Ok(LaneView {
             name: lane.name.clone(),
@@ -89,25 +101,33 @@ impl App {
             devices: lane.devices.clone(),
             timeout_seconds: lane.timeout_seconds,
             queued: queue.iter().filter(|j| j.state == "queued").count(),
-            running: queue.iter().find(|j| j.state == "running").cloned(),
+            busy: queue.iter().any(|j| j.state == "running"),
+            running: queue
+                .iter()
+                .find(|j| j.state == "running" && self.sees_job(sight, j))
+                .cloned(),
             paused: self.store.lane_pause(&lane.name)?,
         })
     }
 
-    /// Every lane of the configuration with its state.
-    pub fn lane_views(&self) -> Result<Vec<LaneView>> {
+    /// Every lane of the configuration with its state, as `sight` sees it.
+    pub fn lane_views(&self, sight: &Sight) -> Result<Vec<LaneView>> {
         self.lanes
             .all()
             .iter()
-            .map(|lane| self.lane_view(lane))
+            .map(|lane| self.lane_view(lane, sight))
             .collect()
     }
 
     /// The "Test lane" settings of a repository.
-    pub fn repository_lane_view(&self, repository_id: i64) -> Result<RepositoryLane> {
+    pub fn repository_lane_view(
+        &self,
+        repository_id: i64,
+        sight: &Sight,
+    ) -> Result<RepositoryLane> {
         let repository = self.repository(repository_id)?;
         let lane = self.store.repository_lane(repository_id)?;
-        let lanes = self.lane_views()?;
+        let lanes = self.lane_views(sight)?;
         let current = lane
             .as_ref()
             .and_then(|name| lanes.iter().find(|l| &l.name == name).cloned());
@@ -140,7 +160,12 @@ impl App {
             current,
             lanes,
             definition,
-            jobs: self.store.lane_jobs_of_repository(repository_id, 10)?,
+            jobs: self
+                .store
+                .lane_jobs_of_repository(repository_id, 10)?
+                .into_iter()
+                .filter(|job| self.sees_job(sight, job))
+                .collect(),
         })
     }
 
@@ -191,7 +216,7 @@ impl App {
                 self.repository(repository_id)?,
             ));
         }
-        self.repository_lane_view(repository_id)
+        self.repository_lane_view(repository_id, &self.sight(by)?)
     }
 
     /// The lane's report of a card.
@@ -199,8 +224,16 @@ impl App {
         let card = self.card(card_id)?;
         let lane = self.store.repository_lane(card.repository_id)?;
         let change = self.lane_change(&card)?;
-        let head = change.as_ref().and_then(|c| c.head.clone());
         let jobs = self.store.lane_jobs_of_card(card_id)?;
+        // A change that was merged or closed has no open head: its last job's change has the head it ended with, so that
+        // the measurement that justified a merge stays readable.
+        let head = match &change {
+            Some(change) => change.head.clone(),
+            None => jobs
+                .last()
+                .and_then(|job| self.store.change(job.change_id).ok().flatten())
+                .and_then(|change| change.head),
+        };
         let current = jobs.iter().any(|j| {
             Some(&j.head) == head.as_ref()
                 && matches!(

@@ -120,7 +120,9 @@ impl App {
                     )));
                 }
                 Ok(files) => {
-                    if let Some((file, pattern)) = Self::locked_hit(repository, files) {
+                    let harness =
+                        card.map_or_else(Vec::new, |card| self.lane_harness_patterns(card));
+                    if let Some((file, pattern)) = Self::locked_hit(repository, files, &harness) {
                         return Ok(Err(format!(
                             "the change touches {file}, which is locked by {pattern}: only a person merges it"
                         )));
@@ -140,10 +142,12 @@ impl App {
 
     /// The first of `files` that a locked path of the repository holds, and the pattern that locks it. The locked paths are
     /// the built-in ones, the owner's, and the repository's rules for its reviews, which are locked from the root: a change
-    /// that rewrote them would be believed by every review after it.
+    /// that rewrote them would be believed by every review after it. `harness` are the paths of the test lane's measuring
+    /// harness (see `app::lane`), which only a person merges too.
     pub(in crate::app) fn locked_hit(
         repository: &Repository,
         files: &[String],
+        harness: &[String],
     ) -> Option<(String, String)> {
         let brief: Vec<String> = repository
             .review_brief
@@ -155,6 +159,7 @@ impl App {
             .iter()
             .copied()
             .chain(owners)
+            .chain(harness.iter().map(String::as_str))
             .chain(brief.iter().map(String::as_str));
         files.iter().find_map(|file| {
             paths::locked_by(locked.clone(), file)

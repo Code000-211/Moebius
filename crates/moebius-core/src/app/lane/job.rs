@@ -14,7 +14,10 @@ use std::time::{Duration, Instant};
 use serde_json::{Value, json};
 
 use super::definition::{self, Definition, LANE_FILE, On, Step};
-use super::exec::{Ended, Machine, Ran, contained_script, describe, direct_script, quote};
+use super::exec::{
+    Ended, Finish, GIT, GIT_ENVIRONMENT, Machine, contained_script, describe, direct_script, quote,
+    read_status,
+};
 use super::report::{Measured, Report, Series, StepResult, tail};
 use super::rows::{self, Row};
 use crate::app::App;
@@ -55,6 +58,8 @@ struct Job<'a> {
     dir: String,
     started: Instant,
     commands: std::cell::Cell<u32>,
+    /// Whether the command that is going was given less time than its step allows, since the job's own time was running out.
+    cut: std::cell::Cell<bool>,
     report: std::cell::RefCell<Report>,
 }
 
@@ -99,6 +104,8 @@ impl App {
         };
         let contained = lane.isolation.contained(job.external);
         let machine = Machine::new(&lane, runner.as_ref(), &self.data_dir);
+        #[cfg(test)]
+        let machine = machine.with_environment(self.lanes.test_environment());
         let running = Job {
             app: self,
             job,
@@ -108,6 +115,7 @@ impl App {
             dir: format!("{}/jobs/{}", machine.work_dir(), job.id),
             started: Instant::now(),
             commands: std::cell::Cell::new(0),
+            cut: std::cell::Cell::new(false),
             report: std::cell::RefCell::new(Report {
                 lane: lane.clone(),
                 contained,
@@ -184,6 +192,30 @@ impl App {
     }
 }
 
+/// What a command of a step did: how it ended, and what it printed.
+struct Done {
+    finish: Finish,
+    output: String,
+    prefixed: Vec<String>,
+}
+
+/// A shell prefix that stops unless `$f` is a regular file inside the checkout `side`, not reached through a link: the
+/// code of a job plants symbolic links, and the host must not follow one out of the checkout.
+fn inside(dir: &str, side: &str, path: &str, must_exist: bool) -> String {
+    let base = format!("{dir}/{side}");
+    let full = format!("{base}/{path}");
+    let flag = if must_exist { "-f" } else { "-m" };
+    let mut guard = format!(
+        "b=$(readlink -f -- {base}) && f=$(readlink {flag} -- {full}) && case \"$f\" in \"$b\"/*) ;; *) exit 9;; esac",
+        base = quote(&base),
+        full = quote(&full),
+    );
+    if must_exist {
+        guard.push_str(&format!(" && [ -f \"$f\" ] && [ ! -L {} ]", quote(&full)));
+    }
+    guard
+}
+
 impl Job<'_> {
     fn cancelled(&self) -> bool {
         self.app
@@ -199,7 +231,7 @@ impl Job<'_> {
     }
 
     fn go(&self, definition: &Definition) -> Result<(), Stop> {
-        self.prepare()?;
+        self.prepare(&definition.harness)?;
         for step in &definition.steps {
             let began = Instant::now();
             let result = match &step.measure {
@@ -221,11 +253,13 @@ impl Job<'_> {
         Ok(())
     }
 
-    /// The tools on the machine, the commits there and their checkouts.
-    fn prepare(&self) -> Result<(), Stop> {
+    /// The tools on the machine, the commits there and their checkouts. Every git command runs with nothing of the
+    /// account's configuration, no hook and no filter; the checkout of the head has the paths of the measuring harness
+    /// from the merge base, never from the head.
+    fn prepare(&self, harness: &[String]) -> Result<(), Stop> {
         let cancelled = || self.cancelled();
         let mut checks = String::from(
-            "for tool in git timeout sha256sum; do command -v $tool >/dev/null 2>&1 || { echo \"$tool is missing on the machine\"; exit 3; }; done;",
+            "for tool in git timeout sha256sum readlink; do command -v $tool >/dev/null 2>&1 || { echo \"$tool is missing on the machine\"; exit 3; }; done;",
         );
         // Fail closed: a job that has to be contained never runs without the runtime.
         if self.contained {
@@ -287,22 +321,33 @@ impl Job<'_> {
                 }
             })?;
         let dir = quote(&self.dir);
-        let mut script = format!("set -e; rm -rf {dir}; mkdir -p {dir}/home;");
+        let mut script = format!("{GIT_ENVIRONMENT} set -e; rm -rf {dir}; mkdir -p {dir}/home;");
         for (side, commit, reference) in [
             ("before", &self.job.base, &before),
             ("after", &self.job.head, &after),
         ] {
             script.push_str(&format!(
-                " git init --quiet {dir}/{side}; git -C {dir}/{side} fetch --quiet {bare} {reference}; \
-                 git -c advice.detachedHead=false -C {dir}/{side} checkout --quiet --detach {commit}; \
-                 [ \"$(git -C {dir}/{side} rev-parse HEAD)\" = {commit} ] || {{ echo \"{side} is not at the pinned commit\"; exit 5; }};",
+                " {GIT} init --template= --quiet {dir}/{side}; {GIT} -C {dir}/{side} fetch --quiet {bare} {reference}; \
+                 {GIT} -c advice.detachedHead=false -C {dir}/{side} checkout --quiet --detach {commit}; \
+                 [ \"$({GIT} -C {dir}/{side} rev-parse HEAD)\" = {commit} ] || {{ echo \"{side} is not at the pinned commit\"; exit 5; }};",
                 bare = quote(&bare),
                 reference = quote(reference),
                 commit = quote(commit),
             ));
         }
+        // The harness of the measurement is the merge base's: what the head has there is taken away and put back as it
+        // was, so that the code under review cannot choose how it is measured.
+        for path in harness {
+            let path = quote(path.trim_start_matches('/'));
+            script.push_str(&format!(
+                " rm -rf {dir}/after/{path}; if [ -n \"$({GIT} -C {dir}/after ls-tree -r --name-only {base} -- {path})\" ]; then \
+                 {GIT} -C {dir}/after checkout --quiet {base} -- {path}; fi;",
+                base = quote(&self.job.base),
+            ));
+        }
         script.push_str(&format!(
-            " git --git-dir={bare} update-ref -d {after}; git --git-dir={bare} update-ref -d {before}; chmod -R a+rwX {dir}",
+            " {GIT} --git-dir={bare} update-ref -d {after}; {GIT} --git-dir={bare} update-ref -d {before}; \
+             chmod -R a+rwX {dir}/before {dir}/after",
             bare = quote(&bare),
             after = quote(&after),
             before = quote(&before),
@@ -320,6 +365,51 @@ impl Job<'_> {
         }
     }
 
+    /// A random word only this server knows, which a script says its command's end with.
+    fn token(&self) -> String {
+        use std::hash::{BuildHasher, Hasher};
+        let mut hasher = std::collections::hash_map::RandomState::new().build_hasher();
+        hasher.write_u64(self.job.id as u64);
+        format!("LANE-{:016x}{:016x}", hasher.finish(), {
+            let mut again = std::collections::hash_map::RandomState::new().build_hasher();
+            again.write_u8(1);
+            again.finish()
+        })
+    }
+
+    /// Stops what the command `n` started and is not sure to have ended, and makes sure of it: the container is
+    /// removed (by name, over SSH for a runner) or the process group is killed. A lane whose workload could not be
+    /// stopped pauses itself, so that no next job starts on the same GPUs.
+    fn stop_command(&self, n: u32) {
+        let script = if self.contained {
+            let runtime = quote(&self.lane.runtime);
+            let name = quote(&format!("moebius-lane-{}-{n}", self.job.id));
+            format!(
+                "for i in 1 2 3 4 5; do {runtime} rm -f {name} >/dev/null 2>&1; \
+                 {runtime} inspect {name} >/dev/null 2>&1 || exit 0; sleep 1; done; exit 1"
+            )
+        } else {
+            let pid = quote(&format!("{}/pid-{n}", self.dir));
+            format!(
+                "p=$(cat {pid} 2>/dev/null); [ -z \"$p\" ] && exit 0; for i in 1 2 3 4 5; do kill -KILL -- -$p 2>/dev/null; \
+                 kill -0 -- -$p 2>/dev/null || exit 0; sleep 1; done; exit 1"
+            )
+        };
+        let stopped = self
+            .machine
+            .run(&script, Duration::from_secs(60), &|| false, None);
+        if stopped.ended != Ended::Exit(0) {
+            self.app.pause_lane_for(
+                &self.job.lane,
+                &format!(
+                    "a command of job {} could not be stopped on {}, so no job starts there until a person has looked",
+                    self.job.id,
+                    self.machine.name()
+                ),
+            );
+        }
+    }
+
     /// Runs `command` of a step in the checkout `side`. `run` is the number of the run of a measurement.
     fn command(
         &self,
@@ -328,16 +418,18 @@ impl Job<'_> {
         seconds: u64,
         run: Option<usize>,
         prefix: Option<&str>,
-    ) -> Result<Ran, Stop> {
+    ) -> Result<Done, Stop> {
         let Some(left) = self.remaining() else {
             return Err(Stop::Errored(format!(
-                "the job took longer than the lane's limit of {} seconds",
+                "the job took longer than the lane's total limit of {} seconds",
                 self.lane.timeout_seconds
             )));
         };
+        self.cut.set(left.as_secs().max(1) < seconds);
         let seconds = seconds.min(left.as_secs().max(1));
         let n = self.commands.get();
         self.commands.set(n + 1);
+        let token = self.token();
         let environment: Vec<(String, String)> = [
             ("LANE_SIDE", side.to_string()),
             ("LANE_JOB", self.job.id.to_string()),
@@ -357,9 +449,18 @@ impl Job<'_> {
                 &environment,
                 command,
                 seconds,
+                &token,
             )
         } else {
-            direct_script(&self.dir, side, &environment, command, seconds)
+            direct_script(
+                &self.dir,
+                side,
+                &environment,
+                command,
+                seconds,
+                &format!("{}/pid-{n}", self.dir),
+                &token,
+            )
         };
         let ran = self.machine.run(
             &script,
@@ -367,26 +468,62 @@ impl Job<'_> {
             &|| self.cancelled(),
             prefix,
         );
-        if ran.ended == Ended::Cancelled {
-            return Err(Stop::Cancelled);
+        let (output, finish) = read_status(&ran.output, &token, seconds);
+        match (&ran.ended, finish) {
+            (Ended::Cancelled, _) => {
+                self.stop_command(n);
+                Err(Stop::Cancelled)
+            }
+            (Ended::TimedOut, _) => {
+                // The server had to stop the script: the workload may still be there.
+                self.stop_command(n);
+                Ok(Done {
+                    finish: Finish::TimedOut,
+                    output,
+                    prefixed: ran.prefixed,
+                })
+            }
+            (Ended::Failed(why), _) => {
+                self.stop_command(n);
+                Err(Stop::Errored(why.clone()))
+            }
+            // The script told how the command ended: whatever the number is, it is the command's own.
+            (_, Some(finish)) => Ok(Done {
+                finish,
+                output,
+                prefixed: ran.prefixed,
+            }),
+            (_, None) => {
+                self.stop_command(n);
+                Err(Stop::Errored(format!(
+                    "the machine did not say how the command ended: {}",
+                    describe(&ran)
+                )))
+            }
         }
-        Ok(ran)
     }
 
     /// What a command's end means for the step `step` on `side`.
-    fn judge(&self, step: &Step, side: &str, ran: &Ran) -> Result<(), Stop> {
-        let why = match &ran.ended {
-            Ended::Exit(0) => return Ok(()),
-            Ended::Exit(125) if self.contained => {
+    fn judge(&self, step: &Step, side: &str, done: &Done) -> Result<(), Stop> {
+        let why = match done.finish {
+            Finish::Exit(0) => return Ok(()),
+            Finish::Gone => {
                 return Err(Stop::Errored(format!(
                     "the container runtime could not start the job's container: {}",
-                    tail(&ran.output).lines().last().unwrap_or("")
+                    tail(&done.output).lines().last().unwrap_or("")
                 )));
             }
-            Ended::Exit(code) => format!("it exited with code {code}"),
-            Ended::TimedOut => format!("it ran past its limit of {} seconds", step.timeout_seconds),
-            Ended::Failed(why) => return Err(Stop::Errored(why.clone())),
-            Ended::Cancelled => return Err(Stop::Cancelled),
+            // The job's own time was running out: that is the lane's, not the change's.
+            Finish::TimedOut if self.cut.get() => {
+                return Err(Stop::Errored(format!(
+                    "the job ran out of its total time of {} seconds at the step {}",
+                    self.lane.timeout_seconds, step.name
+                )));
+            }
+            Finish::Exit(code) => format!("it exited with code {code}"),
+            Finish::TimedOut => {
+                format!("it ran past its limit of {} seconds", step.timeout_seconds)
+            }
         };
         if side == "before" {
             // The merge base is not the change's doing.
@@ -404,12 +541,16 @@ impl Job<'_> {
         Err(Stop::Failed {
             step: name,
             why,
-            output: ran.output.clone(),
+            output: done.output.clone(),
         })
     }
 
+    /// Writes the step the job is at and says so, so that the card and the settings show it as it goes.
     fn at(&self, text: &str) {
         let _ = self.app.store.set_lane_job_step(self.job.id, text);
+        if let Ok(card) = self.app.card(self.job.card_id) {
+            self.app.bus.publish(crate::bus::Event::CardUpdated(card));
+        }
     }
 
     /// A step that runs once on each side it names.
@@ -420,19 +561,19 @@ impl Job<'_> {
         };
         for side in sides {
             self.at(&format!("{} ({side})", step.name));
-            let ran = self.command(side, &step.command, step.timeout_seconds, None, None)?;
-            self.judge(step, side, &ran)?;
+            let done = self.command(side, &step.command, step.timeout_seconds, None, None)?;
+            self.judge(step, side, &done)?;
         }
         Ok(())
     }
 
-    /// The text of a file of a checkout on the machine, read from the start of its first megabyte.
+    /// The text of a regular file of a checkout on the machine, from the start of its first megabyte. A link, a file
+    /// outside the checkout or anything that is not a regular file is no file.
     fn read_file(&self, side: &str, path: &str) -> Result<String, String> {
         let ran = self.machine.run(
             &format!(
-                "head -c 1048576 -- {}/{side}/{}",
-                quote(&self.dir),
-                quote(path)
+                "{} && head -c 1048576 -- \"$f\"",
+                inside(&self.dir, side, path, true)
             ),
             Duration::from_secs(60),
             &|| self.cancelled(),
@@ -440,13 +581,19 @@ impl Job<'_> {
         );
         match ran.ended {
             Ended::Exit(0) => Ok(ran.output),
-            _ => Err(format!("it wrote no {path}")),
+            _ => Err(format!(
+                "it wrote no regular file {path} inside its checkout"
+            )),
         }
     }
 
+    /// Removes a file the last run left, never through a link that leads out of the checkout.
     fn remove_file(&self, side: &str, path: &str) {
         let _ = self.machine.run(
-            &format!("rm -f -- {}/{side}/{}", quote(&self.dir), quote(path)),
+            &format!(
+                "{} && rm -f -- \"$f\"",
+                inside(&self.dir, side, path, false)
+            ),
             Duration::from_secs(60),
             &|| self.cancelled(),
             None,
@@ -472,30 +619,30 @@ impl Job<'_> {
                 for file in [&measure.json, &measure.parity_file].into_iter().flatten() {
                     self.remove_file(side, file);
                 }
-                let ran = self.command(
+                let done = self.command(
                     side,
                     &step.command,
                     step.timeout_seconds,
                     Some(run),
                     measure.prefix.as_deref(),
                 )?;
-                self.judge(step, side, &ran)?;
+                self.judge(step, side, &done)?;
                 let mut found: Vec<Row> = measure
                     .prefix
                     .as_deref()
-                    .map(|prefix| rows::from_lines(&ran.prefixed, prefix))
+                    .map(|prefix| rows::from_lines(&done.prefixed, prefix))
                     .unwrap_or_default();
                 if let Some(path) = &measure.json {
                     let more = self
                         .read_file(side, path)
                         .and_then(|text| rows::from_json(&text))
-                        .map_err(|why| failed(why, &ran.output))?;
+                        .map_err(|why| failed(why, &done.output))?;
                     found.extend(more);
                 }
                 if found.is_empty() {
                     return Err(failed(
                         format!("run {run} on {side} gave no measurement rows"),
-                        &ran.output,
+                        &done.output,
                     ));
                 }
                 for row in found {
@@ -511,15 +658,24 @@ impl Job<'_> {
                     .push(row.value);
                 }
                 if let Some(path) = &measure.parity_file {
+                    // Hashed by the host once the command, and its container, have ended.
                     let hashed = self.machine.run(
-                        &format!("sha256sum -- {}/{side}/{}", quote(&self.dir), quote(path)),
+                        &format!(
+                            "{} && sha256sum -- \"$f\"",
+                            inside(&self.dir, side, path, true)
+                        ),
                         Duration::from_secs(120),
                         &|| self.cancelled(),
                         None,
                     );
                     match (&hashed.ended, hashed.output.split_whitespace().next()) {
                         (Ended::Exit(0), Some(hash)) => hashes.push(hash.to_string()),
-                        _ => return Err(failed(format!("it wrote no {path}"), &ran.output)),
+                        _ => {
+                            return Err(failed(
+                                format!("it wrote no regular file {path} inside its checkout"),
+                                &done.output,
+                            ));
+                        }
                     }
                 }
             }
@@ -570,13 +726,16 @@ impl Job<'_> {
         let mut script = format!("rm -rf {dir} 2>/dev/null;");
         if self.contained {
             // Files a container's user made may not be the machine user's to remove.
-            script.push_str(&format!(
-                " [ ! -d {dir} ] || {{ {runtime} run --rm --network none --user {user} -v {dir}:/work:rw {image} \
-                 sh -c 'rm -rf /work/before /work/after /work/home' >/dev/null 2>&1; rm -rf {dir}; }};",
-                runtime = quote(&self.lane.runtime),
-                user = quote(&self.lane.user),
-                image = quote(self.lane.image.as_deref().unwrap_or_default()),
-            ));
+            for side in ["before", "after", "home"] {
+                script.push_str(&format!(
+                    " [ ! -d {dir}/{side} ] || {runtime} run --rm --network none --user {user} -v {dir}/{side}:/work:rw {image} \
+                     sh -c 'rm -rf /work/* /work/.[!.]*' >/dev/null 2>&1;",
+                    runtime = quote(&self.lane.runtime),
+                    user = quote(&self.lane.user),
+                    image = quote(self.lane.image.as_deref().unwrap_or_default()),
+                ));
+            }
+            script.push_str(&format!(" rm -rf {dir};"));
         }
         let _ = self
             .machine

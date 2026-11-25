@@ -85,23 +85,28 @@ impl App {
         }
         let reason =
             format!("{streak} jobs in a row ended because of the lane itself; the last: {why}");
-        if !self.store.pause_lane(&job.lane, &reason).unwrap_or(false) {
+        self.pause_lane_for(&job.lane, &reason);
+    }
+
+    /// Pauses the lane for `reason`, once, and tells the owner in the Inbox and the digest.
+    pub(super) fn pause_lane_for(&self, lane: &str, reason: &str) {
+        if !self.store.pause_lane(lane, reason).unwrap_or(false) {
             return;
         }
         let _ = self.store.add_inbox_item(
             LANE_PAUSED,
             None,
-            &format!("Test lane {} paused itself", job.lane),
-            &json!({ "lane": job.lane, "reason": reason }),
+            &format!("Test lane {lane} paused itself"),
+            &json!({ "lane": lane, "reason": reason }),
         );
-        for repository in self.store.lane_repositories(&job.lane).unwrap_or_default() {
+        for repository in self.store.lane_repositories(lane).unwrap_or_default() {
             let _ = self.store.note_activity(
                 "lane_paused",
                 Some(repository),
                 None,
-                Some(&job.lane),
-                &reason,
-                &json!({ "lane": job.lane }),
+                Some(lane),
+                reason,
+                &json!({ "lane": lane }),
             );
         }
     }

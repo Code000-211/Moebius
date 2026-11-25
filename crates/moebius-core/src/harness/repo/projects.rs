@@ -105,6 +105,13 @@ impl HarnessRepo {
         (kind, message): (&str, &str),
         mut context: BTreeMap<String, String>,
     ) -> Result<Option<String>> {
+        // What a lane runs on the owner's machine is the owner's: no agent, script or proposal writes or removes it, as
+        // they do not write the settings of the merge gate.
+        if file == LANE_FILE && !by.is_person() {
+            return Err(AppError::Forbidden(format!(
+                "only a person changes {LANE_FILE}: it says what runs on the owner's machine"
+            )));
+        }
         let mut read_at = self.lock();
         let name = name()?;
         let name = name.as_str();

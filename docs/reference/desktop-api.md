@@ -545,6 +545,7 @@ same change failing again keeps it, another stop replaces it) and
 `review_not_possible` (`data.change`, `data.pull_request`, `data.author`, `data.repository`, `data.reason`: the pull request the card follows could not be given to the Reviewer, because it is too large to be read whole, changes a binary file, git could not read it, its repository's review brief is more than 40 KB or could not be read, or the run of a review a person asked for could not start; resolved when the request is merged or closed; the same choices as for `outside_change`) and
 `merge_refused` (`data.change`, `data.branch`, `data.pull_request`, `data.repository`, `data.reason`: [the merge gate](#the-merge-gate) refused to merge the change, and the card is in `Ready to merge`; asked again with the same reason it stays one item, another reason replaces it, and a merge resolves it) and
 `factory_frozen` (`data.repository`, `data.repository_id`, `data.reason`, `data.source`; no card: the repository is frozen, see [the software factory](#the-software-factory); resolved when a person unfreezes it) and
+`lane_needs_a_person` (`data.reason`: a change touches a locked path or the [measuring harness](lanes.md#the-job-definition) of its test lane, so no job is queued for it; once for the card) and
 `lane_paused` (`data.lane`, `data.reason`; no card: a [test lane](lanes.md#a-lane-that-stopped-itself) paused itself after three jobs in a row that ended for a reason of its own; resolved when a person resumes it with `POST /v1/lanes/{name}/resume`) and
 `daily_digest` (`data.day`, `data.repositories`, `data.tokens`, `data.needs_a_person`, `data.text`; no card: the owner's digest of what happened since the last one, see [the factory](factory.md#the-digest); the owner dismisses it) and
 `done_asked` (`data.login`, `data.reason`, `data.repository`: the assignee of the issue, `login`, wrote `/done` in a comment and `reason` is the rest of that comment; resolved by the owner's answer, `POST /v1/cards/{id}/done`, or when the assignee is released; see [Commands in issue comments](#commands-in-issue-comments)) and
@@ -4614,8 +4615,8 @@ A `LaneJob` is `{"id", "repository_id", "card_id", "change_id", "lane", "head", 
 `running`, `measured`, `passed`, `failed`, `errored` or `cancelled`, `step` is the step a running job is at,
 `delivered` whether what came of it was handed on, and `report` is [the report](lanes.md#the-report). A `Lane` is
 `{"name", "runner", "isolation", "warning", "runtime", "image", "gpus", "power_cap", "rocm", "driver", "devices",
-"timeout_seconds", "queued", "running", "paused"}`: `warning` is the text shown while `isolation` is not `always`
-(otherwise null), `queued` the jobs that wait, `running` the `LaneJob` that runs, and `paused` null or `{"since",
+"timeout_seconds", "queued", "busy", "running", "paused"}`: `warning` is the text shown while `isolation` is not `always`
+(otherwise null), `queued` the jobs that wait, `busy` whether one runs, `running` the `LaneJob` that runs **only for someone who may see its card** (it names the card, the commit and the step; for anyone else it is null, and they see `busy` and `queued` only), and `paused` null or `{"since",
 "reason"}` while the lane has stopped itself.
 
 ### `GET /v1/repositories/{id}/lane`
@@ -4624,7 +4625,7 @@ The "Test lane" settings of a repository: `{"lane": string or null, "current": L
 "definition": {"present": bool, "problem": string or null, "steps": [string], "measures": bool}, "jobs": [LaneJob]}`.
 `lane` is the lane the repository uses, `current` that lane as it is now, `lanes` every lane of the configuration,
 `definition` what the repository's home project's `lane.toml` is (`problem` says why it is not valid) and `jobs` the
-latest ten jobs of the repository, newest first. Any role that may see the repository.
+latest ten jobs of the repository that the asker may see (a card of a private project they are no member of is not listed), newest first. Any role that may see the repository.
 
 ### `PUT /v1/repositories/{id}/lane`
 
@@ -4646,8 +4647,7 @@ decision. `404` for a name that is no lane.
 ### `GET /v1/cards/{id}/lane`
 
 The lane's report of a card: `{"lane": string or null, "jobs": [LaneJob], "head": string or null, "waiting": string or
-null}`. `jobs` are those of the card's changes, oldest first; a job whose `head` is not `head` (the head of the card's open
-change now) is out of date. `waiting` says why no job is queued for `head` when the repository uses a lane and none is
+null}`. `jobs` are those of the card's changes, oldest first; `head` is the head of the card's open change, or of the last change it had when none is open (merged or closed), so that the measurement that justified a merge stays readable; a job whose `head` is not `head` is out of date. `waiting` says why no job is queued for `head` when the repository uses a lane and none is
 (`the Reviewer has not approved the code of this version yet, and the review comes first`, `the repository is frozen: ...`,
 `the card is held`, `all agents are paused`, `the change touches <file>, which is locked by <pattern>: ...`).
 

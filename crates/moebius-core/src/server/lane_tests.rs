@@ -96,12 +96,14 @@ impl Lane {
         std::fs::copy(testdata.join("fake-podman"), &podman).unwrap();
         let machine = dir.join("remote");
         std::fs::create_dir_all(&machine).unwrap();
+        let key = dir.join("gpu.key");
+        std::fs::write(&key, "not a key").unwrap();
         let runner = RunnerConfig {
             name: "box".into(),
             host: "gpu.test".into(),
             user: Some("lane".into()),
             port: Some(2222),
-            key_file: None,
+            key_file: Some(key),
             working_dir: machine.to_string_lossy().into_owned(),
             max_runs: 1,
             bin_dir: None,
@@ -185,14 +187,14 @@ impl Lane {
             .collect()
     }
 
+    /// The containers of the commands of jobs (not the cleanup of a job's directory, which has no name).
+    /// The containers of the commands of jobs (not the cleanup of a job's directory, which has no name).
     fn runs_in_containers(&self) -> Vec<Vec<String>> {
         self.container_calls()
             .into_iter()
             .filter(|c| {
-                c.first().map(String::as_str) == Some("run")
-                    && !c.iter().any(|a| a == "--network" && false)
+                c.first().map(String::as_str) == Some("run") && c.iter().any(|a| a == "--name")
             })
-            .filter(|c| !c.join(" ").contains("rm -rf /work/before"))
             .collect()
     }
 
@@ -320,6 +322,7 @@ async fn a_job_checks_out_exactly_the_pinned_commits_and_runs_each_command_in_a_
             "--user 65534:65534",
             "--device /dev/kfd --device /dev/dri",
             "--group-add video --group-add render",
+            "--label moebius-lane=",
             "rocm/dev-ubuntu:6.2 sh -c",
         ] {
             assert!(joined.contains(part), "{part} in {joined}");
@@ -338,6 +341,32 @@ async fn a_job_checks_out_exactly_the_pinned_commits_and_runs_each_command_in_a_
         names[0], names[1],
         "a container of its own for each command"
     );
+    // Each container sees the checkout of its own side and nothing else of the job: never both, never the directory.
+    let mounted: Vec<String> = runs
+        .iter()
+        .map(|c| c[c.iter().position(|a| a == "-v").unwrap() + 1].clone())
+        .collect();
+    assert!(mounted[0].ends_with("/before:/work:rw"), "{mounted:?}");
+    assert!(mounted[1].ends_with("/after:/work:rw"), "{mounted:?}");
+    for (call, mount) in runs.iter().zip(&mounted) {
+        let other = if mount.contains("/before:") {
+            "after"
+        } else {
+            "before"
+        };
+        assert!(
+            !call.iter().any(|a| a.contains(&format!("/{other}"))),
+            "{call:?}"
+        );
+    }
+    // Every call of ssh, the checkout and the push included, forwards no agent and nothing else.
+    let key = lane.f._dir.path().join("gpu.key.log");
+    let calls = std::fs::read_to_string(&key).unwrap();
+    assert!(calls.lines().count() > 3);
+    for call in calls.lines() {
+        assert!(call.contains("ForwardAgent=no"), "{call}");
+        assert!(call.contains("ClearAllForwardings=yes"), "{call}");
+    }
     // The job's directory is gone from the machine afterwards.
     let left = std::fs::read_dir(lane.machine.join("lanes/gpu1/jobs"))
         .map(|d| d.count())
@@ -1203,4 +1232,478 @@ async fn a_person_assigns_the_lane_and_nobody_else_does() {
     assert!(current.warning.unwrap().contains("directly on the machine"));
     assert!(view.definition.present && view.definition.problem.is_none());
     assert_eq!(view.definition.steps, ["check"]);
+}
+
+// ---------------------------------------------------------------------------------------------------------------------
+// What the code of a pull request must not be able to do to the machine, or to the numbers.
+
+/// Gives pull request 7 a new head that adds `files`.
+fn pull_writes(f: &Fixture, files: &[(&str, &str)]) -> String {
+    let work = f._dir.path().join("pull-work");
+    for (path, text) in files {
+        std::fs::create_dir_all(work.join(path).parent().unwrap()).unwrap();
+        std::fs::write(work.join(path), text).unwrap();
+    }
+    git(&work, &["add", "-A"]).unwrap();
+    git(
+        &work,
+        &[
+            "-c",
+            "user.name=alice",
+            "-c",
+            "user.email=alice@example.com",
+            "commit",
+            "--quiet",
+            "-m",
+            "More",
+        ],
+    )
+    .unwrap();
+    git(
+        &work,
+        &["push", "--quiet", "origin", "HEAD:refs/pull/7/head"],
+    )
+    .unwrap();
+    let head = git(&work, &["rev-parse", "HEAD"]).unwrap();
+    f.fake.set_head(&head);
+    f.fake.listed_pulls.lock().unwrap()[0]["head"]["sha"] = json!(head);
+    head
+}
+
+/// The pid file a step writes, once it is there.
+async fn pid_of(file: &std::path::Path) -> String {
+    let deadline = Instant::now() + Duration::from_secs(20);
+    loop {
+        if let Ok(text) = std::fs::read_to_string(file)
+            && !text.trim().is_empty()
+        {
+            return text.trim().to_string();
+        }
+        assert!(Instant::now() < deadline, "the step did not start");
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+}
+
+fn alive(pid: &str) -> bool {
+    std::process::Command::new("kill")
+        .args(["-0", pid])
+        .stderr(std::process::Stdio::null())
+        .status()
+        .unwrap()
+        .success()
+}
+
+/// Runs the pass on a thread of its own, as the server does, so that the test can act while a job goes.
+fn pass_in_the_background(lane: &Lane) -> tokio::task::JoinHandle<()> {
+    let app = lane.app();
+    tokio::task::spawn_blocking(move || {
+        for id in app.lane_pass() {
+            app.run_lane_job(id);
+        }
+    })
+}
+
+impl Lane {
+    /// The runner of the lane as `Lane::new` made it.
+    fn runner(&self) -> RunnerConfig {
+        let testdata = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("testdata");
+        RunnerConfig {
+            name: "box".into(),
+            host: "gpu.test".into(),
+            user: Some("lane".into()),
+            port: Some(2222),
+            key_file: Some(self.f._dir.path().join("gpu.key")),
+            working_dir: self.machine.to_string_lossy().into_owned(),
+            max_runs: 1,
+            bin_dir: None,
+            ssh: testdata.join("fake-ssh"),
+        }
+    }
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn the_checkout_runs_no_filter_hook_or_configuration_of_the_account() {
+    let lane = Lane::new(Isolation::Off, &one_step("true")).await;
+    let dir = lane.f._dir.path().to_path_buf();
+    // An account with a global filter and hooks, as a machine with git-lfs or a template directory has.
+    let hooks = dir.join("hooks");
+    std::fs::create_dir_all(&hooks).unwrap();
+    for hook in ["post-checkout", "post-merge", "pre-commit"] {
+        let path = hooks.join(hook);
+        std::fs::write(
+            &path,
+            format!("#!/bin/sh\ntouch {}/hook-ran\n", dir.display()),
+        )
+        .unwrap();
+        std::fs::set_permissions(&path, std::os::unix::fs::PermissionsExt::from_mode(0o755))
+            .unwrap();
+    }
+    let config = dir.join("account.gitconfig");
+    std::fs::write(
+        &config,
+        format!(
+            "[filter \"evil\"]\n\tsmudge = sh -c 'touch {d}/filter-ran; cat'\n\tclean = cat\n[core]\n\thooksPath = {d}/hooks\n[init]\n\ttemplateDir = {d}/hooks\n",
+            d = dir.display()
+        ),
+    )
+    .unwrap();
+    lane.app().lanes.set_test_environment(vec![
+        ("GIT_CONFIG_GLOBAL".into(), config.display().to_string()),
+        ("GIT_CONFIG_SYSTEM".into(), config.display().to_string()),
+    ]);
+    // The pull request brings the attributes that name that filter.
+    let head = pull_writes(
+        &lane.f,
+        &[
+            (".gitattributes", "* filter=evil\n"),
+            ("src/more.rs", "more\n"),
+        ],
+    );
+    lane.f.server.poll_github().await;
+    lane.code_approved().await;
+    lane.pass().await;
+    let job = lane.the_job();
+    assert_eq!(job.head, head);
+    assert_eq!(job.state, "passed", "{job:?}");
+    assert!(
+        !dir.join("filter-ran").exists(),
+        "the filter of the account ran on the pull request's tree"
+    );
+    assert!(
+        !dir.join("hook-ran").exists(),
+        "a hook of the account ran on the pull request's tree"
+    );
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_cancelled_job_has_its_container_removed_before_the_lane_is_free() {
+    let lane = Lane::new(Isolation::Always, &one_step("sleep 40")).await;
+    lane.code_approved().await;
+    let app = lane.app();
+    let id = lane.the_job().id;
+    let running = pass_in_the_background(&lane);
+    let name = format!("moebius-lane-{id}-0");
+    let there = format!("{}.running.{name}", lane.podman.display());
+    let deadline = Instant::now() + Duration::from_secs(20);
+    while !std::path::Path::new(&there).exists() {
+        assert!(Instant::now() < deadline, "the container did not start");
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+    push_to_the_pull_request(&lane.f);
+    lane.f.server.poll_github().await;
+    running.await.unwrap();
+    assert_eq!(lane.the_job().state, "cancelled");
+    // The runtime was told to remove it by name, and it is gone, before the job counted as over.
+    let removed = lane
+        .container_calls()
+        .iter()
+        .any(|c| c.first().map(String::as_str) == Some("rm") && c.contains(&name));
+    assert!(removed, "{:?}", lane.container_calls());
+    assert!(!std::path::Path::new(&there).exists());
+    assert!(app.store.lane_pause("gpu1").unwrap().is_none());
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_cancelled_job_leaves_nothing_of_a_direct_step_running() {
+    let lane = Lane::new(
+        Isolation::Off,
+        &one_step("echo $$ > @DIR@/step.pid; sleep 60"),
+    )
+    .await;
+    lane.code_approved().await;
+    let running = pass_in_the_background(&lane);
+    let pid = pid_of(&lane.f._dir.path().join("step.pid")).await;
+    assert!(alive(&pid));
+    push_to_the_pull_request(&lane.f);
+    lane.f.server.poll_github().await;
+    running.await.unwrap();
+    assert_eq!(lane.the_job().state, "cancelled");
+    assert!(!alive(&pid), "the step is still running on the machine");
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn what_a_step_left_running_in_the_background_ends_with_the_step() {
+    let lane = Lane::new(
+        Isolation::Off,
+        &one_step("(sleep 120 & echo $! > @DIR@/leftover.pid); echo done"),
+    )
+    .await;
+    lane.code_approved().await;
+    let began = Instant::now();
+    lane.pass().await;
+    assert!(
+        began.elapsed() < Duration::from_secs(60),
+        "the job did not wait for it"
+    );
+    assert_eq!(lane.the_job().state, "passed", "{:?}", lane.the_job());
+    let pid = pid_of(&lane.f._dir.path().join("leftover.pid")).await;
+    assert!(!alive(&pid), "the background process is still there");
+}
+
+const LINK: &str = "[[step]]\nname = \"measure\"\ncommand = '''\necho \"MEASURE decode_tps 1\"\n@PLANT@\n'''\n[step.measure]\nprefix = \"MEASURE \"\njson = \"@JSON@\"\n";
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_symbolic_link_the_job_planted_is_not_followed_out_of_its_checkout() {
+    let secret = "{\"rows\":[{\"name\":\"fast\",\"value\":1}]}";
+    for (plant, json) in [
+        ("ln -sf @DIR@/secret.json out.json", "out.json"),
+        ("rm -rf sub; ln -s @DIR@ sub", "sub/secret.json"),
+    ] {
+        let definition = LINK.replace("@PLANT@", plant).replace("@JSON@", json);
+        let lane = Lane::new(Isolation::Off, &definition).await;
+        std::fs::write(lane.f._dir.path().join("secret.json"), secret).unwrap();
+        lane.code_approved().await;
+        lane.pass().await;
+        let job = lane.the_job();
+        assert_eq!(job.state, "failed", "{plant}: {job:?}");
+        assert!(
+            job.summary.contains("no regular file"),
+            "{plant}: {}",
+            job.summary
+        );
+    }
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn the_exit_codes_the_runtime_and_the_shell_use_are_the_changes_own_when_its_command_gives_them()
+ {
+    for (isolation, code) in [
+        (Isolation::Off, 124),
+        (Isolation::Off, 255),
+        (Isolation::Always, 125),
+        (Isolation::Always, 124),
+        (Isolation::Always, 255),
+    ] {
+        let lane = Lane::new(isolation, &one_step(&format!("echo trouble; exit {code}"))).await;
+        lane.code_approved().await;
+        lane.pass().await;
+        let job = lane.the_job();
+        assert_eq!(job.state, "failed", "{isolation:?} {code}: {job:?}");
+        assert!(
+            job.summary.contains(&format!("exited with code {code}")),
+            "{}",
+            job.summary
+        );
+        let replies = lane.replies_on_the_pull_request();
+        assert_eq!(replies.len(), 1, "{isolation:?} {code}: {replies:?}");
+        assert_eq!(lane.f.card(1).unwrap().column, "In review");
+        // Nothing of the lane's: no streak of errors, so a pull request cannot pause the lane.
+        assert_eq!(
+            lane.app().store.lane_infrastructure_streak("gpu1").unwrap(),
+            0
+        );
+    }
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn running_out_of_the_jobs_total_time_is_the_lanes_and_names_that_limit() {
+    let lane = Lane::new(Isolation::Off, &one_step("sleep 60")).await;
+    let mut config = lane_config(Isolation::Off, "podman");
+    config.timeout_seconds = 8;
+    lane.app()
+        .lanes
+        .configure(vec![config], vec![lane.runner()]);
+    lane.code_approved().await;
+    let began = Instant::now();
+    lane.pass().await;
+    assert!(began.elapsed() < Duration::from_secs(40));
+    let job = lane.the_job();
+    assert_eq!(job.state, "errored", "{job:?}");
+    assert!(job.summary.contains("total"), "{}", job.summary);
+    assert!(job.summary.contains("8 seconds"), "{}", job.summary);
+    assert!(
+        !job.summary.contains("900"),
+        "the step's own limit did not run out: {}",
+        job.summary
+    );
+    // The change is not blamed: no reply, and the card stays where it was.
+    assert!(lane.replies_on_the_pull_request().is_empty());
+    assert_eq!(lane.f.card(1).unwrap().column, "Ready for testing");
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn the_step_a_job_is_at_is_published_as_it_goes() {
+    let lane = Lane::new(Isolation::Off, &one_step("sleep 3")).await;
+    lane.code_approved().await;
+    let id = lane.the_job().id;
+    let mut events = lane.app().bus.subscribe();
+    let running = pass_in_the_background(&lane);
+    let mut seen_at_a_step = false;
+    let deadline = Instant::now() + Duration::from_secs(20);
+    while !running.is_finished() && Instant::now() < deadline {
+        let published = events.try_recv().is_ok();
+        let step = lane.app().store.lane_job(id).unwrap().unwrap().step;
+        if published && step.is_some() {
+            seen_at_a_step = true;
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+    running.await.unwrap();
+    assert!(
+        seen_at_a_step,
+        "the step was written and the card published"
+    );
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn the_measurement_that_justified_a_merge_stays_on_the_card_after_it_merged() {
+    let lane = Lane::new(Isolation::Off, MEASURE).await;
+    lane.f.lane_edit_factory(FactoryEdit {
+        require_measurement: Some(true),
+        ..Default::default()
+    });
+    lane.code_approved().await;
+    lane.pass().await;
+    lane.f.server.poll_github().await;
+    let run = lane.f.reviews_of(&lane.card).remove(1);
+    lane.f
+        .reviewer_ends(
+            &lane.card,
+            &run,
+            &said("approve", "Meets the bar.", json!([])),
+        )
+        .await;
+    assert_eq!(lane.f.merged_requests().len(), 1);
+    let report = lane.app().card_lane(lane.card.id).unwrap();
+    assert_eq!(
+        report.head.as_deref(),
+        Some(lane.head.as_str()),
+        "the head the change ended with"
+    );
+    assert_eq!(report.jobs.len(), 1);
+    assert_eq!(report.jobs[0].head, lane.head);
+    assert_eq!(report.jobs[0].state, "measured");
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn another_repositorys_running_job_is_seen_only_by_those_who_see_its_card() {
+    let lane = Lane::new(Isolation::Off, &one_step("sleep 3")).await;
+    lane.code_approved().await;
+    let app = lane.app();
+    assert_eq!(app.start_lane_jobs().unwrap().len(), 1);
+    let card = app.card(lane.card.id).unwrap();
+    // Whoever may see the card reads the job: its card, its commit and the step.
+    let open = app.lane_views(&crate::app::Sight::everything()).unwrap();
+    assert!(open[0].busy);
+    assert_eq!(open[0].running.as_ref().unwrap().card_id, card.id);
+    // Someone who may not sees that the lane is busy and how long the queue is, and nothing else.
+    let hidden = crate::app::Sight::hiding(&[card.project_id]);
+    let views = app.lane_views(&hidden).unwrap();
+    assert!(views[0].busy && views[0].running.is_none());
+    assert_eq!(views[0].queued, open[0].queued);
+    let settings = app
+        .repository_lane_view(lane.f.repository.id, &hidden)
+        .unwrap();
+    assert!(settings.jobs.is_empty(), "{:?}", settings.jobs);
+    assert!(settings.lanes[0].running.is_none());
+    let json = serde_json::to_string(&settings).unwrap();
+    assert!(!json.contains(&lane.head), "{json}");
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_change_to_the_measuring_harness_is_not_measured_and_the_owner_is_told() {
+    let harness = format!("harness = [\"src/\"]\n{}", one_step("true"));
+    let lane = Lane::new(Isolation::Off, &harness).await;
+    lane.code_approved().await;
+    // The pull request adds src/lib.rs, which is the harness: no job, a reason, and one item for the owner.
+    assert!(lane.jobs().is_empty());
+    for _ in 0..2 {
+        let asked = lane.app().request_lane_job(lane.card.id).unwrap();
+        assert!(asked.job.is_none());
+        assert!(asked.why.unwrap().contains("measuring harness"));
+    }
+    let items = lane
+        .app()
+        .store
+        .inbox_for_card(lane.card.id)
+        .unwrap()
+        .into_iter()
+        .filter(|i| i.kind == "lane_needs_a_person" && i.resolved_at.is_none())
+        .count();
+    assert_eq!(items, 1);
+    assert!(lane.pass().await.is_empty());
+    // The paths count as locked paths for the merge of a script or an agent too.
+    let patterns = lane
+        .app()
+        .lane_harness_patterns(&lane.app().card(lane.card.id).unwrap());
+    assert_eq!(patterns, ["/src/"]);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn the_harness_of_the_head_is_the_merge_bases_whatever_the_head_has_there() {
+    // The head adds src/lib.rs; the merge base has no src/. A job that was queued before the harness was named (or by a
+    // race) still measures with the base's harness: the head's file is gone from the checkout of the head.
+    let definition = "harness = [\"src/\"]\n[[step]]\nname = \"base harness\"\non = \"both\"\ncommand = \"test ! -e src/lib.rs\"\n";
+    let lane = Lane::new(Isolation::Off, definition).await;
+    lane.code_approved().await;
+    let app = lane.app();
+    let own = app
+        .store
+        .add_change(
+            lane.f.repository.id,
+            Some(lane.card.id),
+            "moebius/own",
+            None,
+            &lane.head,
+        )
+        .unwrap();
+    let id = app
+        .store
+        .add_lane_job(
+            lane.f.repository.id,
+            lane.card.id,
+            own.id,
+            "gpu1",
+            &lane.head,
+            &lane.base,
+            false,
+            0,
+        )
+        .unwrap()
+        .unwrap();
+    assert!(app.store.claim_lane_job(id).unwrap());
+    let app2 = app.clone();
+    tokio::task::spawn_blocking(move || app2.run_lane_job(id))
+        .await
+        .unwrap();
+    let job = app.store.lane_job(id).unwrap().unwrap();
+    assert_eq!(job.state, "passed", "{job:?}");
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn only_a_person_changes_what_runs_on_the_owners_machine() {
+    let lane = Lane::new(Isolation::Off, &one_step("true")).await;
+    let app = lane.app();
+    let repo = app.harness_repo().unwrap();
+    let named = || Ok("widgets".to_string());
+    let save = |actor: &Actor, text: Option<&str>| {
+        repo.save_project_file(
+            &app,
+            actor,
+            (&named, "lane.toml"),
+            text,
+            ("edit_project_file", "Put a file"),
+            Default::default(),
+        )
+    };
+    let script = Actor::Script {
+        column: "review".into(),
+    };
+    for text in [Some("[[step]]\nname = \"a\"\ncommand = \"id\"\n"), None] {
+        let refused = save(&script, text).unwrap_err();
+        assert!(
+            refused
+                .to_string()
+                .contains("only a person changes lane.toml"),
+            "{refused}"
+        );
+    }
+    save(&owner(), Some("[[step]]\nname = \"a\"\ncommand = \"id\"\n")).unwrap();
+    // The Retro proposes rules and the scripts of columns, and no other file.
+    assert!(
+        !crate::improve::own::files_of(&app, None)
+            .iter()
+            .any(|f| f.contains("lane"))
+    );
 }

@@ -10,6 +10,9 @@ use crate::app::{App, AppError, Result, columns};
 use crate::repos::git;
 use crate::store::{Card, Change, LaneJob, Repository};
 
+/// The kind of the inbox item that says a change waits for a person: it touches a locked path or the lane's measuring harness.
+pub const LANE_NEEDS_A_PERSON: &str = "lane_needs_a_person";
+
 /// How long after a job errored the same head is left alone before it is queued again, in seconds.
 const RETRY_AFTER: i64 = 600;
 
@@ -88,12 +91,53 @@ impl App {
             Err(why) => Ok(Some(format!(
                 "the paths of the change could not be read, so it cannot be checked against the locked paths: {why}"
             ))),
-            Ok(files) => Ok(Self::locked_hit(repository, &files).map(|(file, pattern)| {
+            Ok(files) => {
+                let harness = self.lane_harness_patterns(card);
+                Ok(Self::locked_hit(repository, &files, &harness).map(|(file, pattern)| {
+                    if harness.contains(&pattern) {
+                        return format!(
+                            "the change touches {file}, which is in the measuring harness of the lane ({}): it is not measured by itself, a person looks first",
+                            pattern.trim_start_matches('/')
+                        );
+                    }
                     format!(
                         "the change touches {file}, which is locked by {pattern}: no job runs for it until a person has looked"
                     )
-                })),
+                }))
+            }
         }
+    }
+
+    /// The paths of the measuring harness of the card's project as locked-path patterns, from the root; none when the
+    /// project has no valid `lane.toml`. A change that touches one is not measured by the lane: a person looks.
+    pub(crate) fn lane_harness_patterns(&self, card: &Card) -> Vec<String> {
+        self.lane_definition_of(card.id)
+            .map(|definition| {
+                definition
+                    .harness
+                    .iter()
+                    .map(|path| format!("/{}", path.trim_start_matches('/')))
+                    .collect()
+            })
+            .unwrap_or_default()
+    }
+
+    /// Tells the owner once that a change waits for a person because of a locked path or the measuring harness.
+    fn lane_needs_a_person(&self, card: &Card, why: &str) -> Result<()> {
+        let open = self
+            .store
+            .inbox_for_card(card.id)?
+            .into_iter()
+            .any(|item| item.kind == LANE_NEEDS_A_PERSON && item.resolved_at.is_none());
+        if !open {
+            self.store.add_inbox_item(
+                LANE_NEEDS_A_PERSON,
+                Some(card.id),
+                &card.title,
+                &serde_json::json!({ "reason": why }),
+            )?;
+        }
+        Ok(())
     }
 
     /// Asks for a job for the change of `card_id` at its head. A job is queued, or the answer says why not: no lane is
@@ -119,6 +163,9 @@ impl App {
             ));
         };
         if let Some(why) = self.lane_blocker(&card, &change, &repository, &head)? {
+            if why.contains("locked by") || why.contains("measuring harness") {
+                self.lane_needs_a_person(&card, &why)?;
+            }
             return Ok(LaneRequest::blocked(why));
         }
         if let Err(why) = self.lane_definition_of(card.id) {

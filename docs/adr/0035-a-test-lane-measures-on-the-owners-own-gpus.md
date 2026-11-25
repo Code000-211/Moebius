@@ -55,6 +55,16 @@ network is the opposite of what the merge gate is for, so most of this record is
   The runtime is `podman` or `docker`, whichever the lane names; **if it is missing or does not run, a job that has to be
   contained is not run at all**, never run directly instead. While a lane is not `always`, the repository's settings show
   a warning and the daily digest tells it every day.
+- **What the code under test may touch is narrow, on purpose.** The checkout runs git with none of the account's
+  configuration, hooks or filters; a container sees only the checkout of the side it runs, and what a measurement reads
+  is read by the host, from regular files inside the checkout, after the container has ended; a cancelled or timed-out
+  command is stopped on the machine (the container removed by name, the process group killed) and confirmed before the
+  lane is free, or the lane pauses; the SSH agent goes to the `ssh` client alone and nothing is forwarded; and the
+  command's own exit code is its result, told from the runtime's and the shell's by a last line only the server can write.
+- **The harness that measures is the owner's, not the pull request's.** `lane.toml` can name `harness` paths (the bench
+  scripts and tools). For the head they come from the merge base, a change that touches one is not measured but looked at
+  by a person, and the paths count as locked paths for the merge gate. `lane.toml` is changed by a person only, as the
+  merge gate's settings are.
 - **A job starts only when the owner's brakes are off and the review has come first.** A card entering a column marked
   `lane = true` in `kanban.toml` (a column that counts as In review, [0030](0030-custom-board-columns-per-project.md)), a
   column script's `moebius.lane_job()`, a person's request, and the lane's own pass for a card that waited all ask the

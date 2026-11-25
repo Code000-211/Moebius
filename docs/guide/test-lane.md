@@ -72,6 +72,8 @@ interleaved, at least three runs each"; the commands are the repository's own, s
 
 <!-- lane -->
 ```toml
+harness = ["kbench.sh", "tools/rad-kbench/"]
+
 [[step]]
 name = "build"
 command = "./build.sh"
@@ -98,6 +100,11 @@ prefix = "MEASURE "
 json = "out/kbench.json"
 parity_file = "out/logits.bin"
 ```
+
+`harness` names the scripts and tools that do the measuring: for the head they are taken from the merge base, so a pull
+request cannot change how it is measured; one that touches them is not measured by the lane but waits for you (an Inbox
+item says so), and only a person merges it. List what a hostile change must not be able to rewrite: the bench scripts and
+the benchmark's sources. Only a person saves `lane.toml`: an agent's save is refused.
 
 The build runs on both sides (`on = "both"`): the merge base is built too, since the measurement needs it. A measuring
 step runs `runs` times on each side, the merge base and the head by turns, and the lines of its output that start with

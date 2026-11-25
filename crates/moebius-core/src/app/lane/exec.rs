@@ -3,13 +3,21 @@
 //!
 //! - [`Machine::run`] runs one shell script with a time limit, keeps the end of its output (and the lines that start
 //!   with a prefix, for a step's rows), and stops it when told to. The child gets no environment of the server's but
-//!   `PATH` and `HOME` (and `SSH_AUTH_SOCK` for `ssh`), so no secret of the server reaches a job.
-//! - [`container_args`] is the one place that says how a job's container is isolated.
+//!   `PATH` and `HOME`; `SSH_AUTH_SOCK` goes to the `ssh` client alone, which forwards nothing. What a command left
+//!   running in its process group is killed when it ends, and the pipes are read for a few seconds at most, so a
+//!   background process cannot hold the lane.
+//! - [`container_args`], [`contained_script`] and [`direct_script`] are the one place that says how a job's command is
+//!   isolated and how its own end is told from the runtime's or the shell's: every script ends with a line that starts
+//!   with a token only the server knows, which says how the *command* ended, so that an exit code of 124, 125 or 255 of the
+//!   change's own command is the change's result and not an error of the lane ([`read_status`]).
+//! - [`GIT`] and [`GIT_ENVIRONMENT`] are what every git command on the machine is run with: no configuration of the
+//!   account, no hooks, no attributes file, no filter (so no `git-lfs`) and no prompt.
 //! - [`Machine::push`] puts the pinned commits into a bare clone on the machine, over SSH for a runner.
 
 use std::io::Read;
 use std::path::Path;
 use std::process::{Command, Stdio};
+use std::sync::mpsc;
 use std::time::{Duration, Instant};
 
 use crate::config::{LaneConfig, RunnerConfig};
@@ -21,18 +29,34 @@ pub const OUTPUT_AT_MOST: usize = 256 * 1024;
 const PREFIXED_AT_MOST: usize = 20_000;
 /// How long after its own time limit a command is given before the server kills the process it started.
 const GRACE: Duration = Duration::from_secs(30);
+/// How long the pipes of a command that ended are read before the process group is killed and they are let go.
+const PIPES: Duration = Duration::from_secs(5);
+
+/// What is set before any git command of a job: no configuration of the account or the system, no prompt, no `git-lfs`
+/// download, no agent of SSH.
+pub const GIT_ENVIRONMENT: &str = "export GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_SYSTEM=/dev/null GIT_CONFIG_NOSYSTEM=1 \
+     GIT_TERMINAL_PROMPT=0 GIT_LFS_SKIP_SMUDGE=1; unset SSH_AUTH_SOCK SSH_AGENT_PID;";
+
+/// A git command of a job: it reads no hook, no attributes file and no filter, and `git-lfs` is switched off, so the
+/// attributes of a pull request cannot make anything run on the machine.
+pub const GIT: &str = "git -c core.hooksPath=/dev/null -c core.attributesFile=/dev/null -c core.fsmonitor=false \
+     -c filter.lfs.process= -c filter.lfs.smudge= -c filter.lfs.clean= -c filter.lfs.required=false \
+     -c protocol.ext.allow=never";
 
 /// Where a lane's commands run.
 pub struct Machine {
     runner: Option<RunnerConfig>,
     work_dir: String,
+    /// Variables a test gives every process of the machine, so that what a hostile account would have is there.
+    #[cfg(test)]
+    extra_environment: Vec<(String, String)>,
 }
 
 /// How a command ended.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Ended {
     Exit(i32),
-    /// The time limit passed (the `timeout` of the machine said so, or the server had to stop it).
+    /// The time limit passed (the server had to stop it).
     TimedOut,
     /// It was stopped because the job was cancelled.
     Cancelled,
@@ -60,15 +84,26 @@ impl Ran {
     }
 }
 
+/// How the *command* of a step ended, as its script's last line says.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Finish {
+    /// It exited with this code, whatever the number is: 124, 125 and 255 included, they are its own.
+    Exit(i32),
+    /// It ran past its limit.
+    TimedOut,
+    /// There is no container: the runtime could not start it.
+    Gone,
+}
+
 /// `text` as one word of a shell command.
 pub fn quote(text: &str) -> String {
     format!("'{}'", text.replace('\'', "'\\''"))
 }
 
 /// The arguments the container program is given to run `command` of a job in a fresh, isolated container: no network,
-/// no capability, no new privilege, a read-only root, an unprivileged user, the job's directory as the only place to
-/// write (and a `/tmp`), and the devices and groups the GPUs need. `side` is `before` or `after`: the checkout the
-/// command starts in.
+/// no capability, no new privilege, a read-only root, an unprivileged user, a `/tmp`, and the checkout of one side as
+/// the only place to write and the only part of the job's directory it sees (the other side is not mounted), and the
+/// devices and groups the GPUs need. The container is named and labelled so that it can be found and removed.
 pub fn container_args(
     lane: &LaneConfig,
     name: &str,
@@ -79,9 +114,10 @@ pub fn container_args(
 ) -> Vec<String> {
     let mut args: Vec<String> = [
         "run",
-        "--rm",
         "--name",
         name,
+        "--label",
+        &format!("moebius-lane={name}"),
         "--network",
         "none",
         "--read-only",
@@ -111,9 +147,9 @@ pub fn container_args(
     }
     args.extend([
         "-v".into(),
-        format!("{job_dir}:/work:rw"),
+        format!("{job_dir}/{side}:/work:rw"),
         "-w".into(),
-        format!("/work/{side}"),
+        "/work".into(),
         lane.image.clone().unwrap_or_default(),
         "sh".into(),
         "-c".into(),
@@ -122,26 +158,40 @@ pub fn container_args(
     args
 }
 
-/// The shell script that runs `command` directly on the machine, in the checkout `side` of the job's directory.
+/// The shell script that runs `command` directly on the machine, in the checkout `side` of the job's directory, in a
+/// process group of its own (`timeout` makes one) whose id is written to `pid_file`, and kills what is left of that
+/// group when the command has ended. Its last line is `<token> direct <exit code> <seconds it took>`.
 pub fn direct_script(
     job_dir: &str,
     side: &str,
     environment: &[(String, String)],
     command: &str,
     seconds: u64,
+    pid_file: &str,
+    token: &str,
 ) -> String {
     let exports: String = environment
         .iter()
         .map(|(name, value)| format!("export {name}={}; ", quote(value)))
         .collect();
+    let inner = format!(
+        "echo $$ > {}; exec timeout -k 10 {seconds} sh -c {}",
+        quote(pid_file),
+        quote(command)
+    );
     format!(
-        "cd {dir}/{side} && export HOME={dir}/home && {exports}exec timeout -k 10 {seconds} sh -c {command} 2>&1",
+        "unset SSH_AUTH_SOCK SSH_AGENT_PID; cd {dir}/{side} && export HOME={dir}/home && {exports}s=$(date +%s); \
+         sh -c {inner} 2>&1; c=$?; kill -KILL -- -$(cat {pid} 2>/dev/null) 2>/dev/null; e=$(date +%s); \
+         echo \"{token} direct $c $((e-s))\"",
         dir = quote(job_dir),
-        command = quote(command),
+        inner = quote(&inner),
+        pid = quote(pid_file),
     )
 }
 
-/// The shell script that runs `command` in a container, and removes the container whatever came of it.
+/// The shell script that runs `command` in a container, then asks the runtime how the container ended (so that the
+/// command's own exit code is told from the runtime's), and removes the container whatever came of it. Its last line is
+/// `<token> <running> <exit code>`, or `<token> gone` when there was no container to ask.
 pub fn contained_script(
     lane: &LaneConfig,
     name: &str,
@@ -150,16 +200,43 @@ pub fn contained_script(
     environment: &[(String, String)],
     command: &str,
     seconds: u64,
+    token: &str,
 ) -> String {
-    let words: String = container_args(lane, name, job_dir, side, environment, command)
-        .iter()
-        .map(|w| format!(" {}", quote(w)))
-        .collect();
+    let mut args = container_args(lane, name, job_dir, side, environment, command);
+    // The runtime's own bound, besides the `timeout` of the client.
+    if lane.runtime.rsplit('/').next() == Some("podman") {
+        args.splice(1..1, ["--timeout".to_string(), seconds.to_string()]);
+    }
+    let words: String = args.iter().map(|w| format!(" {}", quote(w))).collect();
     let runtime = quote(&lane.runtime);
+    let name = quote(name);
     format!(
-        "timeout -k 10 {seconds} {runtime}{words} 2>&1; code=$?; {runtime} rm -f {} >/dev/null 2>&1; exit $code",
-        quote(name)
+        "unset SSH_AUTH_SOCK SSH_AGENT_PID; timeout -k 10 {seconds} {runtime}{words} 2>&1; \
+         st=$({runtime} inspect -f '{{{{.State.Running}}}} {{{{.State.ExitCode}}}}' {name} 2>/dev/null) || st=gone; \
+         {runtime} rm -f {name} >/dev/null 2>&1; echo \"{token} $st\""
     )
+}
+
+/// The output of a script without its last line, and how its command ended, when that line is there. `seconds` is the
+/// command's limit: an exit code of 124 after that long is the `timeout` of the machine, and before it is the command's.
+pub fn read_status(output: &str, token: &str, seconds: u64) -> (String, Option<Finish>) {
+    let Some(at) = output.rfind(token) else {
+        return (output.to_string(), None);
+    };
+    let (before, line) = output.split_at(at);
+    let words: Vec<&str> = line.trim().split_whitespace().skip(1).collect();
+    let finish = match words.as_slice() {
+        ["direct", code, took] => match (code.parse::<i32>(), took.parse::<u64>()) {
+            (Ok(124), Ok(took)) if took >= seconds => Some(Finish::TimedOut),
+            (Ok(code), Ok(_)) => Some(Finish::Exit(code)),
+            _ => None,
+        },
+        ["gone"] => Some(Finish::Gone),
+        ["true", _] => Some(Finish::TimedOut),
+        ["false", code] => code.parse().ok().map(Finish::Exit),
+        _ => None,
+    };
+    (before.to_string(), finish)
 }
 
 impl Machine {
@@ -176,7 +253,16 @@ impl Machine {
         Machine {
             runner: runner.cloned(),
             work_dir,
+            #[cfg(test)]
+            extra_environment: Vec::new(),
         }
+    }
+
+    /// The same machine, with `variables` in the environment of everything that runs on it (for the tests).
+    #[cfg(test)]
+    pub fn with_environment(mut self, variables: Vec<(String, String)>) -> Self {
+        self.extra_environment = variables;
+        self
     }
 
     /// The lane's directory on the machine.
@@ -202,6 +288,10 @@ impl Machine {
             "ServerAliveInterval=30",
             "-o",
             "LogLevel=ERROR",
+            "-o",
+            "ForwardAgent=no",
+            "-o",
+            "ClearAllForwardings=yes",
         ]
         .map(String::from)
         .to_vec();
@@ -235,10 +325,20 @@ impl Machine {
             }
         };
         command.env_clear();
-        for kept in ["PATH", "HOME", "SSH_AUTH_SOCK"] {
-            if let Some(value) = std::env::var_os(kept) {
-                command.env(kept, value);
+        // The agent of SSH is for the `ssh` client alone; a command on the server itself never has it.
+        let kept: &[&str] = if self.runner.is_some() {
+            &["PATH", "HOME", "SSH_AUTH_SOCK"]
+        } else {
+            &["PATH", "HOME"]
+        };
+        for name in kept {
+            if let Some(value) = std::env::var_os(name) {
+                command.env(name, value);
             }
+        }
+        #[cfg(test)]
+        for (name, value) in &self.extra_environment {
+            command.env(name, value);
         }
         command
     }
@@ -268,8 +368,10 @@ impl Machine {
         let stdout = child.stdout.take().expect("stdout is piped");
         let stderr = child.stderr.take().expect("stderr is piped");
         let prefix = prefix.map(str::to_string);
-        let reading = std::thread::spawn(move || capture(stdout, prefix.as_deref()));
-        let errors = std::thread::spawn(move || capture(stderr, None));
+        let (out_sender, out_receiver) = mpsc::channel();
+        let (err_sender, err_receiver) = mpsc::channel();
+        std::thread::spawn(move || drop(out_sender.send(capture(stdout, prefix.as_deref()))));
+        std::thread::spawn(move || drop(err_sender.send(capture(stderr, None))));
         let mut ended = None;
         let status = loop {
             match child.try_wait() {
@@ -290,16 +392,17 @@ impl Machine {
             }
             std::thread::sleep(Duration::from_millis(25));
         };
+        // Whatever is left in the command's process group goes with it, whether it ended or was stopped.
+        platform::kill_tree(child.id());
         if status.is_none() {
-            platform::kill_tree(child.id());
             let _ = child.kill();
-            let _ = child.wait();
         }
-        let (output, prefixed) = reading.join().unwrap_or_default();
-        let (said, _) = errors.join().unwrap_or_default();
+        let _ = child.wait();
+        // A process that got out of the group may still hold the pipes: they are read for a few seconds, then let go.
+        let (output, prefixed) = out_receiver.recv_timeout(PIPES).unwrap_or_default();
+        let (said, _) = err_receiver.recv_timeout(PIPES).unwrap_or_default();
         let ended = match (status, ended) {
             (Some(status), _) => match status.code() {
-                Some(124) => Ended::TimedOut,
                 Some(255) if self.runner.is_some() => {
                     Ended::Failed(format!("cannot reach {}: {}", self.name(), said.trim()))
                 }
@@ -326,7 +429,10 @@ impl Machine {
         cancelled: &dyn Fn() -> bool,
     ) -> Result<(), String> {
         let made = self.run(
-            &format!("[ -d {b} ] || git init --bare --quiet {b}", b = quote(bare)),
+            &format!(
+                "{GIT_ENVIRONMENT} [ -d {b} ] || {GIT} init --template= --bare --quiet {b}",
+                b = quote(bare)
+            ),
             Duration::from_secs(60),
             cancelled,
             None,
@@ -474,7 +580,7 @@ mod tests {
         );
         let joined = args.join(" ");
         for part in [
-            "run --rm --name n1",
+            "run --name n1 --label moebius-lane=n1",
             "--network none",
             "--read-only",
             "--cap-drop ALL",
@@ -482,7 +588,6 @@ mod tests {
             "--user 65534:65534",
             "--device /dev/kfd --device /dev/dri",
             "--group-add video",
-            "-v /jobs/7:/work:rw -w /work/after",
             "-e LANE_SIDE=after",
             "rocm/dev:6.2 sh -c ./build.sh",
         ] {
@@ -493,9 +598,60 @@ mod tests {
     }
 
     #[test]
+    fn a_container_sees_the_side_it_runs_and_not_the_other() {
+        for (side, other) in [("after", "before"), ("before", "after")] {
+            let args = container_args(&lane(), "n", "/jobs/7", side, &[], "true");
+            let mounts: Vec<&String> = args
+                .iter()
+                .enumerate()
+                .filter(|(at, _)| *at > 0 && args[*at - 1] == "-v")
+                .map(|(_, a)| a)
+                .collect();
+            assert_eq!(mounts, [&format!("/jobs/7/{side}:/work:rw")]);
+            assert!(!args.iter().any(|a| a.contains(other)), "{args:?}");
+            assert!(!args.iter().any(|a| a == "/jobs/7:/work:rw"));
+        }
+    }
+
+    #[test]
+    fn a_podman_container_is_given_the_runtimes_own_time_limit() {
+        let script = contained_script(&lane(), "n", "/j", "after", &[], "true", 90, "T");
+        assert!(script.contains("'--timeout' '90'"), "{script}");
+        let mut docker = lane();
+        docker.runtime = "docker".into();
+        let script = contained_script(&docker, "n", "/j", "after", &[], "true", 90, "T");
+        assert!(!script.contains("--timeout"), "{script}");
+        assert!(
+            script.contains("rm -f"),
+            "the container is removed whatever came of it"
+        );
+    }
+
+    #[test]
     fn a_word_is_quoted_for_the_shell() {
         assert_eq!(quote("a b"), "'a b'");
         assert_eq!(quote("it's"), "'it'\\''s'");
+    }
+
+    #[test]
+    fn the_end_of_a_script_says_how_the_command_ended_and_the_commands_own_codes_are_its_own() {
+        let said = |line: &str| read_status(&format!("out\n{line}\n"), "TOK", 60);
+        assert_eq!(said("TOK direct 0 3").1, Some(Finish::Exit(0)));
+        // 124, 125 and 255 of the command itself are its exit codes, as 2 is.
+        for code in [124, 125, 255, 2] {
+            assert_eq!(
+                said(&format!("TOK direct {code} 3")).1,
+                Some(Finish::Exit(code))
+            );
+        }
+        // 124 after the whole limit is the `timeout` of the machine.
+        assert_eq!(said("TOK direct 124 60").1, Some(Finish::TimedOut));
+        assert_eq!(said("TOK false 125").1, Some(Finish::Exit(125)));
+        assert_eq!(said("TOK true 0").1, Some(Finish::TimedOut));
+        assert_eq!(said("TOK gone").1, Some(Finish::Gone));
+        // No last line, or one of another token: nothing is known, and the output is whole.
+        assert_eq!(read_status("out\nOTHER direct 0 1\n", "TOK", 60).1, None);
+        assert_eq!(said("TOK direct 0 3").0, "out\n");
     }
 
     #[test]
@@ -507,13 +663,52 @@ mod tests {
         assert_eq!(rows, vec!["ROW a 1".to_string(), "ROW b 2".to_string()]);
     }
 
+    #[test]
+    fn git_runs_with_no_configuration_hook_or_filter_of_the_account() {
+        for part in [
+            "GIT_CONFIG_GLOBAL=/dev/null",
+            "GIT_CONFIG_SYSTEM=/dev/null",
+            "unset SSH_AUTH_SOCK",
+        ] {
+            assert!(GIT_ENVIRONMENT.contains(part), "{part}");
+        }
+        for part in [
+            "core.hooksPath=/dev/null",
+            "core.attributesFile=/dev/null",
+            "filter.lfs.smudge=",
+            "filter.lfs.required=false",
+        ] {
+            assert!(GIT.contains(part), "{part}");
+        }
+    }
+
+    #[test]
+    fn ssh_forwards_nothing() {
+        let runner = RunnerConfig {
+            name: "b".into(),
+            host: "h".into(),
+            user: None,
+            port: None,
+            key_file: None,
+            working_dir: "/w".into(),
+            max_runs: 1,
+            bin_dir: None,
+            ssh: "ssh".into(),
+        };
+        let machine = Machine::new(&lane(), Some(&runner), Path::new("/tmp"));
+        let options = machine.ssh_options(&runner).join(" ");
+        assert!(options.contains("ForwardAgent=no"), "{options}");
+        assert!(options.contains("ClearAllForwardings=yes"), "{options}");
+    }
+
     #[cfg(unix)] // runs `sh`
     #[test]
     fn a_command_runs_with_nothing_of_the_servers_environment() {
         let machine = Machine::new(&lane(), None, std::path::Path::new("/tmp"));
         let ran = machine.run("env", Duration::from_secs(10), &|| false, None);
         assert_eq!(ran.ended, Ended::Exit(0));
-        // The test process has many variables (cargo sets dozens); only the few the machine keeps are there.
+        // The test process has many variables (cargo sets dozens); only the few the machine keeps are there, and
+        // the agent of SSH is not one of them on the server itself.
         let names: Vec<&str> = ran
             .output
             .lines()
@@ -521,10 +716,7 @@ mod tests {
             .collect();
         for name in &names {
             assert!(
-                matches!(
-                    *name,
-                    "PATH" | "HOME" | "SSH_AUTH_SOCK" | "PWD" | "SHLVL" | "_" | "OLDPWD"
-                ),
+                matches!(*name, "PATH" | "HOME" | "PWD" | "SHLVL" | "_" | "OLDPWD"),
                 "{name} reached the command: {names:?}"
             );
         }
@@ -538,5 +730,26 @@ mod tests {
         let ran = machine.run("sleep 30", Duration::from_secs(60), &|| true, None);
         assert_eq!(ran.ended, Ended::Cancelled);
         assert!(began.elapsed() < Duration::from_secs(10));
+    }
+
+    #[cfg(unix)] // runs `sh`
+    #[test]
+    fn a_background_process_that_holds_the_pipe_cannot_hold_the_job() {
+        let machine = Machine::new(&lane(), None, std::path::Path::new("/tmp"));
+        let began = Instant::now();
+        // The shell ends at once; its child keeps standard output open for a minute.
+        let ran = machine.run(
+            "sleep 60 & echo done",
+            Duration::from_secs(120),
+            &|| false,
+            None,
+        );
+        assert_eq!(ran.ended, Ended::Exit(0));
+        assert!(ran.output.contains("done"));
+        assert!(
+            began.elapsed() < Duration::from_secs(20),
+            "took {:?}",
+            began.elapsed()
+        );
     }
 }

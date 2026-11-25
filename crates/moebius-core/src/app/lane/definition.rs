@@ -18,6 +18,10 @@
 //! parity_file = "out/result.bin"  # a file whose bytes must be the same before and after
 //! ```
 //!
+//! `harness = ["bench/", "tools/rad-kbench"]` at the top of the file names the paths that measure: the scripts and tools a
+//! measuring step runs. They are taken from the merge base for the head too, and a change that touches one is not measured
+//! by the lane but looked at by a person (the paths count as locked paths).
+//!
 //! A definition with any mistake is refused as a whole, with every mistake it has.
 
 use serde::Deserialize;
@@ -71,11 +75,15 @@ pub struct Step {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Definition {
     pub steps: Vec<Step>,
+    /// Paths of the checkout (files or directories) that measure: from the merge base on both sides.
+    pub harness: Vec<String>,
 }
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct File {
+    #[serde(default)]
+    harness: Vec<String>,
     #[serde(default)]
     step: Vec<RawStep>,
 }
@@ -123,6 +131,16 @@ pub fn parse(text: &str) -> Result<Definition, String> {
     }
     if file.step.len() > STEPS_AT_MOST {
         problems.push(format!("there are at most {STEPS_AT_MOST} steps"));
+    }
+    for path in &file.harness {
+        if !is_checkout_path(path.trim_start_matches('/')) || path.trim_matches('/').is_empty() {
+            problems.push(format!(
+                "harness: {path:?} is a path inside the checkout, with no `..`"
+            ));
+        }
+    }
+    if file.harness.len() > 50 {
+        problems.push("harness has at most 50 paths".into());
     }
     let mut steps: Vec<Step> = Vec::new();
     for (at, raw) in file.step.iter().enumerate() {
@@ -193,7 +211,10 @@ pub fn parse(text: &str) -> Result<Definition, String> {
         });
     }
     if problems.is_empty() {
-        Ok(Definition { steps })
+        Ok(Definition {
+            steps,
+            harness: file.harness,
+        })
     } else {
         Err(format!("{LANE_FILE}: {}", problems.join("; ")))
     }
@@ -229,6 +250,25 @@ mod tests {
             "a measurement runs on both sides"
         );
         assert!(found.measures());
+    }
+
+    #[test]
+    fn the_harness_is_a_list_of_paths_inside_the_checkout() {
+        let found = parse("harness = [\"bench/\", \"/tools/rad-kbench\"]\n[[step]]\nname = \"a\"\ncommand = \"x\"\n").unwrap();
+        assert_eq!(found.harness, ["bench/", "/tools/rad-kbench"]);
+        assert!(
+            parse("[[step]]\nname = \"a\"\ncommand = \"x\"\n")
+                .unwrap()
+                .harness
+                .is_empty()
+        );
+        for bad in ["\"../x\"", "\"\"", "\"/\""] {
+            let wrong = parse(&format!(
+                "harness = [{bad}]\n[[step]]\nname = \"a\"\ncommand = \"x\"\n"
+            ))
+            .unwrap_err();
+            assert!(wrong.contains("harness"), "{wrong}");
+        }
     }
 
     #[test]
