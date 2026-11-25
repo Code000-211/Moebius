@@ -13,6 +13,27 @@ export const DEFAULT_UPKEEP: Upkeep = {
   close_after_days: 30,
 };
 
+/** `GET /v1/repositories/{id}/flow` (ADR 0033): whether a followed pull request is reviewed by itself, and when one that names no issue is closed. */
+export interface Flow {
+  review_on_green: boolean;
+  /** Minutes the checks must have been green, with no push, before the review starts. */
+  green_wait_minutes: number;
+  /** Days before a pull request that names no issue is closed; 0 never closes one. */
+  unbound_close_days: number;
+  /** Whether the server keeps one status label on every open issue that has a card. */
+  status_labels: boolean;
+  /** What a status label starts with. */
+  status_prefix: string;
+}
+
+export const DEFAULT_FLOW: Flow = {
+  review_on_green: false,
+  green_wait_minutes: 5,
+  unbound_close_days: 14,
+  status_labels: false,
+  status_prefix: "status:",
+};
+
 /** `GET /v1/projects/{id}/backlog`, or null when the project has none. */
 export interface Backlog {
   project_id: number;

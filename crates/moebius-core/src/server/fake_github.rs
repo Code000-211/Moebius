@@ -64,6 +64,11 @@ pub(super) struct FakeGitHub {
     pub(super) created: Mutex<Vec<(u64, String, String)>>,
     /// Why it was asked to close an issue (`state_reason`), as issue number and reason.
     pub(super) state_reasons: Mutex<Vec<(u64, String)>>,
+    /// The labels it was asked to add to an issue or pull request, and to take off it, as number and label.
+    pub(super) label_adds: Mutex<Vec<(u64, String)>>,
+    pub(super) label_removes: Mutex<Vec<(u64, String)>>,
+    /// The labels it was asked to make in the repository, as name and colour.
+    pub(super) labels_made: Mutex<Vec<(String, String)>>,
     /// The reviews it was asked to write on pull request 7.
     pub(super) review_posts: Mutex<Vec<Value>>,
     /// What it does once, as it is asked for pull request 7 after that many reads: a person changing a setting while a merge is being made.
@@ -185,6 +190,9 @@ pub(super) async fn fake_github() -> (String, Arc<FakeGitHub>) {
         writers: Mutex::new(Vec::new()),
         assignable: std::sync::atomic::AtomicBool::new(true),
         label_writes: Mutex::new(Vec::new()),
+        label_adds: Mutex::new(Vec::new()),
+        label_removes: Mutex::new(Vec::new()),
+        labels_made: Mutex::new(Vec::new()),
         fail_state_writes: std::sync::atomic::AtomicBool::new(false),
         created: Mutex::new(Vec::new()),
         state_reasons: Mutex::new(Vec::new()),
@@ -453,6 +461,38 @@ pub(super) async fn fake_github() -> (String, Arc<FakeGitHub>) {
                         .collect();
                     fake.edit_issue(number, |issue| issue["labels"] = json!(named));
                     fake.label_writes.lock().unwrap().push((number, labels));
+                    axum::Json(json!([]))
+                },
+            )
+            .post(
+                |State(fake): State<Arc<FakeGitHub>>,
+                 UrlPath(number): UrlPath<u64>,
+                 axum::Json(body): axum::Json<Value>| async move {
+                    for label in body["labels"].as_array().into_iter().flatten() {
+                        let label = label.as_str().unwrap().to_string();
+                        fake.label_adds.lock().unwrap().push((number, label));
+                    }
+                    axum::Json(json!([]))
+                },
+            ),
+        )
+        .route(
+            "/repos/acme/widgets/labels",
+            post(
+                |State(fake): State<Arc<FakeGitHub>>, axum::Json(body): axum::Json<Value>| async move {
+                    let name = body["name"].as_str().unwrap().to_string();
+                    let color = body["color"].as_str().unwrap_or_default().to_string();
+                    fake.labels_made.lock().unwrap().push((name, color));
+                    StatusCode::CREATED
+                },
+            ),
+        )
+        .route(
+            "/repos/acme/widgets/issues/{number}/labels/{label}",
+            axum::routing::delete(
+                |State(fake): State<Arc<FakeGitHub>>,
+                 UrlPath((number, label)): UrlPath<(u64, String)>| async move {
+                    fake.label_removes.lock().unwrap().push((number, label));
                     axum::Json(json!([]))
                 },
             ),

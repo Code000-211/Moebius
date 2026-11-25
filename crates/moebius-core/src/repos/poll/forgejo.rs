@@ -87,6 +87,7 @@ impl Polled for Forgejo {
                 body: pull.body.unwrap_or_default(),
                 author: pull.user.login,
                 head: pull.head.sha,
+                branch: String::new(),
                 base: pull.base.branch,
             })
             .collect())

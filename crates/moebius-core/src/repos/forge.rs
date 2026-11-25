@@ -315,6 +315,35 @@ pub trait Forge: Send + Sync {
     ) -> Result<(), ForgeError> {
         Err(not_on_a_forge(repository))
     }
+    /// Adds `label` to the pull or merge request `number` on the forge, keeping its others. A forge that cannot do it
+    /// leaves the request as it is: what the label would say is in a comment too.
+    fn add_request_label(
+        &self,
+        _repository: &Repository,
+        _number: i64,
+        _label: &str,
+    ) -> Result<(), ForgeError> {
+        Ok(())
+    }
+    /// Makes the label `name` exist on the forge with the colour `color` (six hex digits) when it does not; one that
+    /// exists is left as it is. A forge that cannot leaves the label to be made as the forge makes new ones.
+    fn ensure_label(
+        &self,
+        _repository: &Repository,
+        _name: &str,
+        _color: &str,
+    ) -> Result<(), ForgeError> {
+        Ok(())
+    }
+    /// Takes `label` off the pull or merge request `number`; the counterpart of [`Forge::add_request_label`].
+    fn remove_request_label(
+        &self,
+        _repository: &Repository,
+        _number: i64,
+        _label: &str,
+    ) -> Result<(), ForgeError> {
+        Ok(())
+    }
     /// Adds `login` to the people the issue `number` is assigned to on the forge, keeping the others, and answers with
     /// everyone it is assigned to now, in the order the forge lists them. An error says why
     /// the forge would not (the token may not assign, or the login is no collaborator). Only forges that keep issues
@@ -710,6 +739,44 @@ impl Forge for GitHubForge {
         Ok(self
             .runtime
             .block_on(self.github.set_issue_labels(name, number, labels))?)
+    }
+
+    fn add_request_label(
+        &self,
+        repository: &Repository,
+        number: i64,
+        label: &str,
+    ) -> Result<(), ForgeError> {
+        let name = Self::github_name(repository)?;
+        Ok(self
+            .runtime
+            .block_on(self.github.add_issue_label(name, number, label))?)
+    }
+
+    fn ensure_label(
+        &self,
+        repository: &Repository,
+        label: &str,
+        color: &str,
+    ) -> Result<(), ForgeError> {
+        let name = Self::github_name(repository)?;
+        // GitHub answers 422 for a label that exists, which is what is wanted.
+        let _ = self
+            .runtime
+            .block_on(self.github.create_label(name, label, color));
+        Ok(())
+    }
+
+    fn remove_request_label(
+        &self,
+        repository: &Repository,
+        number: i64,
+        label: &str,
+    ) -> Result<(), ForgeError> {
+        let name = Self::github_name(repository)?;
+        Ok(self
+            .runtime
+            .block_on(self.github.remove_issue_label(name, number, label))?)
     }
 
     fn comment_issue(

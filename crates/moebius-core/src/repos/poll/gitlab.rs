@@ -91,6 +91,7 @@ impl Polled for GitLab {
                 body: request.description.unwrap_or_default(),
                 author: request.author.username,
                 head: request.sha,
+                branch: String::new(),
                 base: request.target_branch,
             })
             .collect())

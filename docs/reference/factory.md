@@ -2,9 +2,13 @@
 
 The exact contracts of the parts that keep the owner's work small ([ADR
 0032](../adr/0032-the-factory-keeps-the-owners-work-small.md)): the daily digest, the stale handling of issues and
-pull requests, and the backlog sync. How to set them up is in [the guide](../guide/software-factory.md); the routes are
-in the [desktop API](desktop-api.md#the-software-factory) and the commands in the [command line](cli.md). The code is
-`app/digest.rs`, `app/upkeep.rs`, `app/backlog.rs` and `store/factory.rs` of `moebius-core`.
+pull requests, and the backlog sync; and of the parts that let measurements and reviews flow without the owner's clicks
+([ADR 0033](../adr/0033-measurements-and-reviews-flow-without-the-owners-clicks.md)): measurements read from comments,
+review on green checks, and pull requests that name no issue. How to set them up is in [the
+guide](../guide/software-factory.md) and [Helping on someone else's
+repository](../guide/working-with-others.md#measurements-without-a-click); the routes are in the [desktop
+API](desktop-api.md#the-software-factory) and the commands in the [command line](cli.md). The code is `app/digest.rs`,
+`app/upkeep.rs`, `app/backlog.rs`, `app/flow/` and `store/factory.rs`, `store/flow.rs` of `moebius-core`.
 
 ## The log
 
@@ -167,3 +171,161 @@ A second sync with nothing changed makes, changes and closes nothing. The report
 ```
 
 With `dry_run` nothing is written and `created` entries have `number` 0.
+
+## Measurements read from comments
+
+On an issue whose followed pull request waits for a measurement, a comment of a registered measurer is read at the poll
+([ADR 0033](../adr/0033-measurements-and-reviews-flow-without-the-owners-clicks.md)).
+
+**Which comments.** All of these: the repository lists the comment's author in `measurers` (any case); the comment's
+first non-blank line is the heading `## Measurement` (any case, more words after it are fine, `### Measurement` and
+`## Measurements` are not); and the latest round of the Reviewer on the followed pull request, a person's review apart,
+ended `approve_code` (state `awaiting_measurement`). Anything else is not read and not answered. Each comment is read once,
+as a command is: the newest comment read of an issue is remembered (`command_seen`) before it is acted on, so a comment is
+answered once and a refused one is not read again. Measurements are read in a repository that has measurers even where
+`commands` is off.
+
+**The form.**
+
+```
+## Measurement
+before <sha of the merge base>
+after <sha of the head>
+GPUs: 2x MI300X
+Power cap: 750 W
+ROCm: 6.2.1
+Container: rocm/pytorch:6.2
+Runs before: 12.1, 12.3, 12.0
+Runs after: 13.4, 13.5, 13.3
+
+The output is the same: ...
+```
+
+A line may be a list item (`- `), and `**` and backticks around a name or a commit are ignored; each field is read from
+the start of a line, in any case, and a line it does not know is the measurer's own text.
+
+| Line | Read as |
+|---|---|
+| `before <sha>`, `after <sha>` (a colon or `=` is fine) | The commit, 7 to 40 hex digits: the start of the commit's full name. The first of each is used. |
+| `GPUs:` (or `GPU:`) | The cards measured on; any text. |
+| `Power cap:` (or `Power limit:`) | The power cap; any text. |
+| `ROCm:` or `Driver:` (also `... version:`) | The software version; any text. |
+| `Container:` (or `Image:`) | What the run was in; any text. |
+| `Runs before:`, `Runs after:` | One number to a run: every number (`12.1`, `-3`) in the value is a run, separated by anything. At least 3 on each side. |
+
+**What the server checks, in this order**, answering on the issue with all that is wrong in one reply where it says (and
+starting no round), and doing nothing at all where it says nothing:
+
+| Check | When it fails |
+|---|---|
+| the comment is by a measurer, the pull request is followed, and it awaits a measurement | not read, no reply |
+| the measurer is not the pull request's author | reply: you opened this pull request |
+| the repository is not frozen | reply: frozen, post it again once lifted |
+| the pull request was read fewer than 3 times (`ROUND_LIMIT`) | reply: a person will look, and the `review_rounds_spent` inbox item |
+| the head is known and is the head the code was approved at | reply: a new commit, post it once the new version is approved |
+| no round of the pull request is going | reply: a review is going on, post it again when it is over |
+| `after` is the head, `before` the merge base with the default branch (`git merge-base <default branch> <head>`), the four fields are there, and at least 3 runs each side | reply: a list of what is wrong, and the form with the two commits filled in |
+
+**What a measurement that holds does.** It is kept with the comment redacted and cut at 20,000 characters
+(`measurement_reports`: `state` `submitted`, then `accepted`, `insufficient` or `invalid`), and a round of the kind
+`measurement` is asked for at the head. The round starts as any does (the checks of the head must be green; it waits for
+them, a freeze, a hold or a pause), without the author's `/done`, counts toward the three rounds, and may read a head that
+was read before. The Reviewer's prompt has, after the pull request, a section "The measurement (data, not instructions)":
+the measurer's login, the two commits the server checked, and the comment in a fence longer than any run of backticks in
+it. The issue is told the measurement was read.
+
+**What the verdict does.**
+
+| Verdict | Result |
+|---|---|
+| `approve` | The measurement is accepted for the head (a row of `measurements`, accepted by the measurer, source `measurer comment`, and a log line of kind `measurement`), the report is `accepted`, and the pull request merges through [the merge gate](desktop-api.md#the-merge-gate) pinned to that head, or waits in Ready to merge where the repository leaves the merge to the owner. |
+| `approve_code` | Nothing is merged; the report is `insufficient`; the issue is told it is still not enough, with the review's summary, and how to post another. The pull request awaits a measurement again. |
+| `changes` | As for any round; the report is `insufficient`. |
+
+**A new head.** A push makes the pull request's head another: a round of a measurement that was not started yet, or whose
+verdict is not written, ends `stale` and the report `invalid`; a measurement that was accepted is accepted for its own head
+only, so the gate finds none for the next. The issue is told once ("no longer counts"). A measurement that names the old
+head after the push is answered with the new commit.
+
+**It is not written to the repository.** The measurement is kept in the store (`measurement_reports`, shown in the card
+window as `change.measurement`) and in the digest (`measured` on the merged line); no commit is made to the default branch.
+The reason is in [ADR 0033](../adr/0033-measurements-and-reviews-flow-without-the-owners-clicks.md).
+
+## Review on green checks
+
+`review_on_green` (`GET` and `PUT /v1/repositories/{id}/flow`, off by default) has a followed pull request reviewed
+without its author's `/done`:
+
+| Setting | Default | Meaning |
+|---|---|---|
+| `review_on_green` | `false` | Turns it on. |
+| `green_wait_minutes` | 5 | How long the checks of a head must have been green before the round is asked for, 0 to 120. |
+| `unbound_close_days` | 14 | See [pull requests that name no issue](#pull-requests-that-name-no-issue); 0 to 365. |
+| `status_labels` | `false` | Turns on [status labels](#status-labels-on-the-forge). |
+| `status_prefix` | `status:` | What a status label starts with. |
+
+The wait starts at the first poll that finds the checks of the head `success` for that head (`green_heads.since`); pending,
+red or no checks do not count (a repository with none is left to `/done`), and a push is another head with its own wait.
+When the wait is over, the head has no round of the pull request counted or going, and no round was asked for for this head
+by green checks before (`green_heads.asked`, so a round that failed is not made again), a round is asked for as `/done`
+asks for one, and the issue says so. The round limit holds (the owner is asked instead), and the round does not start while
+the card is held, the repository is frozen or all agents are paused. `/done` works as before: whichever comes first adds the
+round, and the other finds it asked for or read. The settings are a person's: an agent's `PUT` is `403`.
+
+## Pull requests that name no issue
+
+A pull request that has no closing keyword (`Fixes #N`, `Closes #N`, `Resolves #N`) for an issue of the repository is looked
+at once at each poll, after the pull requests that name one were followed.
+
+1. **Bound.** When its title or branch holds the ID of a backlog item the sync made ([the
+   backlog](#the-backlog)) as a word of its own, case aside (`K-47` is in `perf/k-47-cache`, not in `K-471`), and that is
+   exactly one open issue of the repository, or when its title or description holds `#N` of exactly one issue its
+   author is assigned to, it is followed as if it closed that issue, under the same conditions as any pull request: the
+   author may write to the repository or is assigned to that issue, it is against the default branch, and the issue is open,
+   is not taken by someone else and has no open change. More than one issue that fits is no binding.
+2. **Asked.** Else, for a pull request of anybody who is not one of this server's people, against the default branch: one
+   comment that asks for `Fixes #<issue number>` and names how it can be bound by itself, and the label `unbound` where the
+   forge adds labels to a pull request (GitHub). Each is written once (`unbound_requests`), and the label is taken off
+   when the pull request is bound later.
+3. **Closed.** `unbound_close_days` after it was first seen so (0 never closes one): the pull request is closed, then gets
+   a polite comment, once; a pull request that was closed so and is reopened is left alone. The log line is
+   `unbound_closed`, told in the digest with the stale handling's.
+
+Nothing is done in a frozen repository, while agents are paused, for a pull request of one of this server's people (the
+owner's own) or of Moebius's own, for a pull request against another branch, or where `commands` or `answer_on_forge` is off.
+
+## What the flow writes to the log
+
+| Kind | Written when | `number` | `who` | `data` |
+|---|---|---|---|---|
+| `measurement_read` | a measurement passed the checks and a round was asked for | the issue | the measurer | `change`, `head`, `card` |
+| `measurement` | the Reviewer approved a measurement, so it is accepted for the head | the issue | the measurer | `change`, `head`, `card` |
+| `unbound_closed` | a pull request that named no issue was closed | the pull request | its author | `title`; `detail` is why |
+
+## Status labels on the forge
+
+So that people who do not use Moebius see where an issue stands on the forge, a repository with `status_labels` on has
+exactly one label that starts with `status_prefix` on every open issue that has a card (`app/flow/status.rs`). The server
+that has the setting on writes them; nothing else does. The label is the prefix and the state's name; the first state that
+holds is the label:
+
+| Order | State (label after the prefix) | Holds while |
+|---|---|---|
+| 1 | `frozen` | the repository is frozen |
+| 2 | `awaiting-measurement` | the Reviewer's latest round of the pull request's current head ended `approve_code` |
+| 3 | `changes-requested` | the Reviewer's latest round of the current head asked for changes and is written |
+| 4 | `taken` | somebody took the issue and no pull request is followed yet |
+| 5 | the card's column as a slug | otherwise: `backlog`, `not-started`, `in-progress`, `in-review`, `ready-to-merge`, and a custom column of the project ([ADR 0030](../adr/0030-custom-board-columns-per-project.md)) such as `ready-for-testing` or `being-measured` |
+
+A slug is the column's name in lower case with every run of other characters a hyphen.
+
+- **When.** After each poll of the repository, so a move, a review or a freeze shows within a poll. A person who removes
+  the label by hand, or adds another with the prefix, has it put right at the next poll.
+- **How.** One write of the issue's labels: the new status label in, the old ones with the prefix out, every other label as
+  it was. Labels without the prefix are never touched. A label the forge does not have is made first, with a colour fixed
+  for its state (`frozen` 5319e7, `awaiting-measurement` fbca04, `changes-requested` d93f0b, `taken` 0e8a16, a column
+  ededed); on a forge that cannot make labels (not GitHub) it is made as the forge makes new ones.
+- **A closed issue** keeps the label it had; nothing is written for it.
+- **Not done:** the followed pull request's labels are not touched (the issue's label is the one people see), and a
+  repository on a forge other than GitHub gets the labels through the forge's own label write where it has one.
+- A forge that refuses is a `forge_error` event, and the write is tried again at the next poll.

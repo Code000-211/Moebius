@@ -109,7 +109,7 @@ impl App {
     /// Whether a round of the card may act now: the card is not held, the agents are not paused and the repository is not
     /// frozen. A round that posts a review or merges is the server acting for the owner, and the owner's hold, pause and
     /// freeze stop it as they stop a run.
-    fn may_act(&self, card_id: i64) -> Result<bool> {
+    pub(in crate::app) fn may_act(&self, card_id: i64) -> Result<bool> {
         let card = self.card(card_id)?;
         Ok(card.held.is_none()
             && self.runs_paused()?.is_none()
@@ -305,7 +305,7 @@ impl App {
     }
 
     /// Puts an item in the owner's inbox that says the Reviewer read the pull request often enough.
-    fn ask_owner_to_look(&self, card: &Card, change: &Change) -> Result<()> {
+    pub(in crate::app) fn ask_owner_to_look(&self, card: &Card, change: &Change) -> Result<()> {
         if self.store.has_open_inbox_item(card.id, ROUNDS_SPENT)? {
             return Ok(());
         }
@@ -345,6 +345,11 @@ impl App {
             let Some(change) = self.followed_change(&card)? else {
                 return Ok(());
             };
+            // The few minutes `review_on_green` waits count from the first time the checks of the head are seen green.
+            self.note_green_head(&change)?;
+            if self.may_act(card_id)? {
+                self.review_on_green(&card, &change)?;
+            }
             if self
                 .store
                 .external_reviews(change.id)?
@@ -432,7 +437,18 @@ impl App {
                 .set_external_review_verdict(round.id, "failed", "", "rounds spent", &[])?;
             return self.ask_owner_to_look(card, change);
         }
-        if self.store.external_review_of_head(change.id, head)? {
+        if round.kind == "measurement" {
+            // A measurement is of the commit it names: a push since makes it count for nothing.
+            if round.head != head {
+                if let Some(id) = round.measurement_id {
+                    self.store.set_measurement_report_state(id, "invalid")?;
+                }
+                return end(
+                    "head moved",
+                    "The pull request has a new commit since the measurement, so the measurement no longer counts. Once the code of this version is approved, post the measurement again.",
+                );
+            }
+        } else if self.store.external_review_of_head(change.id, head)? {
             return end(
                 "head reviewed",
                 "This version of the pull request was reviewed already; push your changes, then write /done again.",
@@ -717,7 +733,13 @@ impl App {
         let code_only = said.verdict == "approve_code";
         let approve = said.verdict != "changes";
         // A review a person asked for is never merged: the person merges the pull request where they asked for it.
-        let merges = repository.merge_reviewed && round.kind == "author" && !code_only;
+        let merges = repository.merge_reviewed
+            && matches!(round.kind.as_str(), "author" | "measurement")
+            && !code_only;
+        // A measurement the Reviewer found enough is accepted for the head it was read at, before anything merges.
+        if round.kind == "measurement" {
+            self.judge_measurement(card, change, round, said.verdict)?;
+        }
         if approve && merges {
             // Merged only when the checks of the head that was read are green; pending ones are waited for.
             if change.head.as_deref() != Some(round.head.as_str()) {
@@ -1010,11 +1032,24 @@ impl App {
         {
             self.move_card(card.id, &column, Some(&reviewer()))?;
         }
-        let text = format!(
-            "Reviewed pull request #{number}: the code looks right, but the measurement this repository asks for is missing, so it is not merged. \
-             The numbers go in a comment on this issue that starts with `## Measurement`: before and after on one machine, and that the output is the same. \
-             The repository owner checks them, accepts the measurement and merges the pull request. Nothing reads that comment by itself yet."
-        );
+        // The round in hand was read before its verdict was written.
+        let summary = self
+            .store
+            .external_review(round.id)?
+            .map(|r| r.summary)
+            .unwrap_or_default();
+        let text = if round.kind == "measurement" {
+            format!(
+                "Reviewed pull request #{number} with the measurement: the code looks right, but the measurement is still not enough, so it is not merged. {}\n\n{}",
+                crate::blobs::redact(summary.trim()),
+                self.measurement_request(repository, change)
+            )
+        } else {
+            format!(
+                "Reviewed pull request #{number}: the code looks right, but the measurement this repository asks for is missing, so it is not merged.\n\n{}",
+                self.measurement_request(repository, change)
+            )
+        };
         let by = reviewer();
         if let Err(e) = self.comment_issue(&by, card.id, &text) {
             report("the reply could not be written", &e);

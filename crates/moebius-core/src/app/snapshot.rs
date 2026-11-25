@@ -32,6 +32,9 @@ pub struct CardLookups {
     closed: HashMap<i64, HashSet<i64>>,
     /// The rounds of the Reviewer on each open pull request someone else opened, by change.
     external_reviews: HashMap<i64, Vec<crate::store::ExternalReview>>,
+    /// The latest measurement a measurer posted on each such pull request, and whether a measurement is accepted for its
+    /// head now.
+    measurements: HashMap<i64, (crate::store::MeasurementReport, bool)>,
 }
 
 impl CardLookups {
@@ -42,6 +45,11 @@ impl CardLookups {
             .get(&change_id)
             .cloned()
             .unwrap_or_default())
+    }
+
+    /// The latest measurement posted for the change, and whether one is accepted for its head.
+    pub fn measurement(&self, change_id: i64) -> Option<(crate::store::MeasurementReport, bool)> {
+        self.measurements.get(&change_id).cloned()
     }
 
     /// The repository `id`, as `App::repository` says it.
@@ -178,8 +186,16 @@ impl App {
             closed.insert(repository.id, self.store.closed_on_forge(repository.id)?);
         }
         let mut external_reviews = HashMap::new();
+        let mut measurements = HashMap::new();
         for change in open_changes.values().filter(|c| c.outside_author.is_some()) {
             external_reviews.insert(change.id, self.store.external_reviews(change.id)?);
+            if let Some(report) = self.store.measurement_reports(change.id)?.pop() {
+                let accepted = match change.head.as_deref() {
+                    Some(head) => self.store.has_measurement(change.id, head)?,
+                    None => false,
+                };
+                measurements.insert(change.id, (report, accepted));
+            }
         }
         Ok(CardLookups {
             repositories: repositories.iter().map(|r| (r.id, r.clone())).collect(),
@@ -197,6 +213,7 @@ impl App {
             cards: by_number,
             closed,
             external_reviews,
+            measurements,
         })
     }
 }

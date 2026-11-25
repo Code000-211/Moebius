@@ -172,8 +172,9 @@ says why.
   them yourself. Add your own globs under **Locked paths**; the built-in ones stay.
 - **Require a measurement.** For a repository whose merge bar is a measurement (before and after on one machine, output
   parity), turn this on. A change then merges only when a measurement is accepted for its current head, or its issue
-  carries the label `no-measurement`. Until helpers' measurements can be read from their comments (the next release), you
-  accept one with `POST /v1/changes/{id}/measurement`, or from the `moebius` command line:
+  carries the label `no-measurement`. A registered measurer's comment gets one accepted without you (see [Measurements
+  without a click](#measurements-without-a-click)); you can still accept one yourself with
+  `POST /v1/changes/{id}/measurement`, or from the `moebius` command line:
 
   ```sh
   moebius api POST /v1/changes/12/measurement --body '{"reason": "kbench rows checked"}'
@@ -186,11 +187,13 @@ says why.
   When the rules ask for a measurement the pull request does not carry, and the code is right, the Reviewer answers
   `approve_code`: the server approves the code on the forge, merges nothing, labels the issue (the **Ready for testing label**,
   default `ready-for-testing`), moves the card to the project's **Ready for testing** column when it has one, and tells
-  the author a measurement is needed, and that you accept it once you have checked the numbers. The round counts toward the
-  three. You accept the measurement with `POST /v1/changes/{id}/measurement`, then merge; nothing reads the author's
-  `## Measurement` comment by itself yet.
-- **Measurers.** The logins whose `## Measurement` comments will count once the next release reads them. For now they are
-  only stored and shown here.
+  the author a measurement is needed, how a measurer posts one and the form it must have. The round counts toward the
+  three.
+- **Measurers.** The logins whose `## Measurement` comments the server reads. One per line, forge logins; the author of a
+  pull request is never its measurer.
+- **Review flow.** The box below it, **Review flow**, has the settings that save you the rest of the clicks; see
+  [Measurements without a click](#measurements-without-a-click), [Review when the checks are
+  green](#review-when-the-checks-are-green) and [Pull requests that name no issue](#pull-requests-that-name-no-issue).
 - **Freeze.** The brake. A frozen repository starts no review round, merges nothing and starts no agent run of its cards.
   **Freeze** in the box does it, or `POST /v1/repositories/{id}/freeze`, or the label `factory:freeze` on any open issue.
   It also freezes by itself when two merged changes are reverted within seven days, when more than 80% of the day's token
@@ -201,6 +204,75 @@ Put rules in prose in `rules.md` too: the server's merge is checked against them
 decision `merge_check`), so a rule such as "No merge without a measurement in the pull request's description" refuses the
 server as it refuses an agent. A guard with no teacher refuses everything while prose rules exist, as it does for tool
 calls.
+
+## Measurements without a click
+
+[ADR 0033](../adr/0033-measurements-and-reviews-flow-without-the-owners-clicks.md). When the Reviewer answers
+`approve_code`, the issue is told how a measurement is posted. A **measurer** (a login you listed under **Measurers**, who
+did not open the pull request) writes a comment on the issue that starts with the heading `## Measurement`:
+
+```text
+## Measurement
+before 0ba658192b0e14d5cce2b063ff8dfbca365c8619
+after f868a450eeb84cc5251b15ab9155a5c542156106
+GPUs: 2x MI300X
+Power cap: 750 W
+ROCm: 6.2.1
+Container: rocm/pytorch:6.2
+Runs before: 12.1, 12.3, 12.0
+Runs after: 13.4, 13.5, 13.3
+
+The output is the same, byte for byte, on all six runs.
+```
+
+- `before` is the merge base of the pull request with the default branch, and `after` its head, as the server's reply on
+  `approve_code` fills them in for the version that was approved (seven characters of each are enough). A push makes both
+  wrong.
+- The fields are **GPUs**, **Power cap**, **ROCm** (or **Driver**) and **Container**, and **Runs before** and **Runs after**
+  each list at least three numbers, one for each run. Write whatever else the review brief asks for under them; the
+  Reviewer reads it.
+- The server checks all of that and answers on the issue with what is wrong, and starts nothing; the measurer posts
+  another comment. A comment that holds starts the next round of the Reviewer by itself, with the measurement in what it
+  reads (as data, with the measurer's login), once the checks are green. It counts toward the three rounds. Nobody writes
+  `/done`.
+- The Reviewer judges the measurement against your review brief. `approve` accepts it for that commit and merges through
+  the gate (or leaves the pull request in **Ready to merge** if you merge by hand); `approve_code` says it is still not
+  enough and what is missing; `changes` is as ever.
+- A new commit on the pull request makes a measurement count for nothing; the issue says so.
+- The measurement is kept in the card window (who measured which commit, and what came of it) and in the daily digest. It is
+  **not** committed to your repository: the server writes no file to your default branch. A column script or your own
+  workflow can copy the comment where you want it.
+
+## Review when the checks are green
+
+By default the author writes `/done` to have a pull request reviewed. Turn on **Review when the checks are green** in the
+**Review flow** box (or `"$MOEBIUS" api PUT /v1/repositories/1/flow --body '{"review_on_green": true}'`) and the round
+starts by itself once the checks of the head have been green for **Green for (minutes)** (default 5) with no push; a push
+is a new head with its own wait. One round for each head, the three-round limit holds, and a freeze, a hold or Pause all
+stops it. `/done` still works, and whichever comes first starts the round.
+
+## Pull requests that name no issue
+
+A pull request without `Fixes #N` is looked at: the server binds it, asks, or in the end closes it.
+
+- **Bound.** When its title or branch holds the ID of a backlog item ([Keeping the owner's work
+  small](software-factory.md)) that is exactly one issue the sync made (`perf/k-47-cache` for `K-47`), or its title or
+  description names `#N` of an issue its author is assigned to, it is followed as if it had written `Fixes #N`. The author
+  must still be someone who may write to the repository or be assigned to that issue.
+- **Asked.** Otherwise it gets one comment that asks for `Fixes #N` and, on GitHub, the label `unbound`.
+- **Closed.** After **Close a pull request that names no issue after (days)** (default 14, 0 never) it is closed with a
+  polite comment, and not again if its author reopens it.
+- Only in a repository where commands and the server's answers are on; never in a frozen one or for your own pull requests.
+
+## Status labels on the forge
+
+People who do not use Moebius cannot see your board. Turn on **Status labels on the forge** in the **Review flow** box and
+every open issue that has a card carries one label that says where it stands: `status:in-progress`, `status:in-review`,
+`status:ready-to-merge`, the name of a custom column (`status:ready-for-testing`), or one of four finer states that
+win over the column while they hold, in this order: `status:frozen`, `status:awaiting-measurement`,
+`status:changes-requested` and `status:taken`. The prefix is yours to change; labels without it are never touched. The label
+is swapped within a poll of the change, a label removed by hand is put back, and a closed issue keeps its last one. It is
+off by default. The followed pull request itself is not labelled.
 
 ## How to try it
 

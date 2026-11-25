@@ -592,6 +592,11 @@ At the top:
 | `app/backlog.rs` | Backlog sync ([ADR 0032](adr/0032-the-factory-keeps-the-owners-work-small.md)): a project's backlog file read as items, and the issues made, updated, labelled and closed as not planned from them, a few at a time. |
 | `app/digest.rs` | The owner's daily digest ([ADR 0032](adr/0032-the-factory-keeps-the-owners-work-small.md)): one inbox item a day with what merged, was refused, reverted, reviewed, taken and released, what the stale handling did, the tokens spent, what is held and what needs a person. |
 | `app/upkeep.rs` | Stale handling ([ADR 0032](adr/0032-the-factory-keeps-the-owners-work-small.md)): an issue taken and not worked on is released, a followed pull request nobody pushes to after a review asked for changes is reminded and then closed; never on a held card. |
+| `app/flow/mod.rs` | Reviews and measurements that flow without the owner's clicks ([ADR 0033](adr/0033-measurements-and-reviews-flow-without-the-owners-clicks.md)): the flow settings of a repository, `review_on_green` (a round once the checks of a head have been green for a few minutes) and what a new head does to a measurement. |
+| `app/flow/measure.rs` | A registered measurer's `## Measurement` comment read once at the poll: who wrote it, which commits and fields it names, the reply that says what is wrong or the round it starts, the accepted measurement and the section the Reviewer is given. |
+| `app/flow/bind.rs` | Binding a pull request with no closing keyword to the one issue its title or branch names by a backlog item's ID, or `#N` of an issue its author is assigned to. |
+| `app/flow/unbound.rs` | A pull request that names no issue: asked once to, labelled `unbound`, closed politely after `unbound_close_days`; never in a frozen repository or for the owner's own. |
+| `app/flow/status.rs` | Status labels on the forge: one label with the repository's prefix on every open issue that has a card, the column's slug or a finer state (frozen, awaiting measurement, changes requested, taken), swapped in one write after each poll. |
 | `app/commands.rs` | Commands in issue comments ([ADR 0028](adr/0028-helpers-take-issues-with-commands-in-comments.md)): `/take`, `/release` and `/done` read once from the comments the poll read, answered on the issue, limited per login, and the owner's answers to a `/done` and release from the card. |
 | `app/reviews.rs` | The Reviewer reads a followed pull request when its author says `/done` ([ADR 0029](adr/0029-the-reviewer-reads-a-pull-request-when-its-author-says-done.md)): rounds that wait for green checks, a review run read as a structured verdict, a review with comments on lines written on the forge, and the merge pinned to the head that was read, or Ready to merge. |
 | `app/factory/mod.rs` | The software factory ([ADR 0031](adr/0031-one-merge-gate-and-a-brake-for-the-factory.md)): the settings a repository keeps for it (measurement, locked paths, review brief, testing label, measurers) and how an edit is checked, a person accepting a measurement, and the names its parts share. |
@@ -710,6 +715,7 @@ At the top:
 | `store/changes.rs` | Changes: a branch offered for merging, with its pull request, checks and review. |
 | `store/tending.rs` | What the store keeps for the software factory: the log the digest reads, the days a digest was made, when each issue was taken, a repository's stale settings and a project's backlog. |
 | `store/commands.rs` | What the store keeps for commands in issue comments: the repository's settings for them, the newest comment read per issue, the login a card was taken by command, and how many issues a login holds. |
+| `store/flow.rs` | What keeps measurements and reviews flowing: each repository's flow settings, the measurements a measurer posted as comments, when the checks of a head turned green, and the pull requests that name no issue. |
 | `store/factory.rs` | The software factory's state: a repository's factory settings and freeze, the commit a change merged as, accepted measurements, reverts kept once and the breakers that tripped. |
 | `store/reviews.rs` | The rounds of the Reviewer on followed pull requests (state, head, verdict, summary, comments on lines, the review's address) and the repository's `merge_reviewed`. |
 | `store/taking.rs` | What a server knows of who took an issue: a person's logins on the forges, the logins an issue is assigned to, why an assignment failed, and a repository's settings for working with others. |
@@ -771,6 +777,8 @@ At the top:
 | `server/tending_tests.rs` | For the tests only: the daily digest and its clock, the stale handling and the backlog sync, against the fake GitHub. |
 | `server/commands_tests.rs` | For the tests only: commands in issue comments, against the fake GitHub. |
 | `server/taking_tests.rs` | For the tests only: working with people on other servers, against the fake GitHub. |
+| `server/flow_tests.rs` | For the tests only: measurements read from comments, review on green checks and pull requests that name no issue, against the fake GitHub. |
+| `server/status_tests.rs` | For the tests only: status labels on issues following moves and the finer states, against the fake GitHub. |
 | `server/factory_tests.rs` | For the tests only: the merge gate, the freeze and its breakers, the review brief and `approve_code`, against the fake GitHub. |
 | `server/reviews_tests.rs` | For the tests only: the review of a followed pull request after `/done`, against the fake GitHub. |
 | `server/api/mod.rs` | The desktop API: the state it needs, the token check, the router that merges the routes of its parts, how a failure becomes a status, and `GET /v1/health`. |

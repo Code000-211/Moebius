@@ -117,7 +117,57 @@ describe.skipIf(usesRealServer)("the factory", () => {
     const review = page.locator("[data-card-window]").getByTestId("external-review");
     await review.waitFor();
     expect(await review.textContent()).toContain("Code approved, measurement needed");
-    expect(await review.textContent()).toContain("accepts the measurement");
+    // What starts the next round is a measurer's comment, and it is told where the card is read.
+    const note = page.locator("[data-card-window]").getByTestId("measurement-note");
+    expect(await note.textContent()).toContain("## Measurement");
+    expect(await note.textContent()).toContain("need not write /done");
+  });
+
+  it("shows a card whose measurement a measurer posted and the Reviewer accepted", async () => {
+    await open();
+    const measured = server.board?.seedMeasured();
+    await page.goto(`${server.url}/projects/1`);
+    await page.getByTestId(`card-${measured}`).click();
+    const window = page.locator("[data-card-window]");
+    const note = window.getByTestId("measurement-note");
+    await note.waitFor();
+    expect(await note.textContent()).toBe("Measurement by @bob accepted for d34db33.");
+    expect(await window.getByTestId("external-review").textContent()).toContain("Round 2 of 3");
+  });
+
+  it("saves the review flow settings of a repository", async () => {
+    await open();
+    await page.goto(`${server.url}/projects/1/repositories/1`);
+    const box = page.getByTestId("review-flow");
+    await box.waitFor();
+    expect(
+      await box.getByLabel("Review when the checks are green").getAttribute("aria-checked"),
+    ).toBe("false");
+    await box.getByLabel("Review when the checks are green").click();
+    await box.getByLabel("Green for (minutes)").fill("10");
+    await box.getByLabel("Close a pull request that names no issue after (days)").fill("7");
+    await box.getByRole("button", { name: "Save settings" }).click();
+    await page.waitForFunction(
+      () =>
+        (
+          document.querySelector('[data-testid="review-flow"] button[type="submit"]') as
+            | HTMLButtonElement
+            | undefined
+        )?.disabled === true,
+    );
+    await page.reload();
+    const again = page.getByTestId("review-flow");
+    await again.waitFor();
+    await page.waitForFunction(
+      () =>
+        document
+          .querySelector('[data-testid="review-flow"] [role="switch"]')
+          ?.getAttribute("aria-checked") === "true",
+    );
+    expect(await again.getByLabel("Green for (minutes)").inputValue()).toBe("10");
+    expect(
+      await again.getByLabel("Close a pull request that names no issue after (days)").inputValue(),
+    ).toBe("7");
   });
 
   for (const scheme of ["light", "dark"] as const) {
@@ -145,6 +195,27 @@ describe.skipIf(usesRealServer)("the factory", () => {
         await page.getByTestId(`card-${approved}`).click();
         await page.locator("[data-card-window]").getByTestId("frozen-notice").waitFor();
         await shoot("frozen", scheme);
+        // The new settings, and a card with an accepted measurement.
+        await page.goto(`${server.url}/projects/1/repositories/1`);
+        const flow = page.getByTestId("review-flow");
+        await flow.waitFor();
+        await flow.getByLabel("Review when the checks are green").click();
+        await page.setViewportSize({ width: 1280, height: 3000 });
+        await flow.scrollIntoViewIfNeeded();
+        await shoot("review-flow", scheme, flow);
+        await page.setViewportSize({ width: 1280, height: 900 });
+        // The freeze of the picture above is lifted, so this card is not drawn under its banner.
+        const lifted = await settings();
+        await lifted.getByRole("button", { name: "Unfreeze" }).click();
+        await lifted.getByRole("button", { name: "Freeze this repository" }).waitFor();
+        const measured = server.board?.seedMeasured();
+        await page.goto(`${server.url}/projects/1`);
+        await page.getByTestId(`card-${measured}`).click();
+        await page.locator("[data-card-window]").getByTestId("measurement-note").waitFor();
+        expect(await page.locator("[data-card-window]").getByTestId("frozen-notice").count()).toBe(
+          0,
+        );
+        await shoot("measurement-accepted", scheme);
       }
     });
   }

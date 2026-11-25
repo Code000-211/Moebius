@@ -1,6 +1,6 @@
 /** The calls of the software factory (ADR 0032): a repository's stale settings, a project's backlog and its sync, and the digest. */
 import { del, get, post, put } from "../http";
-import type { Backlog, BacklogEdit, SyncReport, Upkeep } from "../types/factory";
+import type { Backlog, BacklogEdit, Flow, SyncReport, Upkeep } from "../types/factory";
 
 export function readUpkeep(repository: number): Promise<Upkeep> {
   return get<Upkeep>(`/v1/repositories/${repository}/upkeep`);
@@ -9,6 +9,15 @@ export function readUpkeep(repository: number): Promise<Upkeep> {
 /** Sets the days of a repository's stale handling (an owner); 0 turns one off. */
 export function editUpkeep(repository: number, upkeep: Upkeep): Promise<Upkeep> {
   return put<Upkeep>(`/v1/repositories/${repository}/upkeep`, upkeep);
+}
+
+export function readFlow(repository: number): Promise<Flow> {
+  return get<Flow>(`/v1/repositories/${repository}/flow`);
+}
+
+/** Sets how a repository's reviews and unbound pull requests flow (an owner). */
+export function editFlow(repository: number, flow: Flow): Promise<Flow> {
+  return put<Flow>(`/v1/repositories/${repository}/flow`, flow);
 }
 
 /** The project's backlog, or null when it has none. */

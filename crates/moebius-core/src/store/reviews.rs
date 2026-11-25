@@ -75,6 +75,9 @@ pub struct ExternalReview {
     /// When the round last changed state, which a sweep reads to end a round that never moved on.
     #[serde(skip)]
     pub moved_at: i64,
+    /// The measurement a round of kind `measurement` reads with the pull request (see `store::flow`).
+    #[serde(skip)]
+    pub measurement_id: Option<i64>,
 }
 
 /// The rounds of the forge pull request the change `?1` follows, whatever change row followed it: a pull request that
@@ -89,7 +92,7 @@ const SAME_PULL_REQUEST: &str = "(e.change_id = ?1 OR e.change_id IN (SELECT o.i
 const COUNTED: &str =
     "('starting', 'running', 'approved', 'posting', 'posted', 'awaiting_measurement', 'merged')";
 
-const COLUMNS: &str = "id, change_id, head, round, run_id, state, verdict, summary, comments, url, at, base, kind, moved_at";
+const COLUMNS: &str = "id, change_id, head, round, run_id, state, verdict, summary, comments, url, at, base, kind, moved_at, measurement_id";
 
 fn read(r: &rusqlite::Row) -> rusqlite::Result<ExternalReview> {
     let comments: String = r.get(8)?;
@@ -108,6 +111,7 @@ fn read(r: &rusqlite::Row) -> rusqlite::Result<ExternalReview> {
         base: r.get(11)?,
         kind: r.get(12)?,
         moved_at: r.get(13)?,
+        measurement_id: r.get(14)?,
     })
 }
 
@@ -221,6 +225,23 @@ impl Store {
         Ok(conn.last_insert_rowid())
     }
 
+    /// Asks for a round that reads the measurement `measurement_id` with the pull request at `head`: its own kind, so that
+    /// a head the Reviewer read already is read again with the numbers, which counts as a round all the same.
+    pub fn add_measurement_review(
+        &self,
+        change_id: i64,
+        head: &str,
+        measurement_id: i64,
+    ) -> Result<i64> {
+        let conn = self.conn();
+        conn.execute(
+            "INSERT INTO external_reviews (change_id, head, state, kind, measurement_id, at, moved_at) \
+             VALUES (?1, ?2, 'wanted', 'measurement', ?3, ?4, ?4)",
+            params![change_id, head, measurement_id, now()],
+        )?;
+        Ok(conn.last_insert_rowid())
+    }
+
     /// The rounds of the change, oldest first.
     pub fn external_reviews(&self, change_id: i64) -> Result<Vec<ExternalReview>> {
         self.rows(
@@ -249,7 +270,7 @@ impl Store {
         Ok(self.read().query_row(
             &format!(
                 "SELECT COUNT(*) FROM external_reviews e WHERE {SAME_PULL_REQUEST} \
-                 AND e.kind = 'author' AND (e.run_id IS NOT NULL OR e.state = 'starting')"
+                 AND e.kind IN ('author', 'measurement') AND (e.run_id IS NOT NULL OR e.state = 'starting')"
             ),
             [change_id],
             |r| r.get(0),

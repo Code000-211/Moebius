@@ -163,6 +163,26 @@ pub struct ChangeView {
     /// left out for Moebius's own change and while nobody asked for one.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub external_review: Option<ExternalReviewView>,
+    /// The latest measurement a registered measurer posted on that pull request (ADR 0033); left out while there is none.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub measurement: Option<MeasurementView>,
+}
+
+/// A measurement a registered measurer posted as a comment, as the card window shows it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct MeasurementView {
+    /// The forge login of the measurer.
+    pub measurer: String,
+    /// The commit it measured, and the merge base it was measured against.
+    pub head: String,
+    pub before: String,
+    /// `submitted` (the Reviewer has not judged it yet), `accepted`, `insufficient` or `invalid` (the head moved).
+    pub state: String,
+    /// Whether it measured the pull request as it is now.
+    pub current: bool,
+    /// Whether a measurement is accepted for the pull request as it is now, whoever accepted it.
+    pub accepted: bool,
+    pub at: i64,
 }
 
 /// A round of the Reviewer on a followed pull request, as the card window shows it.
@@ -172,6 +192,9 @@ pub struct ExternalReviewView {
     pub round: i64,
     /// How many rounds a pull request gets.
     pub round_limit: i64,
+    /// `author` for a round the author asked for, or a green one the server asked for; `measurement` for one a measurement
+    /// started.
+    pub kind: String,
     /// `wanted` (waiting for the checks), `running`, `approved` (waiting for the checks to merge), `posted`, `merged`,
     /// `stale` or `failed`.
     pub state: String,
@@ -327,10 +350,11 @@ fn card_view(
                     .external_reviews(change.id)?
                     .into_iter()
                     .rev()
-                    .filter(|r| r.kind == "author")
+                    .filter(|r| matches!(r.kind.as_str(), "author" | "measurement"))
                     .find(|r| r.state != "failed" && r.state != "stale" || r.verdict.is_some())
                     .map(|r| ExternalReviewView {
                         current: change.head.as_deref() == Some(r.head.as_str()),
+                        kind: r.kind,
                         round: r.round,
                         round_limit: crate::app::ROUND_LIMIT,
                         state: r.state,
@@ -342,6 +366,17 @@ fn card_view(
                     }),
                 None => None,
             },
+            measurement: lookups
+                .measurement(change.id)
+                .map(|(report, accepted)| MeasurementView {
+                    current: change.head.as_deref() == Some(report.head.as_str()),
+                    measurer: report.measurer,
+                    head: report.head,
+                    before: report.before,
+                    state: report.state,
+                    accepted,
+                    at: report.at,
+                }),
         };
         if change.repository_id == Some(view.card.repository_id) {
             view.change = Some(shown.clone());

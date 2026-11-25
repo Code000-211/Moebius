@@ -393,6 +393,8 @@ fn prompt_with(
                     |context| context.to_string(),
                 ),
             });
+            // The measurement a registered measurer posted, when this round was started by one (ADR 0033).
+            prompt.push_str(&app.measurement_section(card, fence_of));
         }
         "review" => prompt.push_str(REVIEW_PROMPT),
         "review-standards" => {

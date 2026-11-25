@@ -35,3 +35,4 @@ One record per decision, numbered in the order they were taken. Where the spec a
 - [0030](0030-custom-board-columns-per-project.md) custom board columns per project
 - [0031](0031-one-merge-gate-and-a-brake-for-the-factory.md) one merge gate and a brake for the factory
 - [0032](0032-the-factory-keeps-the-owners-work-small.md) the factory keeps the owner's work small
+- [0033](0033-measurements-and-reviews-flow-without-the-owners-clicks.md) measurements and reviews flow without the owner's clicks

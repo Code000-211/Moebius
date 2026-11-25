@@ -32,6 +32,7 @@ import { boardPath, settingsPath } from "../pages";
 import { FilesPanel } from "./FilesPanel";
 import { forgeTag, holdsRepository, logins, onForge } from "./model";
 import { PluginSettings } from "./PluginSettings";
+import { ReviewFlow } from "./ReviewFlow";
 import { SettingsPanel } from "./SettingsPanel";
 import { StaleHandling } from "./StaleHandling";
 import { WorkingWithOthers } from "./WorkingWithOthers";
@@ -147,6 +148,7 @@ function RepositoryView({ repository, projectId }: { repository: Repository; pro
             repository={repository}
           />
         )}
+        {filesOf === null && onForge(repository) && <ReviewFlow repository={repository.id} />}
         {filesOf === null && onForge(repository) && <StaleHandling repository={repository.id} />}
         <PluginSettings repository={repository.id} />
         <FilesPanel repository={repository.id} />

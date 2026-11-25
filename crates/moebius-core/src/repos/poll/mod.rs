@@ -149,7 +149,9 @@ async fn poll_repository<F: Polled>(
     blocking(move || {
         app.mark_ready_issues(&repository)?;
         // The factory's label, reverts and budget are read once the issues are (see `app::factory::freeze`).
-        app.factory_poll(&repository)
+        app.factory_poll(&repository)?;
+        // The status labels follow the cards as the poll read them (ADR 0033).
+        app.sync_status_labels(&repository)
     })
     .await
 }
@@ -183,7 +185,12 @@ async fn poll_outside_requests<F: Polled>(
         }
     }
     let (app, repository) = (app.clone(), repository.clone());
-    blocking(move || app.follow_open_requests(&repository, &requests, &writers)).await
+    blocking(move || {
+        app.follow_open_requests(&repository, &requests, &writers)?;
+        // What is left that names no issue is asked to (ADR 0033).
+        app.nudge_unbound_requests(&repository, &requests)
+    })
+    .await
 }
 
 /// Runs a blocking call on the core off the async threads.
