@@ -816,6 +816,18 @@ impl Job<'_> {
                     tail(&done.output).lines().last().unwrap_or("")
                 )));
             }
+            // The watcher measures the whole directory of the job, the head's checkout included: what the head left there
+            // makes the next command of the merge base the one that trips it, so that is the change's, not the lane's.
+            Finish::DiskFull if side == "before" => {
+                return Err(Stop::Failed {
+                    step: Self::labelled(step, "after"),
+                    why: format!(
+                        "the change left the job's disk full: the merge base's command was stopped for passing the {} the lane allows a job",
+                        self.lane.disk
+                    ),
+                    output: done.output.clone(),
+                });
+            }
             Finish::DiskFull => format!(
                 "the job wrote more than the {} the lane allows it, or left the disk of the lane less than 5% free",
                 self.lane.disk
@@ -1138,9 +1150,10 @@ pub(super) fn remove_script(lane: &LaneConfig, id: i64, dir: &str, contained: bo
         script.push_str(&format!(" if [ -e {d} ]; then"));
         for side in ["before", "after", "home"] {
             let name = quote(&format!("moebius-lane-{id}-clean-{side}"));
+            // (`--log-driver none`: nothing of a cleanup is kept in a log of the runtime.)
             script.push_str(&format!(
                 " [ ! -d {d}/{side} ] || {{ timeout -k 10 {limit} {runtime} run --rm --name {name} --label moebius-lane-job={id} \
-                 --network none --cap-drop ALL --security-opt no-new-privileges --pids-limit 256 --memory {memory} --memory-swap {memory} \
+                 --network none --cap-drop ALL --security-opt no-new-privileges --pids-limit 256 --log-driver none --memory {memory} --memory-swap {memory} \
                  --user {user} -v {d}/{side}:/work:rw {image} \
                  sh -c 'chmod -R u+rwX /work 2>/dev/null; find /work -mindepth 1 -delete' >/dev/null 2>&1; \
                  {runtime} rm -f {name} >/dev/null 2>&1; }};",

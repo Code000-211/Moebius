@@ -129,6 +129,11 @@ pub fn harness_path(path: &str) -> &str {
     path.trim_matches('/')
 }
 
+/// Whether `path` is `parent` or lies under it.
+fn is_or_under(path: &str, parent: &str) -> bool {
+    path == parent || path.starts_with(&format!("{parent}/"))
+}
+
 /// The directories above the harness paths, each once, the shallowest first: `tools` for `tools/kbench` and
 /// `tools/sub/bench`, and `tools/sub` after it.
 pub fn harness_ancestors(harness: &[String]) -> Vec<String> {
@@ -138,7 +143,12 @@ pub fn harness_ancestors(harness: &[String]) -> Vec<String> {
         let mut at = 0;
         while let Some(next) = path[at..].find('/') {
             let ancestor = &path[..at + next];
-            if !found.iter().any(|f| f == ancestor) {
+            // A harness path, or one under a harness path, is mounted read-only itself and is not mounted twice.
+            if !found.iter().any(|f| f == ancestor)
+                && !harness
+                    .iter()
+                    .any(|other| is_or_under(ancestor, harness_path(other)))
+            {
                 found.push(ancestor.to_string());
             }
             at += next + 1;
@@ -185,6 +195,10 @@ pub fn container_args(lane: &LaneConfig, container: &Isolated, command: &str) ->
         &lane.user,
         "--pids-limit",
         "4096",
+        // The output reaches the server through the attached streams; the runtime's own log would be written to its disk, out of
+        // the sight of the watcher of the job's directory.
+        "--log-driver",
+        "none",
         "--memory",
         &memory,
         "--memory-swap",
@@ -223,8 +237,14 @@ pub fn container_args(lane: &LaneConfig, container: &Isolated, command: &str) ->
         ]);
     }
     // After the mount of the checkout, so that they lie over it.
+    let mut mounted: Vec<&str> = Vec::new();
     for path in *harness {
         let path = harness_path(path);
+        // One that lies under another harness path (or is the same) is in that mount already.
+        if mounted.iter().any(|done| is_or_under(path, done)) {
+            continue;
+        }
+        mounted.push(path);
         args.extend([
             "-v".into(),
             format!("{job_dir}/harness/{path}:/work/{path}:ro"),
@@ -257,11 +277,16 @@ fn marker(job_dir: &str) -> String {
 /// The commands of a script that start the watcher of `watch` in the background, with `kill` to stop the command.
 fn watcher(watch: &Watch, job_dir: &str, kill: &str) -> String {
     format!(
-        "rm -f {marker}; ( while :; do sleep 2; used=$(du -sk {job} 2>/dev/null | cut -f1); \
-         set -- $(df -Pk {work} 2>/dev/null | awk 'NR==2 {{print $2, $4}}'); tk=$1; ak=$2; \
-         set -- $(df -Pi {work} 2>/dev/null | awk 'NR==2 {{print $2, $4}}'); ti=$1; ai=$2; \
-         if [ \"${{used:-0}}\" -gt {limit} ] || [ \"${{ak:-0}}\" -lt $((${{tk:-0}} / 20)) ] \
-            || [ \"${{ai:-0}}\" -lt $((${{ti:-0}} / 20)) ]; then : > {marker}; {kill}; exit 0; fi; done ) >/dev/null 2>&1 & w=$!; ",
+        "rm -f {marker}; \
+         ( while :; do sleep 2; \
+           used=$(timeout 20 du -skx {job} 2>/dev/null) || used=$(timeout 20 du -skx {job} 2>/dev/null) || used=999999999999; \
+           used=${{used%%[!0-9]*}}; [ -n \"$used\" ] || used=999999999999; \
+           if [ \"$used\" -gt {limit} ]; then : > {marker}; {kill}; exit 0; fi; done ) >/dev/null 2>&1 & w=$!; \
+         ( while :; do sleep 2; \
+           set -- $(df -Pk {work} 2>/dev/null | awk 'NR==2 {{print $2, $4}}'); tk=$1; ak=$2; \
+           set -- $(df -Pi {work} 2>/dev/null | awk 'NR==2 {{print $2, $4}}'); ti=$1; ai=$2; \
+           if [ \"${{ak:-0}}\" -lt $((${{tk:-0}} / 20)) ] || [ \"${{ai:-0}}\" -lt $((${{ti:-0}} / 20)) ]; then \
+             : > {marker}; {kill}; exit 0; fi; done ) >/dev/null 2>&1 & w2=$!; ",
         marker = marker(job_dir),
         job = quote(job_dir),
         work = quote(watch.work_dir),
@@ -294,7 +319,7 @@ pub fn direct_script(
                 ),
             ),
             format!(
-                "kill $w 2>/dev/null; if [ -e {} ]; then echo \"{token} disk\"; exit 0; fi; ",
+                "kill $w $w2 2>/dev/null; if [ -e {} ]; then echo \"{token} disk\"; exit 0; fi; ",
                 marker(job_dir)
             ),
         ),
@@ -348,7 +373,7 @@ pub fn contained_script(
                 &format!("{runtime} rm -f {name} >/dev/null 2>&1"),
             ),
             format!(
-                "kill $w 2>/dev/null; if [ -e {} ]; then {runtime} rm -f {name} >/dev/null 2>&1; echo \"{token} disk\"; exit 0; fi; ",
+                "kill $w $w2 2>/dev/null; if [ -e {} ]; then {runtime} rm -f {name} >/dev/null 2>&1; echo \"{token} disk\"; exit 0; fi; ",
                 marker(container.job_dir)
             ),
         ),
@@ -761,6 +786,64 @@ mod tests {
             environment: &[],
             harness,
         }
+    }
+
+    #[test]
+    fn harness_paths_that_lie_under_one_another_are_mounted_once() {
+        let paths = [
+            "bench".to_string(),
+            "bench/data".to_string(),
+            "tools/a/b".to_string(),
+        ];
+        let args = container_args(&lane(), &isolated("after", &paths), "true");
+        let mounts: Vec<&str> = args
+            .iter()
+            .enumerate()
+            .filter(|(at, _)| *at > 0 && args[*at - 1] == "-v")
+            .map(|(_, a)| a.as_str())
+            .collect();
+        let destinations: Vec<&str> = mounts
+            .iter()
+            .map(|m| m.split(':').nth(1).unwrap())
+            .collect();
+        let mut unique = destinations.clone();
+        unique.sort();
+        unique.dedup();
+        assert_eq!(unique.len(), destinations.len(), "{mounts:?}");
+        // `bench` is read-only and holds `bench/data`; only the directories above `tools/a/b` are over themselves.
+        assert!(
+            mounts
+                .iter()
+                .any(|m| m.ends_with("/harness/bench:/work/bench:ro")),
+            "{mounts:?}"
+        );
+        assert!(
+            !mounts.iter().any(|m| m.contains("bench/data")),
+            "{mounts:?}"
+        );
+        assert_eq!(harness_ancestors(&paths), ["tools", "tools/a"]);
+    }
+
+    #[test]
+    fn a_container_does_not_log_its_output_to_the_disk_of_the_runtime() {
+        let args = container_args(&lane(), &isolated("after", &[]), "true");
+        let at = args
+            .iter()
+            .position(|a| a == "--log-driver")
+            .expect("a log driver");
+        assert_eq!(args[at + 1], "none");
+    }
+
+    #[test]
+    fn the_watcher_counts_what_it_cannot_read_as_over_and_checks_the_disk_on_its_own() {
+        let watch = Watch {
+            work_dir: "/w",
+            disk_kib: 100,
+        };
+        let script = watcher(&watch, "/w/jobs/1", "kill-it");
+        assert!(script.contains("timeout 20 du -skx"), "{script}");
+        assert!(script.contains("|| used=999999999999"), "{script}");
+        assert!(script.contains("w2=$!"), "the disk's own loop: {script}");
     }
 
     #[test]

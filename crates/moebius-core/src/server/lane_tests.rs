@@ -2459,3 +2459,69 @@ async fn what_a_stopped_server_left_in_a_directory_of_a_side_is_removed_by_a_lim
         assert!(text.contains(&part), "{part} in {text}");
     }
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn what_the_head_left_on_the_disk_trips_the_next_command_of_the_merge_base_and_that_is_the_changes()
+ {
+    let steps = "[[step]]\nname = \"fill\"\ncommand = 'head -c 1500000 /dev/zero > big'\n\
+[[step]]\nname = \"check\"\non = \"both\"\ncommand = 'head -c 1000000 /dev/zero > more; sleep 30'\n";
+    let lane = Lane::new(Isolation::Off, steps).await;
+    let mut config = lane_config(Isolation::Off, "podman");
+    config.disk = "2m".into();
+    lane.app()
+        .lanes
+        .configure(vec![config], vec![lane.runner()]);
+    lane.code_approved().await;
+    let began = Instant::now();
+    lane.pass().await;
+    assert!(
+        began.elapsed() < Duration::from_secs(40),
+        "{:?}",
+        began.elapsed()
+    );
+    // The merge base's command wrote 1 MB beside the head's 1.5 MB, in the directory of one job.
+    let job = lane.the_job();
+    assert_eq!(job.state, "failed", "{job:?}");
+    assert!(
+        job.summary.contains("left the job's disk full"),
+        "{}",
+        job.summary
+    );
+    assert_eq!(
+        lane.app().store.lane_infrastructure_streak("gpu1").unwrap(),
+        0
+    );
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_directory_the_watcher_cannot_measure_counts_as_over_the_limit() {
+    let lane = Lane::new(Isolation::Off, &one_step("sleep 30")).await;
+    // A `du` that fails, as one does on a directory it cannot read.
+    let shim = lane.f._dir.path().join("failing-du");
+    std::fs::create_dir_all(&shim).unwrap();
+    std::fs::write(
+        shim.join("du"),
+        "#!/bin/sh\necho 'du: cannot read directory' >&2\nexit 1\n",
+    )
+    .unwrap();
+    std::fs::set_permissions(
+        shim.join("du"),
+        std::os::unix::fs::PermissionsExt::from_mode(0o755),
+    )
+    .unwrap();
+    let path = std::env::var("PATH").unwrap_or_default();
+    lane.app()
+        .lanes
+        .set_test_environment(vec![("PATH".into(), format!("{}:{path}", shim.display()))]);
+    lane.code_approved().await;
+    let began = Instant::now();
+    lane.pass().await;
+    assert!(
+        began.elapsed() < Duration::from_secs(25),
+        "{:?}",
+        began.elapsed()
+    );
+    let job = lane.the_job();
+    assert_eq!(job.state, "failed", "{job:?}");
+    assert!(job.summary.contains("wrote more than"), "{}", job.summary);
+}

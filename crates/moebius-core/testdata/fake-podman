@@ -82,7 +82,7 @@ if os.path.exists(here + ".fail") or ("--rm" in args and os.path.exists(here + "
 
 WITH_VALUE = {"--name", "--label", "--network", "--cap-drop", "--security-opt", "--user", "--pids-limit", "--tmpfs",
               "-e", "--device", "--group-add", "-v", "-w", "--timeout", "--memory", "--memory-swap", "--oom-score-adj",
-              "--ulimit", "--cpus"}
+              "--ulimit", "--cpus", "--log-driver"}
 flags = {}
 mounts = []  # (host path, container path)
 readonly = []  # the same, for a `:ro` mount, which lies over the others
