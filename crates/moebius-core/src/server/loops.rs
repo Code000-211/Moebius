@@ -1097,6 +1097,8 @@ mod tests {
     #[tokio::test(flavor = "multi_thread")]
     async fn a_person_merges_a_pull_request_from_the_app() {
         let f = Fixture::new().await;
+        // The classic merge message: the pull request's fields are not read.
+        crate::server::fake_github::classic_flow(&f.server.app, &f.repository);
         let change = f.offered_change().await;
 
         let app = f.server.app.clone();

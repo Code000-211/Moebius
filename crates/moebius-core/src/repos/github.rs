@@ -1007,7 +1007,12 @@ impl GitHub {
         title: &str,
         head: Option<&str>,
     ) -> Result<String, GitHubError> {
+        // A message of several lines is the title, then the body of the merge commit.
+        let (title, rest) = title.split_once("\n\n").unwrap_or((title, ""));
         let mut request = json!({ "commit_title": title, "merge_method": "merge" });
+        if !rest.trim().is_empty() {
+            request["commit_message"] = json!(rest.trim());
+        }
         // GitHub refuses the merge (409) when the head is not the one the person looked at.
         if let Some(head) = head {
             request["sha"] = json!(head);

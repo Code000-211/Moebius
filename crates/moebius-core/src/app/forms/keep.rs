@@ -11,7 +11,7 @@ use std::path::Path;
 use serde::Serialize;
 
 use super::comments::Kind;
-use super::pull::PullTemplate;
+use super::pull::{DEFAULT_ISSUE_TEMPLATE, PullTemplate};
 use crate::app::{App, AppError, Result};
 use crate::decide::Actor;
 use crate::repos::{commit_all, git};
@@ -23,6 +23,10 @@ pub const PULL_REQUEST_PATH: &str = ".github/PULL_REQUEST_TEMPLATE.md";
 pub const COMMENT_DIR: &str = ".github/moebius";
 /// The branch the templates are offered on.
 pub const SYNC_BRANCH: &str = "moebius/templates";
+/// The issue form in a repository.
+pub const ISSUE_FORM_PATH: &str = ".github/ISSUE_TEMPLATE/moebius.yml";
+/// The file of the issue template in a project's folder of templates.
+pub const ISSUE_FILE: &str = "issue.md";
 /// The file of the pull request template in a project's folder of templates.
 pub const PULL_REQUEST_FILE: &str = "pull-request.md";
 
@@ -76,6 +80,30 @@ impl App {
         self.pull_template_checked(repository).0
     }
 
+    /// The issue template of the repository: the project's `issue.md`, else the one Moebius ships.
+    pub fn issue_template(&self, repository: &Repository) -> PullTemplate {
+        self.project_template(repository, ISSUE_FILE)
+            .and_then(|text| PullTemplate::read(&text).ok())
+            .unwrap_or_else(|| {
+                PullTemplate::read(DEFAULT_ISSUE_TEMPLATE)
+                    .expect("the shipped template has sections")
+            })
+    }
+
+    /// What the card's issue says, read by the issue template (`card.issue`); none for an issue made by a backlog sync,
+    /// which has a format of its own.
+    pub fn issue_fields(&self, card: &crate::store::Card) -> Option<super::pull::Pull> {
+        let repository = self.repository(card.repository_id).ok()?;
+        if self.store.backlog_item_of(card.id).ok()?.is_some() {
+            return None;
+        }
+        Some(super::pull::parse_with(
+            &card.body,
+            &self.issue_template(&repository),
+            false,
+        ))
+    }
+
     /// The text of the template of a comment kind: the project's, else the one Moebius ships.
     pub fn comment_template(&self, repository: &Repository, kind: Kind) -> String {
         self.project_template(repository, &format!("{}.md", kind.file()))
@@ -98,6 +126,12 @@ impl App {
             path: PULL_REQUEST_PATH.into(),
             first_line: String::new(),
         }];
+        templates.push(TemplateInfo {
+            name: "issue".into(),
+            source: source(ISSUE_FILE),
+            path: ISSUE_FORM_PATH.into(),
+            first_line: String::new(),
+        });
         for kind in Kind::ALL {
             templates.push(TemplateInfo {
                 name: kind.file().into(),
@@ -119,6 +153,10 @@ impl App {
             PULL_REQUEST_PATH.to_string(),
             self.pull_template(repository).file(),
         )];
+        files.push((
+            ISSUE_FORM_PATH.to_string(),
+            self.issue_template(repository).issue_form(),
+        ));
         for kind in Kind::ALL {
             files.push((
                 format!("{COMMENT_DIR}/{}.md", kind.file()),

@@ -366,6 +366,32 @@ impl App {
         )))
     }
 
+    /// The title and body the merge of the change carries, from the fields of its pull request (ADR 0034): the `Item` as the
+    /// subject, then what the change does and `Fixes #N`, in place of the forge's default. None when the body was not read
+    /// or has no item, and the merge says what it always said.
+    pub(crate) fn merge_message_from_fields(&self, change: &Change, card: &Card) -> Option<String> {
+        let parsed: pull::Pull = serde_json::from_str(change.pull_fields.as_deref()?).ok()?;
+        let item = parsed
+            .fields
+            .get(&slug("Item"))?
+            .lines()
+            .next()?
+            .trim()
+            .to_string();
+        if item.is_empty() {
+            return None;
+        }
+        let mut message = item;
+        if let Some(what) = parsed.fields.get(&slug("What the change does")) {
+            message.push_str(&format!("\n\n{}", cut(what, 2_000)));
+        }
+        let own = change.repository_id == Some(card.repository_id);
+        if let Some(number) = parsed.fixes.first().copied().or(own.then_some(card.number)) {
+            message.push_str(&format!("\n\nFixes #{number}"));
+        }
+        Some(redact(&message))
+    }
+
     /// Tells the issue where the work is, once: the link to the pull request, in the form of the server's replies. The
     /// issue holds nothing else of the work.
     pub(crate) fn link_pull_request(

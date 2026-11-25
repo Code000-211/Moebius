@@ -65,6 +65,17 @@ headings. A section the report has none for is `Not reported.`; `Item` is `#<num
 report's first heading counts as `What the change does`. What the Coder says in `## Review answer` is not part of the
 body. Each section is cut at 6,000 characters, and the body is redacted.
 
+## The issue template
+
+A Markdown file of sections like the pull request template, without the first line: the shipped one has `### Item (optional)`,
+`### What is wanted` and `### How we will know it is done`. A project replaces it with
+`projects/<project>/templates/issue.md`. The repository's copy is a **GitHub issue form**,
+`.github/ISSUE_TEMPLATE/moebius.yml`, made from the sections: the first is a one-line `input`, the others are `textarea`s, a
+required section is `validations: required: true`. GitHub writes an answered form into the issue body as `### <label>` and the
+answer, so the body is read by the same headings: `card.issue.fields` (by slug) and `card.issue.missing` in
+[column scripts](column-scripts.md#the-card-argument). An issue that a backlog sync made keeps the backlog's own format and
+has no `card.issue`. Nothing is replied for a missing issue section.
+
 ## The comment templates
 
 Each kind of comment starts with a fixed first line that names it (the first line with words, in any case). `read`
@@ -111,6 +122,7 @@ and the reply to a measurement keep their sentences.
 | What | Moebius ships | A project's | The repository's copy |
 |---|---|---|---|
 | Pull request template | `PullTemplate::standard` | `projects/<project>/templates/pull-request.md` | `.github/PULL_REQUEST_TEMPLATE.md` |
+| Issue template | `DEFAULT_ISSUE_TEMPLATE` | `projects/<project>/templates/issue.md` | `.github/ISSUE_TEMPLATE/moebius.yml` (an issue form) |
 | A comment template | `Kind::template` | `projects/<project>/templates/<name>.md` | `.github/moebius/<name>.md` |
 
 The project is the repository's home project. A template file is a project file of the harness configuration
@@ -134,6 +146,25 @@ forge has drafts (GitHub, GitLab and Forgejo):
 | The review | `moebius.post_review(card.review)` writes the verdict as a review of the pull request: `REQUEST_CHANGES` with a comment on each line `card.review.comments` names, or `APPROVE`, tied to the head that was read. Comments on lines the diff does not have go into the summary. Once for each round (the number of successful `code` runs) and head. A forge that refuses a verdict on the request of its own user takes it as a review that only comments (`COMMENT`), whose body starts with `Approved.` or `Changes requested.`; one that refuses the lines takes it without them, in the summary. |
 | The round after a review that asked for changes | The Coder's `## Review answer` section is written as a `## Review answer` comment on the pull request, one numbered line for each finding, `(finding N was not answered)` for one it gave no line; once for each head. The Reviewer's next prompt gets it, fenced. |
 | Approval | `moebius.offer_change` takes the pull request out of draft (GitHub `markPullRequestReadyForReview`, the prefix of a title taken off) and offers it as before; it merges through [the merge gate](desktop-api.md#the-merge-gate) as before. |
+
+**Fields are claims, never decisions.** What the author of a pull request writes (the `Measurement` state, the tests, any
+section) is data for the Reviewer. It never satisfies [the merge gate](desktop-api.md#the-merge-gate), lifts
+`require_measurement` or stands for the `no-measurement` label, which only a person sets; only an accepted measurement of a
+registered measurer does. The same holds for the fields of a comment.
+
+**The merge message.** When the server merges a change whose pull request body was read, the merge commit's title is the
+first line of `Item` and its body is `What the change does`, then `Fixes #N` (for a change in the card's own repository), cut
+and redacted; otherwise the message is as before (`Merge #<number>: <title>`). On GitHub the title is `commit_title` and the
+rest `commit_message`.
+
+**Branches.** Own work is on `moebius/card-<number>`, or `moebius/<ID>-card-<number>` when the issue was made from a backlog
+item (`moebius/K-47-card-12`), so people and the binding of a pull request to its issue
+([ADR 0033](../adr/0033-measurements-and-reviews-flow-without-the-owners-clicks.md)) see the item. A change that has a branch
+keeps it.
+
+**A card under way when `work_on_forge` turns on.** `moebius.publish_change()` runs at every tick of In review, so a card
+with a pushed branch and no pull request gets its draft at the next tick, and a verdict it already has is written once. A
+card in Ready to merge has a pull request that is not a draft and is not made one.
 
 A review finding names a line with `FILE: <path>:<line>` after its `FINDING` line or its `EVIDENCE`; a range
 `path:12-14` counts as its first line, and a line that is no place is ignored.

@@ -29,6 +29,18 @@ pub const DEFAULT_TEMPLATE: &str = "Fixes #N
 <!-- One of `measured`, `needs testing` or `not needed`, then the reason. -->
 ";
 
+/// The issue template Moebius ships: the sections of a GitHub issue form (`.github/ISSUE_TEMPLATE/moebius.yml`), which
+/// GitHub writes into the issue body as `### Label` and the answer. It has no first line.
+pub const DEFAULT_ISSUE_TEMPLATE: &str = "### Item (optional)
+<!-- The backlog item this is for, such as K-47. -->
+
+### What is wanted
+<!-- What is wrong or missing, and what should be true instead. -->
+
+### How we will know it is done
+<!-- The test or the measurement that shows it. -->
+";
+
 /// The heading of the section that holds the measurement state, which the server reads further than its text.
 pub const MEASUREMENT_HEADING: &str = "Measurement";
 /// The heading of the section that holds the checklist of tests.
@@ -130,6 +142,29 @@ impl PullTemplate {
         Ok(Self { sections })
     }
 
+    /// The template as a GitHub issue form: a one-line input for the first section, a text area for each other, required
+    /// where the section is. GitHub writes each answer into the issue under `### <label>`, which [`parse_with`] reads.
+    pub fn issue_form(&self) -> String {
+        let mut text = String::from(
+            "name: Moebius issue\ndescription: An issue Moebius and its helpers read by its sections.\nbody:\n",
+        );
+        for (at, section) in self.sections.iter().enumerate() {
+            let kind = if at == 0 { "input" } else { "textarea" };
+            text.push_str(&format!(
+                "  - type: {kind}\n    id: {}\n    attributes:\n      label: {:?}\n",
+                slug(&section.heading),
+                section.heading
+            ));
+            if !section.hint.trim().is_empty() {
+                text.push_str(&format!("      description: {:?}\n", section.hint.trim()));
+            }
+            if section.required {
+                text.push_str("    validations:\n      required: true\n");
+            }
+        }
+        text
+    }
+
     /// The template as the Markdown file a forge shows, for `.github/PULL_REQUEST_TEMPLATE.md`.
     pub fn file(&self) -> String {
         let mut text = format!("{FIXES_LINE}\n");
@@ -210,6 +245,12 @@ fn measurement(text: &str) -> Option<MeasurementField> {
 /// Reads `body` by the headings of `template`. A section is the text up to the next heading; the first lines before the
 /// first heading are searched for what the pull request closes.
 pub fn parse(body: &str, template: &PullTemplate) -> Pull {
+    parse_with(body, template, true)
+}
+
+/// Reads `body` by the headings of `template` as [`parse`] does; an issue has no `Fixes #N` line to lack
+/// (`needs_fixes` false).
+pub fn parse_with(body: &str, template: &PullTemplate, needs_fixes: bool) -> Pull {
     let body = HTML_COMMENT.replace_all(body, "");
     let mut intro = String::new();
     let mut sections: Vec<(String, String)> = Vec::new();
@@ -263,7 +304,7 @@ pub fn parse(body: &str, template: &PullTemplate) -> Pull {
         .fields
         .get(&slug(MEASUREMENT_HEADING))
         .and_then(|text| measurement(text));
-    if pull.fixes.is_empty() {
+    if needs_fixes && pull.fixes.is_empty() {
         pull.missing.push(FIXES_LINE.to_string());
     }
     for section in template.sections.iter().filter(|s| s.required) {
@@ -385,6 +426,21 @@ mod tests {
         assert!(parse(&body, &template).missing.is_empty());
         let bare = render(&template, "Fixes #9", &BTreeMap::new());
         assert!(bare.contains("Not reported."));
+    }
+
+    #[test]
+    fn an_issue_form_is_made_from_the_sections_and_its_body_is_read_back() {
+        let template = PullTemplate::read(DEFAULT_ISSUE_TEMPLATE).unwrap();
+        let form = template.issue_form();
+        assert!(form.contains("type: input\n    id: item\n"), "{form}");
+        assert!(form.contains("label: \"What is wanted\""), "{form}");
+        assert!(form.contains("required: true"), "{form}");
+        // GitHub writes an answered form as `### Label` and the answer; the item is optional.
+        let body = "### Item\n\n_No response_\n\n### What is wanted\n\nA cache.\n\n### How we will know it is done\n\nbench\n";
+        let issue = parse_with(body, &template, false);
+        assert!(issue.missing.is_empty(), "{:?}", issue.missing);
+        let thin = parse_with("### What is wanted\n\nA cache.\n", &template, false);
+        assert_eq!(thin.missing, vec!["How we will know it is done"]);
     }
 
     #[test]

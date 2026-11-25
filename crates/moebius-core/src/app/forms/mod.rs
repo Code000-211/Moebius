@@ -9,7 +9,10 @@ mod own;
 pub mod pull;
 mod read;
 
-pub use keep::{COMMENT_DIR, PULL_REQUEST_FILE, PULL_REQUEST_PATH, SYNC_BRANCH, TemplateOverview};
+pub use keep::{
+    COMMENT_DIR, ISSUE_FORM_PATH, PULL_REQUEST_FILE, PULL_REQUEST_PATH, SYNC_BRANCH,
+    TemplateOverview,
+};
 
 pub use comments::{Kind, Reply};
 pub use own::{OwnReview, Posted};

@@ -4641,7 +4641,7 @@ effect only where the forge has drafts (GitHub, GitLab, Forgejo); a repository o
 
 The pull request template and the comment templates in effect for the repository ([templates](templates.md)):
 `{"templates": [{"name", "source", "path", "first_line"}], "sections": [{"heading", "required", "hint"}], "problem"}`.
-`name` is `pull_request` or the kind of a comment (`measurement`, `done`, `review-answer`, `take`, `release`), `source` is
+`name` is `pull_request`, `issue` (the issue form) or the kind of a comment (`measurement`, `done`, `review-answer`, `take`, `release`), `source` is
 `default` (the one Moebius ships) or `project` (the project's, in the harness configuration repository), `path` is where the
 repository keeps its copy, `first_line` is what a comment of the kind starts with (empty for the pull request template),
 `sections` are the headings of the pull request template in effect, and `problem` says why the project's pull request

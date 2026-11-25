@@ -278,8 +278,11 @@ impl App {
             }
         }
         // The branch of the card's change when it was published, before a change was stored for it.
+        if own {
+            branches.insert(format!("moebius/card-{}", card.number));
+        }
         branches.insert(match own {
-            true => format!("moebius/card-{}", card.number),
+            true => self.own_branch(card),
             false => format!("moebius/card-{}-{}", card.project_key, card.project_number),
         });
         self.repos.remove_card_work(

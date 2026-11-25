@@ -352,6 +352,18 @@ impl Store {
     }
 
     /// The issues of the repository a backlog sync made, with the item each is for.
+    /// The ID of the backlog item the card's issue was made from (`K-47`), if it was.
+    pub fn backlog_item_of(&self, card_id: i64) -> Result<Option<String>> {
+        Ok(self
+            .read()
+            .query_row(
+                "SELECT item_id FROM backlog_cards WHERE card_id = ?1",
+                [card_id],
+                |r| r.get(0),
+            )
+            .optional()?)
+    }
+
     pub fn backlog_cards_of(&self, repository_id: i64) -> Result<Vec<(i64, String)>> {
         self.rows(
             "SELECT b.card_id, b.item_id FROM backlog_cards b JOIN cards c ON c.id = b.card_id \

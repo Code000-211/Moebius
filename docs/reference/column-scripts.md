@@ -109,6 +109,7 @@ end
 | `card.changes[i].fields` | table | What the pull request's body says, read by the pull request template: the text of each section by the slug of its heading (`item`, `what_the_change_does`, `tests_i_ran`, `measurement`, and a project's own), empty until the body was read. See [templates](templates.md#how-a-body-is-read). |
 | `card.changes[i].missing` | table (array of strings) | The required parts of the pull request template the body lacks, as the template writes them (`Fixes #N`, a heading); empty when it has them all. |
 | `card.changes[i].measurement` | string or nil | `measured`, `needs testing` or `not needed`, as the `Measurement` section starts; nil when it does not. |
+| `card.issue` | table or nil | What the issue's body says, read by the repository's [issue template](templates.md#the-issue-template): `card.issue.fields` is the text of each section by the slug of its heading, `card.issue.missing` the required sections it lacks. nil for an issue a backlog sync made. |
 | `card.change` | table or nil | The first of `card.changes`, the change of the card's own repository, so a script reads `card.change.fields` and `card.change.missing`; nil until the card has a change. |
 | `card.changes[i].checks` | string | `pending`, `success`, `failure` or `none`, for the change's current commit. See Checks and conflicts. |
 | `card.changes[i].failed_checks` | string or nil | On GitHub, the failing check runs, one per line; nil unless `checks` is `failure`. |

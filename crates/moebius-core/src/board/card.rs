@@ -27,6 +27,8 @@
 //! - `card.review`: the verdict and findings of the review since the card's latest `code` run, if there is one; for a
 //!   review along two axes also its `judgements`, its `comments` (the findings that name a file and a line, each with
 //!   `path`, `line` and `body`) and the `standards` and `spec` axes (see `review`).
+//! - `card.issue`: what the issue's body says, read by the repository's issue template (`fields` by the slug of each
+//!   heading, `missing` the required sections it lacks); nil for an issue a backlog sync made.
 //! - `card.changes[i].fields`, `.missing`: what the pull request's body says, read by the pull request template (see
 //!   `app::forms::pull`).
 //! - `card.note`: why the card went back to coding, if it did and no `code` run has succeeded since.
@@ -157,6 +159,17 @@ impl Engine {
         // The card's own repository's change, for the fields of its pull request: `card.change.fields`.
         t.set("change", changes.get::<Option<Table>>(1)?)?;
         t.set("changes", changes)?;
+        // What the issue says, read by the issue template; nil for an issue a backlog sync made.
+        if let Some(issue) = self.app.issue_fields(card) {
+            let i = lua.create_table()?;
+            let fields = lua.create_table()?;
+            for (name, text) in &issue.fields {
+                fields.set(name.as_str(), text.as_str())?;
+            }
+            i.set("fields", fields)?;
+            i.set("missing", issue.missing)?;
+            t.set("issue", i)?;
+        }
         refuse_the_old_change(lua, &t)?;
         t.set("trusted", self.app.is_trusted(card))?;
         t.set("confirmed", card.confirmed)?;

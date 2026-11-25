@@ -66,6 +66,14 @@ way a developer does: commits, a draft pull request, reviews, an answer to each 
   6. The issue holds only the status label and the link to the pull request.
   On a forge without drafts, and where the setting is off, the pull request opens when the change is offered, as before.
 
+- **Fields are claims.** Nothing a pull request or comment author writes satisfies the merge gate, lifts
+  `require_measurement` or stands for `no-measurement`; the Reviewer reads it as data.
+- **An issue template too**, kept as a GitHub issue form in `.github/ISSUE_TEMPLATE/moebius.yml` and read by the same
+  headings (`card.issue`); backlog-sync issues keep their format.
+- **The merge message** comes from the pull request's fields (the item as the subject, what the change does, `Fixes #N`), and
+  **branches** name the backlog item when the issue has one (`moebius/K-47-card-12`).
+- **A card under way** when the setting turns on gets its draft at the next tick; one in Ready to merge is not reopened.
+
 ## Consequences
 
 - A repository on GitHub, GitLab or Forgejo gets a pull request at the end of the first round instead of at the end of the

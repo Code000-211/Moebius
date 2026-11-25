@@ -493,7 +493,12 @@ impl App {
             "merge",
             reason,
         )?;
-        let message = match change.card_id.map(|id| self.card(id)).transpose()? {
+        let card_of_change = change.card_id.map(|id| self.card(id)).transpose()?;
+        let from_fields = card_of_change
+            .as_ref()
+            .and_then(|card| self.merge_message_from_fields(&change, card));
+        let message = match card_of_change {
+            Some(_) if from_fields.is_some() => from_fields.unwrap_or_default(),
             // The issue's number is one of the card's own repository; another repository's merge names the card.
             Some(card) if change.repository_id == Some(card.repository_id) => {
                 format!("Merge #{}: {}", card.number, card.title)

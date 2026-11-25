@@ -115,7 +115,7 @@ impl App {
             // another project and so has another key.
             let branch = match &existing {
                 Some(change) => change.branch.clone(),
-                None if own => format!("moebius/card-{}", card.number),
+                None if own => self.own_branch(&card),
                 None => format!("moebius/card-{}-{}", card.project_key, card.project_number),
             };
             let publish = Publish {
@@ -214,6 +214,28 @@ impl App {
         let change = self.change(change.id)?;
         self.bus.publish(Event::ChangeUpdated(change.clone()));
         Ok(change)
+    }
+
+    /// The branch of the card's change in its own repository: `moebius/card-<number>`, or `moebius/<ID>-card-<number>` when
+    /// its issue was made from a backlog item (`moebius/K-47-card-12`), so that people and the binding of a pull request to
+    /// its issue (ADR 0033) see the item.
+    pub(crate) fn own_branch(&self, card: &Card) -> String {
+        match self
+            .store
+            .backlog_item_of(card.id)
+            .ok()
+            .flatten()
+            .map(|id| id.trim().to_string())
+            .filter(|id| {
+                !id.is_empty()
+                    && id.len() <= 40
+                    && id
+                        .chars()
+                        .all(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_'))
+            }) {
+            Some(id) => format!("moebius/{id}-card-{}", card.number),
+            None => format!("moebius/card-{}", card.number),
+        }
     }
 
     /// The card's open changes, one per repository it works in that has one, in the order the card names them.

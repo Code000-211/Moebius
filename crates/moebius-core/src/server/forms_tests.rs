@@ -974,3 +974,142 @@ async fn an_own_pull_request_is_left_alone_by_the_unbound_handling_and_the_issue
     let status: Vec<&String> = last.1.iter().filter(|l| l.starts_with("status:")).collect();
     assert_eq!(status.len(), 1, "{last:?}");
 }
+
+// ---------------------------------------------------------------------------------------------------------------
+// Branch names, the merge message, the issue template and cards that are already under way
+
+#[tokio::test(flavor = "multi_thread")]
+async fn an_issue_made_from_a_backlog_item_has_its_work_on_a_branch_that_names_the_item() {
+    let (f, card) = reported().await;
+    f.server
+        .app
+        .store
+        .set_backlog_card(card.id, card.project_id, "K-47")
+        .unwrap();
+    let engine = f.reviewing_engine();
+    f.published(&engine, &card).await;
+    let change = f.own_change(&card);
+    assert_eq!(change.branch, "moebius/K-47-card-1");
+    assert!(git(&f.remote, &["rev-parse", "--verify", "moebius/K-47-card-1"]).is_ok());
+    assert_eq!(
+        f.fake.pulls.lock().unwrap().opened[0]["head"],
+        "moebius/K-47-card-1"
+    );
+    // An issue with no item keeps `moebius/card-<number>`, as the tests above show, and a backlog issue has no issue fields.
+    assert!(f.server.app.issue_fields(&card).is_none());
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn the_merge_carries_the_item_and_what_the_change_does_from_the_pull_request() {
+    let (f, card) = reported().await;
+    let engine = f.reviewing_engine();
+    f.published(&engine, &card).await;
+    f.axis_says(&card, "review-standards", "VERDICT: approve");
+    f.axis_says(&card, "review-spec", "VERDICT: approve");
+    f.tick(&engine, &card).await;
+    let change = f.own_change(&card);
+    let (app, id) = (f.server.app.clone(), change.id);
+    tokio::task::spawn_blocking(move || app.merge_change(&owner(), id, "ok").unwrap())
+        .await
+        .unwrap();
+    let merged = f.merged_requests();
+    assert_eq!(merged[0]["commit_title"], "#1: Issue 1");
+    let body = merged[0]["commit_message"].as_str().unwrap();
+    assert!(body.starts_with("Adds feature.txt."), "{body}");
+    assert!(body.ends_with("Fixes #1"), "{body}");
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn the_sync_keeps_an_issue_form_and_the_card_reads_its_issue_by_it() {
+    let f = Fixture::new().await;
+    let (app, id) = (f.server.app.clone(), f.repository.id);
+    tokio::task::spawn_blocking(move || app.sync_templates(&owner(), id, "").unwrap())
+        .await
+        .unwrap()
+        .unwrap();
+    let form = git(
+        &f.remote,
+        &[
+            "show",
+            "moebius/templates:.github/ISSUE_TEMPLATE/moebius.yml",
+        ],
+    )
+    .unwrap();
+    assert!(form.contains("label: \"What is wanted\""), "{form}");
+
+    f.fake.set_issues(
+        "\"v1\"",
+        vec![issue(1, "open", "leon", "### What is wanted\n\nA cache.\n")],
+    );
+    f.server.poll_github().await;
+    let card = f.card(1).unwrap();
+    let read = f.server.app.issue_fields(&card).unwrap();
+    assert_eq!(read.fields["what_is_wanted"], "A cache.");
+    assert_eq!(read.missing, vec!["How we will know it is done"]);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_card_under_way_when_the_setting_turns_on_gets_its_draft_and_its_verdict_once() {
+    let (f, card) = reported().await;
+    super::fake_github::classic_flow(&f.server.app, &f.repository);
+    let engine = f.reviewing_engine();
+    f.tick(&engine, &card).await;
+    assert!(
+        f.fake.pulls.lock().unwrap().opened.is_empty(),
+        "the branch is pushed, no pull request"
+    );
+    f.axis_says(&card, "review-standards", "VERDICT: approve");
+    f.axis_says(&card, "review-spec", CHANGES);
+
+    // The setting turns on: the next tick opens the draft, and the verdict that was given is written, once.
+    f.server
+        .app
+        .edit_flow(
+            &owner(),
+            f.repository.id,
+            &crate::app::FlowEdit {
+                work_on_forge: Some(true),
+                ..Default::default()
+            },
+            "test",
+        )
+        .unwrap();
+    f.tick(&engine, &card).await;
+    assert_eq!(f.fake.pulls.lock().unwrap().opened.len(), 1);
+    assert_eq!(f.fake.pulls.lock().unwrap().opened[0]["draft"], true);
+    f.green(&card).await;
+    f.tick(&engine, &card).await;
+    f.tick(&engine, &card).await;
+    assert_eq!(f.review_posts().len(), 1);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_card_waiting_to_merge_is_not_reopened_as_a_draft() {
+    let (f, card) = reported().await;
+    super::fake_github::classic_flow(&f.server.app, &f.repository);
+    let (app, id) = (f.server.app.clone(), card.id);
+    tokio::task::spawn_blocking(move || app.offer_change(id).unwrap())
+        .await
+        .unwrap();
+    assert_eq!(f.card(1).unwrap().column, "Ready to merge");
+    f.server
+        .app
+        .edit_flow(
+            &owner(),
+            f.repository.id,
+            &crate::app::FlowEdit {
+                work_on_forge: Some(true),
+                ..Default::default()
+            },
+            "test",
+        )
+        .unwrap();
+    let engine = f.reviewing_engine();
+    f.tick(&engine, &f.card(1).unwrap()).await;
+    f.server.poll_github().await;
+    let change = f.own_change(&f.card(1).unwrap());
+    assert!(!change.draft);
+    assert_eq!(f.fake.pulls.lock().unwrap().opened.len(), 1);
+    assert!(f.fake.pulls.lock().unwrap().ready.is_empty());
+    assert_eq!(f.card(1).unwrap().column, "Ready to merge");
+}

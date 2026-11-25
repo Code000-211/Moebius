@@ -106,6 +106,10 @@ fn made_up_card(
     let changes = lua.create_table()?;
     super::card::array_of_changes(lua, &changes)?;
     t.set("changes", changes)?;
+    let issue = lua.create_table()?;
+    issue.set("fields", lua.create_table()?)?;
+    issue.set("missing", Vec::<String>::new())?;
+    t.set("issue", issue)?;
     t.set("rounds", 0)?;
     t.set("reviews", 0)?;
     t.set("tokens", 0)?;

@@ -333,6 +333,15 @@ current:
 `.github/` is a locked path of [the merge gate](software-factory.md), so that pull request waits for the owner's click
 in the Inbox, which says so; Moebius never merges it by itself.
 
+**Issues** have a template too, kept as a GitHub issue form, `.github/ISSUE_TEMPLATE/moebius.yml`, with the sections `Item
+(optional)`, `What is wanted` and `How we will know it is done`; a column script reads an issue as `card.issue.fields`.
+Issues the backlog sync makes keep their own format. For a repository with a measured merge bar, copy
+[`examples/project-templates/`](../../examples/project-templates/README.md) to `projects/<project>/templates/`: an item ID
+such as `K-47`, a `[measured]` or `[needs testing]` tag on the title, and an optional table of numbers.
+
+**A field is a claim.** What a pull request says (`Measurement: not needed`, a ticked test) is data for the Reviewer. It never
+satisfies the merge gate, lifts `require_measurement` or replaces the `no-measurement` label, which only a person sets.
+
 **What is posted.** Plans, commits, tests with numbers, findings and waiting reasons: what happened. Never a prompt,
 the output of a tool, a token, a cost or a link into Moebius. Everything is redacted first.
 
@@ -351,6 +360,11 @@ way a developer does ([ADR 0034](../adr/0034-templates-and-agents-that-work-on-t
 4. The next round **answers each finding** in a `## Review answer` comment, and the Reviewer's next prompt gets it.
 5. On approval the pull request leaves draft and merges through the merge gate as before.
 6. The issue holds only the status label and the link to the pull request: the history is in the pull request.
+7. The branch is `moebius/card-12`, or `moebius/K-47-card-12` when the issue came from a backlog item, and the merge commit
+   says the item and what the change does, from the pull request's fields, with `Fixes #12`.
+
+A card that is already under way when you turn the setting on gets its draft pull request at the next tick of In review, and a
+verdict it already has is written once; a card waiting in Ready to merge is left as it is.
 
 Turn it off for a repository with `PUT /v1/repositories/{id}/flow` `{"work_on_forge": false}` or the repository's flow
 settings in the web app; the pull request then opens when the change is offered, as before.
