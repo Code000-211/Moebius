@@ -69,6 +69,23 @@ export function isDone(card: Pick<Card, "column" | "column_class">, source?: Has
   return cardClass(card, source) === "Done";
 }
 
+/**
+ * Gives each card that has no `column_class` (the lists and views of the server carry none; only the snapshot does) the
+ * class of its column in its own project's columns. A project that is not known has the built-in columns, so its
+ * custom column falls back to "Not started"; a `column_class` the server sent stays.
+ */
+export function withProjectClasses<T extends Pick<Card, "column" | "column_class" | "project_id">>(
+  cards: readonly T[],
+  projects: ReadonlyArray<{ id: number; columns?: readonly ColumnDef[] | null }>,
+): T[] {
+  const byId = new Map(projects.map((project) => [project.id, project]));
+  return cards.map((card) =>
+    card.column_class !== undefined
+      ? card
+      : { ...card, column_class: classOf(byId.get(card.project_id), card.column) },
+  );
+}
+
 /** Where `name` stands among the columns, from 0; the number of columns for a name that is not one of them. */
 export function columnIndex(source: HasColumns | undefined, name: string): number {
   const columns = columnsOf(source);

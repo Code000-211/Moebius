@@ -20,6 +20,7 @@ import { Link, Navigate, useNavigate, useParams, useSearchParams } from "react-r
 import { snapshot } from "../../api/calls/board";
 import { listProjects } from "../../api/calls/projects";
 import { deleteView, editView, listViews, viewCards } from "../../api/calls/views";
+import { withProjectClasses } from "../../api/columns";
 import { keys } from "../../api/keys";
 import type { View, ViewFields, ViewLayout } from "../../api/types/views";
 import { Button } from "../../ui/components/Button";
@@ -200,9 +201,13 @@ function OpenView({
     queryKey: [...keys.viewCards(view.id), view.layout, view.sort, view.descending, view.filter],
     queryFn: () => viewCards(view.id),
   });
-  const groups = groupsOf(view.layout, shown.data?.cards ?? []);
   // The names of what the filter holds by id, from the lists other pages read too.
   const projects = useQuery({ queryKey: keys.projects, queryFn: listProjects });
+  // The cards of a view carry no column class, so each gets the one its column has in its own project.
+  const groups = groupsOf(
+    view.layout,
+    withProjectClasses(shown.data?.cards ?? [], projects.data ?? []),
+  );
   const boards = useQuery({ queryKey: keys.snapshot, queryFn: () => snapshot() });
   const names = {
     projects: new Map((projects.data ?? []).map((p) => [p.id, p.name])),

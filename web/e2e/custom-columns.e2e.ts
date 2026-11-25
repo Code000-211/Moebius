@@ -140,5 +140,15 @@ describe.skipIf(usesRealServer)("custom board columns", () => {
     await page.getByText("kanban.toml").first().waitFor();
     // The script of a custom column opens in the same editor as the others.
     await page.getByRole("textbox", { name: "Script of Being measured" }).waitFor();
+    // A column the project defines never "runs the built-in script": its script is the project's file, or its class's.
+    const body = page.getByRole("main");
+    await body.getByText("runs the script of In review").waitFor();
+    expect(await body.innerText()).not.toContain("built in");
+    await body.getByText("A built-in column runs the built-in script").waitFor();
+  });
+
+  it("keeps the built-in wording for a built-in column's script", async () => {
+    await open("/projects/1/settings/columns/Backlog?repository=1", "demo › Settings");
+    await page.getByRole("main").getByText("built in", { exact: false }).first().waitFor();
   });
 });
