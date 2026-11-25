@@ -765,6 +765,7 @@ At the top:
 | `server/fake_forgejo.rs` | For the tests only: a fake Forgejo with one repository, a server that polls it, and the tests of the Forgejo forge through it. |
 | `server/commands_tests.rs` | For the tests only: commands in issue comments, against the fake GitHub. |
 | `server/taking_tests.rs` | For the tests only: working with people on other servers, against the fake GitHub. |
+| `server/factory_tests.rs` | For the tests only: the merge gate, the freeze and its breakers, the review brief and `approve_code`, against the fake GitHub. |
 | `server/reviews_tests.rs` | For the tests only: the review of a followed pull request after `/done`, against the fake GitHub. |
 | `server/api/mod.rs` | The desktop API: the state it needs, the token check, the router that merges the routes of its parts, how a failure becomes a status, and `GET /v1/health`. |
 | `server/api/cards.rs` | The snapshot of every board, issues, cards and their changes (edit, approve, block, unblock, delete, retry, merge, reject), a card's runs and history. |

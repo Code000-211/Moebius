@@ -152,7 +152,7 @@ protocol = "anthropic"
             .unwrap_or_else(|| panic!("no plugin {name}: {plugins}"))
             .clone()
     };
-    assert_eq!(plugin("guard")["decides"], json!(["tool_call"]));
+    assert_eq!(plugin("guard")["decides"], json!(["merge_check", "tool_call"]));
     assert_eq!(plugin("guard")["kinds"], json!(["decider"]));
     assert_eq!(plugin("decision-model")["decides"], json!([]));
 

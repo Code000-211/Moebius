@@ -3614,7 +3614,7 @@ The plugins the plugin host has loaded, which answer the decisions (see [the plu
 {
   "time_limit_seconds": 30,
   "plugins": [
-    {"name": "guard", "version": "0.1.0", "kinds": ["decider"], "decides": ["tool_call"], "process": null,
+    {"name": "guard", "version": "0.1.0", "kinds": ["decider"], "decides": ["merge_check", "tool_call"], "process": null,
      "enabled": true},
     {"name": "allow-reads", "version": "0.1.0", "kinds": ["decider"], "decides": ["start_card"],
      "process": {"program": "/srv/plugins/allow-reads", "state": "running", "restarts": 0, "error": null,
