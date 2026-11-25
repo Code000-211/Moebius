@@ -2525,3 +2525,91 @@ async fn a_directory_the_watcher_cannot_measure_counts_as_over_the_limit() {
     assert_eq!(job.state, "failed", "{job:?}");
     assert!(job.summary.contains("wrote more than"), "{}", job.summary);
 }
+
+/// Puts a program called `name` that is `script` in front of the `PATH` of the machine.
+fn shim(lane: &Lane, name: &str, script: &str) {
+    let dir = lane.f._dir.path().join(format!("shim-{name}"));
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(dir.join(name), script).unwrap();
+    std::fs::set_permissions(
+        dir.join(name),
+        std::os::unix::fs::PermissionsExt::from_mode(0o755),
+    )
+    .unwrap();
+    let path = std::env::var("PATH").unwrap_or_default();
+    lane.app()
+        .lanes
+        .set_test_environment(vec![("PATH".into(), format!("{}:{path}", dir.display()))]);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn files_that_vanish_while_the_directory_is_measured_do_not_stop_a_build() {
+    let lane = Lane::new(Isolation::Off, &one_step("sleep 5")).await;
+    // GNU du exits 1 and still prints the total when a file goes away during the scan, as a build's temporary files do.
+    shim(
+        &lane,
+        "du",
+        "#!/bin/sh\necho \"10\t$3\"\necho \"du: cannot access 'x/tmp': No such file or directory\" >&2\nexit 1\n",
+    );
+    lane.code_approved().await;
+    lane.pass().await;
+    assert_eq!(lane.the_job().state, "passed", "{:?}", lane.the_job());
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_directory_du_cannot_read_ends_the_step_even_when_it_prints_a_number() {
+    let lane = Lane::new(Isolation::Off, &one_step("sleep 30")).await;
+    shim(
+        &lane,
+        "du",
+        "#!/bin/sh\necho \"10\t$3\"\necho \"du: cannot read directory 'x/hidden': Permission denied\" >&2\nexit 1\n",
+    );
+    lane.code_approved().await;
+    let began = Instant::now();
+    lane.pass().await;
+    assert!(
+        began.elapsed() < Duration::from_secs(25),
+        "{:?}",
+        began.elapsed()
+    );
+    let job = lane.the_job();
+    assert_eq!(job.state, "failed", "{job:?}");
+    assert!(job.summary.contains("wrote more than"), "{}", job.summary);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn the_disk_of_the_lane_running_low_while_the_merge_base_runs_is_the_lanes() {
+    let steps =
+        "[[step]]\nname = \"check\"\non = \"both\"\ncommand = 'touch @DIR@/df-low; sleep 30'\n";
+    let lane = Lane::new(Isolation::Off, steps).await;
+    let real = String::from_utf8(
+        std::process::Command::new("sh")
+            .args(["-c", "command -v df"])
+            .output()
+            .unwrap()
+            .stdout,
+    )
+    .unwrap();
+    // A `df` that says the disk is all but full once the step has asked for it, and is `df` otherwise.
+    shim(
+        &lane,
+        "df",
+        &format!(
+            "#!/bin/sh\nif [ -e {flag} ]; then echo 'Filesystem 1K-blocks Used Available Use% Mounted on'; echo 'x 1000 999 1 99% /'; else exec {real} \"$@\"; fi\n",
+            flag = lane.f._dir.path().join("df-low").display(),
+            real = real.trim(),
+        ),
+    );
+    lane.code_approved().await;
+    let began = Instant::now();
+    lane.pass().await;
+    assert!(
+        began.elapsed() < Duration::from_secs(40),
+        "{:?}",
+        began.elapsed()
+    );
+    // Whoever filled the disk, the command of the merge base that was stopped for it is not the change's failure.
+    let job = lane.the_job();
+    assert_eq!(job.state, "errored", "{job:?}");
+    assert!(job.summary.contains("reserve"), "{}", job.summary);
+}

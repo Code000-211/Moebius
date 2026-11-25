@@ -829,9 +829,13 @@ impl Job<'_> {
                 });
             }
             Finish::DiskFull => format!(
-                "the job wrote more than the {} the lane allows it, or left the disk of the lane less than 5% free",
+                "the job wrote more than the {} the lane allows it, or has a directory the lane cannot read in its own",
                 self.lane.disk
             ),
+            // The disk of the lane fell under its reserve: on the merge base that may be anyone's doing, so it is the lane's.
+            Finish::DiskLaneFull => {
+                "the disk of the lane fell under its reserve of 5% of the blocks or inodes while it ran".to_string()
+            }
             // The job's own time was running out: on the merge base that is the lane's, on the head the change's.
             Finish::TimedOut if self.cut.get() => {
                 return Err(self.out_of_time(step, &done.output));
