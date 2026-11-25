@@ -6,6 +6,7 @@
  * snapshot stale and `coalesce.ts` reads it once more.
  */
 import type { QueryClient } from "@tanstack/react-query";
+import { classOf } from "../api/columns";
 import { keys } from "../api/keys";
 import type { Board, Card, Snapshot } from "../api/types/board";
 
@@ -43,6 +44,21 @@ function withView(card: Card): Card {
   return { ...nothing, ...card };
 }
 
+/**
+ * The card as it is after `answer`. A card that moved to another column no longer counts as what its old column did, so
+ * its `column_class` is worked out again from the columns of its project when the board knows them, else dropped.
+ */
+function replaced(board: Board, old: Card, answer: Card): Card {
+  const merged = { ...old, ...answer };
+  if (answer.column_class !== undefined || old.column === answer.column) return merged;
+  const columns = board.project_columns?.[String(answer.project_id)] ?? board.columns;
+  if (columns === undefined) {
+    const { column_class: _dropped, ...rest } = merged;
+    return rest;
+  }
+  return { ...merged, column_class: classOf(columns, merged.column) };
+}
+
 /** Puts `card`, the answer of a change, in place of the card it replaces on its board; a card the board lacks is added. */
 export function putCard(queryClient: QueryClient, card: Card): void {
   changeBoards(queryClient, (boards) =>
@@ -52,7 +68,7 @@ export function putCard(queryClient: QueryClient, card: Card): void {
       const cards =
         at < 0
           ? [...board.cards, withView(card)]
-          : board.cards.map((c) => (c.id === card.id ? { ...c, ...card } : c));
+          : board.cards.map((c) => (c.id === card.id ? replaced(board, c, card) : c));
       return { ...board, cards };
     }),
   );

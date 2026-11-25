@@ -46,8 +46,9 @@ export function ProjectColumnsTab({
     <div>
       <div className="flex flex-col gap-4">
         <p className="m-0 max-w-prose text-base text-secondary">
-          What each column does with a card. A column runs the built-in script until this project
-          has one of its own.
+          What each column does with a card. A built-in column runs the built-in script until this
+          project has one of its own. A column this project adds runs the project's own script for
+          it; if that file is missing, it runs the script of the column it counts as.
         </p>
         <p className="m-0 max-w-prose text-sm text-muted">
           The columns are defined in <code>projects/{project.name}/kanban.toml</code> of the harness
@@ -96,7 +97,13 @@ export function ProjectColumnsTab({
               value={chosen}
               onChange={(next) => navigate(scriptPath(project.id, next))}
             />
-            <Column key={chosen} project={project.id} column={chosen} canEdit={canEdit} />
+            <Column
+              key={chosen}
+              project={project.id}
+              column={chosen}
+              counts={custom.find((each) => each.name === chosen)?.counts_as}
+              canEdit={canEdit}
+            />
           </>
         )}
       </div>
@@ -108,10 +115,13 @@ export function ProjectColumnsTab({
 function Column({
   project,
   column,
+  counts,
   canEdit,
 }: {
   project: number;
   column: string;
+  /** The built-in column this column counts as, when the project defines the column itself. */
+  counts?: string;
   canEdit: boolean;
 }) {
   const source = useQuery({
@@ -133,6 +143,7 @@ function Column({
       column={column}
       path={source.data.path}
       own={source.data.source === "project"}
+      counts={counts}
       saved={source.data.text}
       notice={notice}
       setNotice={setNotice}

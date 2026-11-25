@@ -10,6 +10,7 @@ import {
   isDone,
   unionColumns,
   withClasses,
+  withProjectClasses,
 } from "./columns";
 import type { Card, ColumnDef } from "./types/board";
 
@@ -147,5 +148,28 @@ describe("withClasses of a board of several projects", () => {
     });
     expect(columnNames(board as { columns?: ColumnDef[] })).toEqual(CUSTOM.map((c) => c.name));
     expect(board.cards[0]?.column_class).toBe("In review");
+  });
+});
+
+describe("withProjectClasses", () => {
+  const cards = [
+    { column: "Being measured", project_id: 1 },
+    { column: "Being measured", project_id: 2 },
+    { column: "Done", project_id: 1, column_class: "Done" as const },
+    { column: "Signed off", project_id: 1, column_class: "Ready to merge" as const },
+  ];
+
+  it("gives a card without a class the one its column has in its own project, and keeps one that came", () => {
+    const projects = [{ id: 1, columns: CUSTOM }, { id: 2 }];
+    expect(withProjectClasses(cards, projects).map((card) => card.column_class)).toEqual([
+      "In review",
+      "Not started",
+      "Done",
+      "Ready to merge",
+    ]);
+  });
+
+  it("falls back to Not started for a project it does not know", () => {
+    expect(withProjectClasses(cards.slice(0, 1), [])[0]?.column_class).toBe("Not started");
   });
 });
