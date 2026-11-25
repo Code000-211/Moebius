@@ -1,5 +1,5 @@
 /** Types of the calls about projects, repositories and their files; they follow docs/reference/desktop-api.md. */
-import type { Forge } from "./board";
+import type { ColumnDef, Forge } from "./board";
 
 /** A project as `GET /v1/projects` answers it (`ProjectView`): a board over its repositories, with a key for good. */
 export interface Project {
@@ -24,6 +24,10 @@ export interface Project {
   private: boolean;
   /** Whether the person signed in sees its board: false only for an owner who is not a member of a private project. */
   member: boolean;
+  /** The project's columns left to right, custom ones included; left out by an older server, which has the six built-in ones. */
+  columns?: ColumnDef[];
+  /** Why the project's `kanban.toml` could not be read, when it could not; the project then has the six built-in columns. */
+  columns_problem?: string;
 }
 
 /** The body of `POST /v1/projects`. */

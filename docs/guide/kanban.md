@@ -10,7 +10,8 @@ page describes what they do. The exact functions they call are in the
 
 ## The path of a card
 
-A card is an issue on the board of one repository. It moves through six columns, each with a script:
+A card is an issue on the board of one repository. By default it moves through six columns, each with a script; a project
+can add columns of its own among them (see [Custom columns](custom-columns.md)), and this page is about the six:
 
 ```
 Backlog -> Not started -> In progress -> In review -> Ready to merge -> Done

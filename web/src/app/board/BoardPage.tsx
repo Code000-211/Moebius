@@ -124,7 +124,14 @@ export function BoardPage({ project, list = false }: { project: Project; list?: 
   const [blockingMore, setBlockingMore] = useState<Card[]>([]);
   const [deleting, setDeleting] = useState<Card | null>(null);
 
-  const board = data.data?.boards.find((b) => String(b.repository.id) === id);
+  const found = data.data?.boards.find((b) => String(b.repository.id) === id);
+  // The columns are the project's: the board takes the ones of this project, which a board of several projects names apart.
+  const projectColumns = project.columns;
+  const board = useMemo(
+    () =>
+      found && !found.columns && projectColumns ? { ...found, columns: projectColumns } : found,
+    [found, projectColumns],
+  );
   const inbox = data.data?.inbox ?? NO_INBOX;
   // The filters and Display are read from the address, which also holds the open card: a new address with the same
   // filters is not a new filter, or opening a card would group the cards again and draw them all.
@@ -484,7 +491,7 @@ export function BoardPage({ project, list = false }: { project: Project; list?: 
     const card = board?.cards.find((c) => String(c.id) === result.cardId);
     if (!card) return;
     const to = result.column;
-    const drop = dropRule(card, to, inboxOf(inbox, card));
+    const drop = dropRule(card, to, inboxOf(inbox, card), board);
     const number = card.number;
     let decision: Decision | null = null;
     if (drop.kind === "approve") decision = { kind: "approve", card: card.id, number };

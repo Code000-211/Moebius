@@ -5,6 +5,7 @@
  */
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useLocation } from "react-router";
+import type { HasColumns } from "../../api/columns";
 import type { Board, Card, InboxItem } from "../../api/types/board";
 import { BlockDialog, DeleteDialog, ParentDialog } from "./CardDialogs";
 import { CardFocus } from "./CardFocus";
@@ -60,10 +61,11 @@ export function useCardActions(onDeleted: () => void) {
     /** Forgets a pending question, such as when the window closes. */
     resetReject: clearReject,
     /** The key handling of the card in focus. */
-    focus: (card: Card, item: InboxItem | undefined) => (
+    focus: (card: Card, item: InboxItem | undefined, columns?: HasColumns) => (
       <CardFocus
         card={card}
         item={item}
+        columns={columns}
         decide={decide}
         onNotice={notify}
         onBlock={setBlocking}

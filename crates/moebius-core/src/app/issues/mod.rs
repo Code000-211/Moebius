@@ -550,7 +550,7 @@ impl App {
         }
         self.store.set_issue_closed(card_id, true)?;
         self.sub_issue_closed(&card)?;
-        if card.column != columns::DONE {
+        if self.column_class(card.project_id, &card.column) != columns::DONE {
             self.move_card(card_id, columns::DONE, by)?;
         }
         self.wrote_forge(card_id, repository.forge != "none")?;
@@ -696,7 +696,8 @@ impl App {
         self.store.set_issue_closed(card_id, false)?;
         // Whoever reopened it wants it open: it is not closed again for the sub-issues that are done already.
         self.store.set_kept_open(card_id, true)?;
-        if self.card(card_id)?.column == columns::DONE {
+        let reopened = self.card(card_id)?;
+        if self.column_class(reopened.project_id, &reopened.column) == columns::DONE {
             self.move_card(card_id, columns::BACKLOG, by)?;
         }
         self.bus.publish(Event::CardReopened { card: card_id });

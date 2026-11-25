@@ -10,7 +10,7 @@ it is offered.
 
 ## What the Kanban is
 
-Every board has six columns, each run by one Luau script; a project replaces a column's script with a file of its
+Every board has six built-in columns, each run by one Luau script (a project may add columns of its own, see below); a project replaces a column's script with a file of its
 settings, `projects/<project name>/` of the harness configuration repository (never a `.moebius/` folder in a
 repository: Moebius reads none). The script of a card's column is the one of the project whose board it is on, so two
 projects that share a repository can work differently:
@@ -23,6 +23,15 @@ projects that share a repository can work differently:
 | `In review` | `review.luau` |
 | `Ready to merge` | `merge.luau` |
 | `Done` | `done.luau` |
+
+A project may add columns between Backlog and Done in `projects/<project name>/kanban.toml`: one `[[column]]` with
+`name`, and optionally `script` (a `.luau` file beside it), `after` (the column it comes after) and `counts_as` (which of
+the six it counts as; it defaults to the class of the column before it). A card in such a column counts exactly as its
+class wherever Moebius decides from a column, and a script reads the class as `card.column_class`; the class only
+reads, so a column that counts as `Done` closes nothing unless its script does. A save is refused for a file that is not
+valid (every mistake is named) and for one that would remove a column with cards in it. Read
+`guide/custom-columns.md` before you build one, and try a script with `"$MOEBIUS" check-script <file> --kanban
+kanban.toml --column "<column>"`.
 
 The whole Kanban is a set of these files. What is about the code stays with each repository, the same in every project,
 in `repos/<repository name>/`: `checks` (the command that checks a change, without a forge) and `rules.md` (rules for

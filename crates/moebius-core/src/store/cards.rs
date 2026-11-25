@@ -502,6 +502,7 @@ impl Store {
             "DELETE FROM workflow_schedules WHERE project_id = ?1",
             "DELETE FROM firings WHERE automation_id IN (SELECT id FROM automations WHERE project_id = ?1)",
             "DELETE FROM automations WHERE project_id = ?1",
+            "DELETE FROM column_classes WHERE project_id = ?1",
             "INSERT OR IGNORE INTO deleted_projects (id) SELECT id FROM projects WHERE id = ?1",
         ] {
             tx.execute(&format!("{statement} AND {unused}"), [home])?;
@@ -691,7 +692,7 @@ impl Store {
         params: impl rusqlite::Params,
     ) -> Result<Vec<Card>> {
         self.rows(&format!(
-            "SELECT id, repository_id, number, title, body, author, column_name, created_at, note, retried_after, confirmed, held_by, held_reason, held_at, parent, (closed OR column_name = 'Done'), claimed_by, (SELECT json_group_array(label) FROM (SELECT label FROM card_labels WHERE card_id = cards.id ORDER BY label)), {}, project_id, project_number, COALESCE((SELECT key FROM projects WHERE id = cards.project_id), ''), moved_at, archived_at, {}, {}, {}, {}, assign_problem, command_taker FROM cards WHERE {clause} ORDER BY id", super::assignees::CARD_ASSIGNEES, super::kinds::CARD_KIND, super::kinds::CARD_FIELDS, super::card_repositories::CARD_REPOSITORIES, super::taking::CARD_TAKEN_BY
+            "SELECT id, repository_id, number, title, body, author, column_name, created_at, note, retried_after, confirmed, held_by, held_reason, held_at, parent, (closed OR {} = 'Done'), claimed_by, (SELECT json_group_array(label) FROM (SELECT label FROM card_labels WHERE card_id = cards.id ORDER BY label)), {}, project_id, project_number, COALESCE((SELECT key FROM projects WHERE id = cards.project_id), ''), moved_at, archived_at, {}, {}, {}, {}, assign_problem, command_taker FROM cards WHERE {clause} ORDER BY id", super::class_sql("cards.column_name", "cards.project_id"), super::assignees::CARD_ASSIGNEES, super::kinds::CARD_KIND, super::kinds::CARD_FIELDS, super::card_repositories::CARD_REPOSITORIES, super::taking::CARD_TAKEN_BY
         ), params, |r| {
             let labels: Vec<String> = serde_json::from_str(&r.get::<_, String>(17)?).map_err(|e| {
                 rusqlite::Error::FromSqlConversionFailure(

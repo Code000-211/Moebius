@@ -162,34 +162,38 @@ impl Store {
         self.runs_where("card_id = ?1 AND purpose <> 'trial'", card_id.into())
     }
 
-    /// The runs of the cards of a repository that are not in `except_column`, with their ids' cards: one read for a
-    /// whole board, oldest first. Trials are not among them.
-    pub fn runs_for_board(&self, repository_id: i64, except_column: &str) -> Result<Vec<Run>> {
+    /// The runs of the cards of a repository that are not in a column that counts as `except_class`, with their ids'
+    /// cards: one read for a whole board, oldest first. Trials are not among them.
+    pub fn runs_for_board(&self, repository_id: i64, except_class: &str) -> Result<Vec<Run>> {
+        let class = super::class_sql("c.column_name", "c.project_id");
         self.rows(
-            "SELECT r.id, r.card_id, r.agent, r.harness, r.purpose, r.status, r.worktree, r.started_at, r.ended_at,
+            &format!("SELECT r.id, r.card_id, r.agent, r.harness, r.purpose, r.status, r.worktree, r.started_at, r.ended_at,
                     r.summary, r.repository_id, r.harness_repository, r.origin, r.runner, r.title, r.workflow_run_id, r.owner_id, r.shared, r.restricted
              FROM runs r JOIN cards c ON c.id = r.card_id
-             WHERE c.repository_id = ?1 AND c.column_name <> ?2 AND r.purpose <> 'trial' ORDER BY r.id",
-            params![repository_id, except_column],
+             WHERE c.repository_id = ?1 AND {class} <> ?2 AND r.purpose <> 'trial' ORDER BY r.id"),
+            params![repository_id, except_class],
             run_from_row,
         )
     }
 
-    /// `tokens_for_card` for every card of a repository that is not in `except_column`, by card id; a card that used
-    /// none is missing.
+    /// `tokens_for_card` for every card of a repository that is not in a column that counts as `except_class`, by
+    /// card id; a card that used none is missing.
     pub fn tokens_for_board(
         &self,
         repository_id: i64,
-        except_column: &str,
+        except_class: &str,
     ) -> Result<std::collections::HashMap<i64, i64>> {
+        let class = super::class_sql("c.column_name", "c.project_id");
         Ok(self
             .rows(
-                "SELECT r.card_id, SUM(u.input_tokens + u.output_tokens)
+                &format!(
+                    "SELECT r.card_id, SUM(u.input_tokens + u.output_tokens)
                  FROM usage u JOIN runs r ON r.id = u.run_id JOIN cards c ON c.id = r.card_id
-                 WHERE c.repository_id = ?1 AND c.column_name <> ?2 AND r.purpose <> 'trial'
+                 WHERE c.repository_id = ?1 AND {class} <> ?2 AND r.purpose <> 'trial'
                    AND r.id > COALESCE(c.retried_after, 0)
-                 GROUP BY r.card_id",
-                params![repository_id, except_column],
+                 GROUP BY r.card_id"
+                ),
+                params![repository_id, except_class],
                 |r| Ok((r.get(0)?, r.get(1)?)),
             )?
             .into_iter()

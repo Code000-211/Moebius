@@ -7,6 +7,9 @@ code is in `crates/moebius/src/cli/`, one module per group of commands.
 
 The commands `init`, `serve`, `export` and `check-script` work on files and do not connect to a server; see
 [configuration](configuration.md), [training export](training-export.md) and [column scripts](column-scripts.md).
+`check-script` takes `--kanban <file>`, a project's `kanban.toml`, to try a script in a custom column (see [custom
+columns](column-scripts.md#custom-columns)); the project's own file is `projects/<project name>/kanban.toml` of the
+harness configuration repository.
 
 ## Where the command connects
 
@@ -176,7 +179,7 @@ issues (`--parent`, `--blocked-by`, `blocker`) stay the numbers of their issues 
 
 | Command | Route | Plain output |
 |---|---|---|
-| `board [<repository>]` | `GET /v1/snapshot` | For each repository, `<name> (repository <id>)`, then each column with its cards as `<id>  #<number>  <title>`, followed by `[<agent> <status>]` of the latest run and `(waiting: <reason>)`. Fails with `no repository <x>` for an unknown one. |
+| `board [<repository>]` | `GET /v1/snapshot` | For each repository, `<name> (repository <id>)`, then each column with its cards as `<id>  #<number>  <title>` (the six built-in columns, and the custom columns of the projects the cards are on, among them in the order of the project's board, see [custom columns](column-scripts.md#custom-columns)), followed by `[<agent> <status>]` of the latest run and `(waiting: <reason>)`. Fails with `no repository <x>` for an unknown one. |
 | `card <id>` | `GET /v1/snapshot` | The card: its key and number (`WEB-24`, with the issue's number `(#17)` when that is another or the card is of a forge), number, title, repository, column, author, rounds and tokens, latest run, open change, why it waits, note, blockers and body. `no card <id>` if there is none. |
 | `card <id> --history` | `GET /v1/cards/{id}/history` | Table `at kind data`. |
 | `card <id> --runs` | `GET /v1/cards/{id}/runs` | Table `id agent purpose status summary`. |

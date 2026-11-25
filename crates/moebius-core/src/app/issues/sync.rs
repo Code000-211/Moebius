@@ -219,7 +219,7 @@ impl App {
                 // merged first: a card over several repositories with a change still open stays where it is (ADR
                 // 0019), its issue closed, and is done when its last change is merged.
                 let merging = card.repositories.len() > 1 && !self.open_changes(card)?.is_empty();
-                let in_done = card.column == columns::DONE;
+                let in_done = self.column_class(card.project_id, &card.column) == columns::DONE;
                 if !raw_closed {
                     self.store.set_issue_closed(id, true)?;
                     self.close_settled(id);
@@ -441,11 +441,12 @@ impl App {
 
     /// The numbers of the issues of the repository that are open and have a card: the ones whose blockers are read.
     pub fn open_issue_numbers(&self, repository_id: i64) -> Result<BTreeSet<i64>> {
+        let mut class_of = self.class_of();
         Ok(self
             .store
             .cards(repository_id)?
             .into_iter()
-            .filter(|card| !card.closed && card.column != columns::DONE)
+            .filter(|card| !class_of.is_done(card))
             .map(|card| card.number)
             .collect())
     }

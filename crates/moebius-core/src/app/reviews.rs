@@ -930,7 +930,8 @@ impl App {
     /// when it could not be merged.
     fn hand_to_owner(&self, card: &Card, change: &Change, why: &str) -> Result<()> {
         self.store.resolve_inbox_for_card(card.id)?;
-        if self.card(card.id)?.column != columns::READY_TO_MERGE {
+        let now = self.card(card.id)?;
+        if self.column_class(now.project_id, &now.column) != columns::READY_TO_MERGE {
             self.move_card(card.id, columns::READY_TO_MERGE, Some(&reviewer()))?;
         }
         let mut data = serde_json::json!({ "change": change.id, "branch": change.branch });

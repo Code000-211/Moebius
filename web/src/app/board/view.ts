@@ -4,6 +4,7 @@
  * in rows under group headings rather than in lanes. The address keeps the filters under the keys `column`, `agent`,
  * `status` and `label`, as it did when they were selects.
  */
+import { classOf } from "../../api/columns";
 import type { Board, Card, InboxItem } from "../../api/types/board";
 import type { DisplayChoices, FilterField } from "../../ui/filters/model";
 import {
@@ -97,7 +98,7 @@ export function listGroups(
   const make = (key: string, name: string, of: (card: Card) => boolean): ListGroup => ({
     key,
     name,
-    cards: orderCards(passing.filter(of), sort, group === "" ? key : undefined),
+    cards: orderCards(passing.filter(of), sort, group === "" && classOf(board, key) === "Done"),
   });
   let groups: ListGroup[];
   switch (group) {

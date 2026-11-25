@@ -92,10 +92,10 @@ describe("the fields of the filter bar", () => {
 
 describe("sorting", () => {
   it("orders by number, with Done newest first, newest first, or by title", () => {
-    const numbers = (sort: string, column?: string) =>
-      orderCards(cards, sort, column).map((c) => c.number);
+    const numbers = (sort: string, done = false) =>
+      orderCards(cards, sort, done).map((c) => c.number);
     expect(numbers("")).toEqual([1, 2, 3, 4]);
-    expect(numbers("", "Done")).toEqual([4, 3, 2, 1]);
+    expect(numbers("", true)).toEqual([4, 3, 2, 1]);
     expect(numbers("newest")).toEqual([3, 4, 2, 1]);
     expect(numbers("title")).toEqual([2, 4, 3, 1]);
   });

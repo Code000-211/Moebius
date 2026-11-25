@@ -48,12 +48,22 @@ impl Server {
             .keep_quiet_only(&cards.iter().map(|c| c.id).collect());
         self.engine.begin_tick();
         let _scripts_kept = ScriptsKept(&self.engine);
+        // A column counts as the built-in one its project says: a card in a custom Done column is settled as one in Done.
+        let mut boards = std::collections::HashMap::new();
         for card in cards {
             // An archived card is off the board: no script runs for it.
             if card.archived_at.is_some() {
                 continue;
             }
-            if card.column == columns::DONE
+            let board = boards
+                .entry(card.project_id)
+                .or_insert_with(|| self.app.project_columns_of(card.project_id).ok());
+            let class = board
+                .as_ref()
+                .and_then(|board| board.class_of(&card.column))
+                .or_else(|| columns::built_in(&card.column))
+                .unwrap_or(columns::BACKLOG);
+            if class == columns::DONE
                 && !sweep_done
                 && self
                     .app
@@ -914,6 +924,64 @@ mod tests {
             .remove(&card.id)
             .unwrap();
         assert!(reason.starts_with("script error: done.luau"), "{reason}");
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn a_card_in_a_custom_done_column_is_left_alone_as_one_in_done_is() {
+        let f = Fixture::new().await;
+        let origin = f._dir.path().join("origin");
+        let plain = f
+            .server
+            .app
+            .add_repository("plain", origin.to_str().unwrap())
+            .unwrap();
+        let card = f
+            .server
+            .app
+            .create_issue(plain.id, "Anything", "", "person")
+            .unwrap();
+        crate::harness::repo::testing::use_harness(&f.server.app, f._dir.path());
+        let put = |file: &str, text: &str| {
+            crate::harness::repo::testing::put(&f.server.app, "plain", file, text)
+        };
+        put(
+            "kanban.toml",
+            "[[column]]\nname = \"Shipped\"\nscript = \"shipped.luau\"\ncounts_as = \"Done\"\nafter = \"Ready to merge\"\n",
+        );
+        put("shipped.luau", "function on_card(card) error('boom') end");
+        f.server.app.store.move_card(card.id, "Shipped").unwrap();
+        f.server
+            .app
+            .store
+            .add_judgement(&crate::store::NewJudgement {
+                kind: "localize".into(),
+                card_id: Some(card.id),
+                ..Default::default()
+            })
+            .unwrap();
+        *f.server.done_sweep.lock().unwrap() = Some(std::time::Instant::now());
+        f.server.tick();
+        assert!(
+            f.server.app.waiting(std::slice::from_ref(&card)).is_empty(),
+            "the card of the Done class was settled again"
+        );
+        f.server
+            .app
+            .store
+            .add_judgement(&crate::store::NewJudgement {
+                kind: "tool_call".into(),
+                card_id: Some(card.id),
+                ..Default::default()
+            })
+            .unwrap();
+        f.server.tick();
+        let reason = f
+            .server
+            .app
+            .waiting(std::slice::from_ref(&card))
+            .remove(&card.id)
+            .unwrap();
+        assert!(reason.starts_with("script error: shipped.luau"), "{reason}");
     }
 
     #[tokio::test(flavor = "multi_thread")]

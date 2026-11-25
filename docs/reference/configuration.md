@@ -31,7 +31,7 @@ Keys of a table are written with the table's name, such as `board.tick_ms`. A ke
   `[agents.*]` say that the agents are files there. `init` fails, and writes nothing, when `harness/` exists and is not
   empty.
 - `serve` starts the server.
-- `check-script <file> [--column <name>] [--title <text>] [--author <login>]` runs a column script once (see
+- `check-script <file> [--column <name>] [--kanban <file>] [--title <text>] [--author <login>]` runs a column script once, on the board of a project's `kanban.toml` when one is given (see
   [column scripts](column-scripts.md)).
 - `export --out <dir> [--kind <kind>]... [--include-private]` writes the training-set export of the store in `data_dir`
   to `<dir>`, all kinds or only the kinds given, and prints one line per file with its counts. The judgements of

@@ -3,7 +3,16 @@
 
 use rusqlite::params;
 
-use super::{Result, Store};
+use super::{Result, Store, class_sql};
+
+/// The SQL for the classes of the columns a move `m` of `card_moves` went from and to, in its card's project.
+pub(super) fn move_classes(m: &str) -> (String, String) {
+    let project = format!("(SELECT project_id FROM cards WHERE id = {m}.card_id)");
+    (
+        class_sql(&format!("{m}.from_column"), &project),
+        class_sql(&format!("{m}.to_column"), &project),
+    )
+}
 
 /// One thing that went wrong in a window of time, as the Retro collects it. `text` is whatever the source has to say, in
 /// full; the report shortens it.
@@ -139,9 +148,10 @@ impl Store {
     /// The cards sent back from review to coding in `[from, to)`, with the note that said why. The note decides the
     /// kind: failed checks, a merge conflict, or else the Reviewer's findings.
     pub fn sent_back_cards(&self, from: i64, to: i64) -> Result<Vec<Found>> {
-        self.rows("SELECT m.card_id, COALESCE(m.note, ''), m.at FROM card_moves m
-             WHERE m.from_column = 'In review' AND m.to_column = 'In progress' AND m.at >= ?1 AND m.at < ?2
-             ORDER BY m.at, m.id", params![from, to], |r| {
+        let (from_class, to_class) = move_classes("m");
+        self.rows(&format!("SELECT m.card_id, COALESCE(m.note, ''), m.at FROM card_moves m
+             WHERE {from_class} = 'In review' AND {to_class} = 'In progress' AND m.at >= ?1 AND m.at < ?2
+             ORDER BY m.at, m.id"), params![from, to], |r| {
             let note: String = r.get(1)?;
             let kind = if note.starts_with("The checks failed") {
                 "checks_failed"
@@ -166,14 +176,18 @@ impl Store {
     /// The cards that reached Done in `[from, to)` after one code run and without ever being sent back from review:
     /// the card, its title and the start of its issue.
     pub fn merged_at_once(&self, from: i64, to: i64) -> Result<Vec<(i64, String, String)>> {
+        let (_, to_class) = move_classes("m");
+        let (back_from, back_to) = move_classes("b");
         self.rows(
-            "SELECT c.id, c.title, c.body FROM cards c
-             WHERE EXISTS (SELECT 1 FROM card_moves m WHERE m.card_id = c.id AND m.to_column = 'Done'
+            &format!(
+                "SELECT c.id, c.title, c.body FROM cards c
+             WHERE EXISTS (SELECT 1 FROM card_moves m WHERE m.card_id = c.id AND {to_class} = 'Done'
                            AND m.at >= ?1 AND m.at < ?2)
                AND (SELECT COUNT(*) FROM runs r WHERE r.card_id = c.id AND r.purpose = 'code') = 1
                AND NOT EXISTS (SELECT 1 FROM card_moves b WHERE b.card_id = c.id
-                               AND b.from_column = 'In review' AND b.to_column = 'In progress')
-             ORDER BY c.id",
+                               AND {back_from} = 'In review' AND {back_to} = 'In progress')
+             ORDER BY c.id"
+            ),
             params![from, to],
             |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
         )
@@ -185,17 +199,19 @@ impl Store {
     /// Both need a move of the card to Done: with `window` `[from, to)` only the cards that moved to Done in it; without, every card that is in Done now.
     pub fn done_card_costs(&self, window: Option<(i64, i64)>) -> Result<Vec<(i64, i64, i64)>> {
         let (from, to) = window.unwrap_or((i64::MIN, i64::MAX));
+        let (_, to_class) = move_classes("m");
+        let class = class_sql("c.column_name", "c.project_id");
         self.rows(
-            "SELECT c.id,
+            &format!("SELECT c.id,
                     (SELECT COALESCE(SUM(u.input_tokens + u.output_tokens), 0) FROM usage u JOIN runs r ON r.id = u.run_id
                      WHERE r.card_id = c.id AND r.purpose <> 'trial'),
                     (SELECT COALESCE(SUM(u.duration_ms), 0) FROM usage u JOIN runs r ON r.id = u.run_id
                      WHERE r.card_id = c.id AND r.purpose <> 'trial')
              FROM cards c
-             WHERE EXISTS (SELECT 1 FROM card_moves m WHERE m.card_id = c.id AND m.to_column = 'Done'
+             WHERE EXISTS (SELECT 1 FROM card_moves m WHERE m.card_id = c.id AND {to_class} = 'Done'
                            AND m.at >= ?1 AND m.at < ?2)
-               AND (c.column_name = 'Done' OR ?3 = 1)
-             ORDER BY c.id",
+               AND ({class} = 'Done' OR ?3 = 1)
+             ORDER BY c.id"),
             params![from, to, window.is_some()],
             |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
         )

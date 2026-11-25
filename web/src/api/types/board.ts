@@ -118,6 +118,8 @@ export interface Card {
   body: string;
   author: string;
   column: string;
+  /** The built-in column the card's column counts as (a custom column has one); left out by an older server. */
+  column_class?: string;
   created_at: number;
   note: string | null;
   retried_after: number | null;
@@ -212,8 +214,22 @@ export interface Change {
   taken_from?: string | null;
 }
 
+/** One column of a project, left to right: its name and the built-in column it counts as (its own name for a built-in). */
+export interface ColumnDef {
+  name: string;
+  counts_as: string;
+  /** Whether the project's `kanban.toml` added it to the six built-in ones. */
+  custom?: boolean;
+  /** The file of the column's script, such as `ready.luau`. */
+  script?: string;
+}
+
 export interface Board {
   repository: Repository;
+  /** The columns of the project whose board this is; left out by an older server, which has the six built-in ones. */
+  columns?: ColumnDef[];
+  /** The columns of each project that has cards on this board, by project id; the page of a project takes its own. */
+  project_columns?: Record<string, ColumnDef[]>;
   cards: Card[];
   round_limit: number;
   /** The reason each waiting card waits, by card id. */

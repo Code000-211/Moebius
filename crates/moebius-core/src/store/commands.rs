@@ -102,10 +102,13 @@ impl Store {
 
     /// How many open issues of the repository `login` holds that it took with `/take` and is still assigned to.
     pub fn command_takes(&self, repository_id: i64, login: &str) -> Result<i64> {
+        let class = super::class_sql("cards.column_name", "cards.project_id");
         Ok(self.read().query_row(
-            "SELECT COUNT(*) FROM cards WHERE repository_id = ?1 AND command_taker = ?2 COLLATE NOCASE \
-             AND NOT (closed OR column_name = 'Done') \
-             AND EXISTS (SELECT 1 FROM json_each(forge_assignees) j WHERE j.value = ?2 COLLATE NOCASE)",
+            &format!(
+                "SELECT COUNT(*) FROM cards WHERE repository_id = ?1 AND command_taker = ?2 COLLATE NOCASE \
+                 AND NOT (closed OR {class} = 'Done') \
+                 AND EXISTS (SELECT 1 FROM json_each(forge_assignees) j WHERE j.value = ?2 COLLATE NOCASE)"
+            ),
             params![repository_id, login],
             |r| r.get(0),
         )?)

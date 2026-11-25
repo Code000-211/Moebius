@@ -2,12 +2,17 @@
  * The calls about the boards: the snapshot of everything the shell shows, a card's history and runs, what a person
  * decides about a card or its change, a new issue, and the script behind a column (read, saved and given up).
  */
+import { withClasses } from "../columns";
 import { del, get, post, put } from "../http";
 import type { Card, Comment, Priority, Snapshot } from "../types/board";
 import type { HistoryEntry, Run, ScriptDetail } from "../types/cards";
 
+/** Every card of the snapshot knows the class of its column, whether or not the server said it. */
 export function snapshot(): Promise<Snapshot> {
-  return get<Snapshot>("/v1/snapshot");
+  return get<Snapshot>("/v1/snapshot").then((all) => ({
+    ...all,
+    boards: all.boards.map(withClasses),
+  }));
 }
 
 /** The issue a card key such as `WEB-24` names; a `404` when no card has it. */

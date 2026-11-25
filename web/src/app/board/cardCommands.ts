@@ -5,10 +5,11 @@
  * single key that does it on the page. The page says what each action does; this only says which are offered. A person the card can be given to
  * has a command of their own, without a key.
  */
+import { columnNames, type HasColumns } from "../../api/columns";
 import type { Card, InboxItem } from "../../api/types/board";
 import type { PaletteCommand } from "../shell/palette/model";
 import { cardKey } from "../shell/palette/shortcuts";
-import { COLUMNS, dropRule, isHeld, isLive } from "./model";
+import { dropRule, isHeld, isLive } from "./model";
 
 /** What the page does for a card; each is its own way of asking, answering and reading the board again. */
 export interface CardActions {
@@ -35,6 +36,8 @@ export function cardCommands(
   act: CardActions,
   /** The people the card can be given to, as handles; one command for each, since the palette searches by name. */
   people: string[] = [],
+  /** The columns of the card's project, custom ones included; a move command is offered for each. */
+  projectColumns?: HasColumns,
 ): PaletteCommand[] {
   const commands: PaletteCommand[] = [
     card.claimed_by
@@ -83,9 +86,8 @@ export function cardCommands(
       run: () => act.addSubIssue(card),
     },
   );
-  const columns: string[] = [...COLUMNS];
-  for (const column of columns) {
-    const drop = dropRule(card, column, item);
+  for (const column of columnNames(projectColumns)) {
+    const drop = dropRule(card, column, item, projectColumns);
     const label = `Move to ${column}`;
     const id = `move-${column}`;
     if (drop.kind === "approve")

@@ -10,9 +10,9 @@ use super::checks::checks_state;
 use super::{App, AppError, Result, Sight, columns, is_person};
 use crate::store::{Card, Change, Repository, Role};
 
-/// The column and project of a card, which is all a blocker is asked for.
+/// The class of the column and the project of a card, which is all a blocker is asked for.
 struct Blocker {
-    column: String,
+    class: &'static str,
     project_id: i64,
 }
 
@@ -93,7 +93,7 @@ impl CardLookups {
             .filter(|number| {
                 let blocker = self.cards.get(&(repository, *number));
                 let resolved = match blocker {
-                    Some(blocker) => blocker.column == columns::DONE,
+                    Some(blocker) => blocker.class == columns::DONE,
                     None => self
                         .closed
                         .get(&repository)
@@ -163,11 +163,12 @@ impl App {
             }
         }
         let mut by_number = HashMap::new();
+        let mut class_of = self.class_of();
         for card in cards.values().flatten() {
             by_number.insert(
                 (card.repository_id, card.number),
                 Blocker {
-                    column: card.column.clone(),
+                    class: class_of.class(card.project_id, &card.column),
                     project_id: card.project_id,
                 },
             );

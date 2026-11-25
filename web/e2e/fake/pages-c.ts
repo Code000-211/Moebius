@@ -82,6 +82,8 @@ function decoded(path: string): string {
 }
 
 const SCRIPT_FILES: Record<string, string> = {
+  "ready for testing": "testing",
+  "being measured": "measured",
   backlog: "backlog",
   // The column is "Not started"; its file in a repository keeps the name it has always had.
   "not started": "ready",

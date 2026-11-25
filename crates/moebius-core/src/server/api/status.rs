@@ -58,7 +58,7 @@ async fn status(
             // A card deleted since the runs were read is no card working.
             let Ok(card) = app.card(id) else { continue };
             if card.archived_at.is_none()
-                && card.column != columns::DONE
+                && app.column_class(card.project_id, &card.column) != columns::DONE
                 && sight.repository(card.repository_id)
                 && sight.card(&card)
             {
@@ -180,5 +180,36 @@ mod tests {
             (1, 1)
         );
         assert_eq!(owner.waiting_notices, 0);
+    }
+
+    #[tokio::test]
+    async fn a_run_on_a_card_of_a_custom_done_column_is_no_card_working() {
+        let (dir, state, addr) = start().await;
+        crate::harness::repo::testing::use_harness(&state.app, dir.path());
+        let store = &state.app.store;
+        let repo = store.repositories().unwrap().remove(0);
+        crate::harness::repo::testing::put(
+            &state.app,
+            &repo.name,
+            "kanban.toml",
+            "[[column]]\nname = \"Shipped\"\ncounts_as = \"Done\"\nafter = \"Ready to merge\"\n\n[[column]]\nname = \"Coding again\"\ncounts_as = \"In progress\"\nafter = \"In progress\"\n",
+        );
+        let working = |column: &str| {
+            let card = store
+                .add_card(repo.id, "Run", "", "person:lea", column)
+                .unwrap();
+            let run = store
+                .add_run(Some(card.id), "Coder", "test", "code")
+                .unwrap();
+            store.set_run_status(run.id, "running").unwrap();
+            card
+        };
+        let done = working("Shipped");
+        assert_eq!(read(&addr, &state.token).await.working, 0);
+        let coding = working("Coding again");
+        assert_eq!(read(&addr, &state.token).await.working, 1);
+        store.move_card(coding.id, "Done").unwrap();
+        assert_eq!(read(&addr, &state.token).await.working, 0);
+        let _ = done;
     }
 }

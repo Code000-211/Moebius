@@ -127,7 +127,7 @@ finds the server again by that directory: it answers, or it is started again wit
    written to the store since, the limits are the same and a minute has not passed; `board/cache.rs`) it calls
    `Engine::settle_card`, which calls `Engine::settle`, which calls `Engine::tick` until a script stops moving the card.
    `Engine::tick` finds the script for the card's column: the `<script>` file of the card's project, read by
-   `App::project_file` from `projects/<project name>/` of the harness configuration repository's clone, else the built-in one from `kanban/` (`Engine::script`). `Engine::run_script`
+   `App::project_file` from `projects/<project name>/` of the harness configuration repository's clone, else the built-in one from `kanban/` (`Engine::script`). The column that decides which script runs is the card's own, or, for a column its project's `kanban.toml` does not have or whose script is missing, the one of its class (`Engine::column_of`; `app/columns/`). `Engine::run_script`
    runs it in a fresh sandboxed Luau state with `card_table` and the `moebius` table, and applies the effects.
 3. **Backlog to Not started.** `backlog.luau` moves a trusted card on (`App::is_trusted`), and one made from a confirmed grilling (`card.confirmed`). Others get an `approve_issue` inbox
    item (`moebius.ask`) until a person calls `POST /v1/cards/{id}/approve` (`App::approve_issue`), which records a
@@ -577,6 +577,9 @@ At the top:
 |---|---|
 | `app/mod.rs` | `App`: the store, bus, repositories, forges and decisions put together, its errors and the lookups every operation shares; every change to a card is published on the bus. |
 | `app/repositories.rs` | Adding a repository (a path, a URL or GitHub), whom a GitHub repository trusts, and whether a card's issue is trusted. |
+| `app/columns/mod.rs` | The columns of a board ([ADR 0030](adr/0030-custom-board-columns-per-project.md)): the six built-in ones, their names, and the class (the built-in column a column counts as) that built-in logic asks for instead of a column's name. |
+| `app/columns/layout.rs` | Reading and checking a project's `kanban.toml`: its custom columns, where each goes, the class each counts as, and every mistake of a file said at once. |
+| `app/columns/project.rs` | What the app does with a project's `kanban.toml`: the board kept for as long as the file reads the same, the last valid one when it is not, columns the file lost while cards are in them, the class of a column and the check of a save. |
 | `app/cards.rs` | Cards and their issues: kept in line with the forge's issues, created, edited, approved, retried and moved; why a card waits, what blocks it, its history. |
 | `app/issues/mod.rs` | The issue tracker: parents and sub-issues, blocking that is written as well as read (cycles refused), labels, claims, comments, closing and reopening, creating an issue with all of that, and the queries over them. |
 | `app/issues/links.rs` | Duplicates and related issues: marking a duplicate (closing it with a comment that points to the original), relating issues in both directions, and the offer of likely duplicates in a comment when an issue is made. |
@@ -686,6 +689,7 @@ At the top:
 |---|---|
 | `store/mod.rs` | The store: opening the SQLite database, its migrations, the connection and the server's local clock, the helpers that read rows, and every record type re-exported as `store::<Type>`. |
 | `store/cards.rs` | Repositories, their cards, whether a card is held, the issues that block a card, the moves of a card between columns, deleting a card or a repository with all it has, and the numbers of deleted cards. |
+| `store/column_classes.rs` | The class of each custom column of each project (`column_classes`), kept in step with the project's `kanban.toml`, and `class_sql`, the SQL expression for the class of a card's column, so that a query can ask for it. |
 | `store/access.rs` | Access tokens and the sessions of browsers, each kept as the SHA-256 of its secret: making, finding a person by one, the last use, revoking, and ending sessions. |
 | `store/planning.rs` | A card's priority and due date, read from its labels and written back into them; it keeps nothing of its own. |
 | `store/notices.rs` | The notices of a person with their read mark, and the cards they follow: the tables `notices` and `card_follows`. |
@@ -862,10 +866,11 @@ At the top:
 | `board/cache.rs` | What the engine remembers between script calls: the bytecode of each script text, the cards a tick can leave alone (settled with nothing to do, while the store's write counter and the limits stay the same, for at most a minute) and the project scripts read during one tick. |
 | `board/sandbox.rs` | The Luau sandbox every script runs in, with its memory and time limits. |
 | `board/limits.rs` | The run, round and token limits scripts see, and a script call's memory and time. |
-| `board/kanban.rs` | The columns, the default Kanban's scripts built into the server, and a project's overrides. |
+| `board/kanban.rs` | The six built-in columns, the default Kanban's scripts built into the server, and a project's overrides; a project's custom columns are `app/columns/`. |
 | `board/runs.rs` | What the engine needs of a harness (`Runs`), and the agents it lists. |
 | `board/testing.rs` | For the tests only: a fake harness and a store with a repository and a card. |
 | `board/dry_run.rs` | `check_script`: a script run once against a made-up card, for `moebius check-script`. |
+| `board/custom_columns.rs` | Tests of custom columns from the engine's side: the script of a card in one, `moebius.move`, a column that goes away. |
 | `board/scripts.rs` | Editing a column's script of a project: the script in force, saved as a commit in the harness configuration repository. |
 
 `decide/`, every decision on the way:

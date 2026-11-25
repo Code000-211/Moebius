@@ -81,6 +81,10 @@ pub struct Board {
     /// Why each waiting card waits, by card id.
     pub waiting: BTreeMap<i64, String>,
     pub changes: Vec<Change>,
+    /// The board of each project that has cards here, by project id: its columns left to right with the class each
+    /// counts as. A project without custom columns has the six built-in ones.
+    #[serde(default)]
+    pub project_columns: BTreeMap<i64, Vec<crate::app::columns::ColumnView>>,
 }
 
 /// A card with what a board shows of it, so that a client needs one read for a board.
@@ -88,6 +92,9 @@ pub struct Board {
 pub struct CardView {
     #[serde(flatten)]
     pub card: Card,
+    /// The built-in column the card's column counts as: the column itself for a built-in one.
+    #[serde(default)]
+    pub column_class: String,
     /// The `code` rounds and the tokens since the card was last retried, as column scripts see them.
     pub rounds: i64,
     pub tokens: i64,
@@ -249,6 +256,7 @@ fn card_view(
 ) -> crate::app::Result<CardView> {
     let counts_as_sub_issue = lookups.counts_as_sub_issue(&card);
     let mut view = CardView {
+        column_class: String::new(),
         card,
         counts_as_sub_issue,
         rounds: 0,
@@ -382,11 +390,35 @@ fn build_snapshot(app: &App, by: &Actor, round_limit: u32) -> crate::app::Result
             board_cards.retain(|card| card.archived_at.is_none() && sight.card(card));
             let waiting = app.waiting(&board_cards);
             let facts = app.board_facts(repository.id, &board_cards)?;
+            let mut project_columns = BTreeMap::new();
+            let mut classes = std::collections::HashMap::new();
+            for card in &board_cards {
+                if let std::collections::btree_map::Entry::Vacant(entry) =
+                    project_columns.entry(card.project_id)
+                {
+                    let board = app.project_columns_of(card.project_id)?;
+                    entry.insert(board.views());
+                    classes.insert(card.project_id, board);
+                }
+            }
+            let class_of = |card: &Card| {
+                classes
+                    .get(&card.project_id)
+                    .and_then(|board| board.class_of(&card.column))
+                    .unwrap_or(crate::app::columns::BACKLOG)
+                    .to_string()
+            };
             boards.push(Board {
                 waiting,
+                project_columns,
                 cards: board_cards
                     .into_iter()
-                    .map(|card| card_view(&lookups, &sight, &facts, card))
+                    .map(|card| {
+                        let class = class_of(&card);
+                        let mut view = card_view(&lookups, &sight, &facts, card)?;
+                        view.column_class = class;
+                        Ok::<_, crate::app::AppError>(view)
+                    })
                     .collect::<Result<_, _>>()?,
                 round_limit,
                 changes: changes
@@ -760,6 +792,8 @@ mod tests {
             .add_repository("small", origin(dir.path()).to_str().unwrap())
             .unwrap();
         fill_board(app, &small, 10);
+        // The first snapshot also reads the project's columns, which the app keeps for the ones after it.
+        reads(app);
         let (few, _) = reads(app);
         fill_board(app, &small, 190);
         let (many, snapshot) = reads(app);

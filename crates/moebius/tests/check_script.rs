@@ -93,3 +93,74 @@ fn a_script_with_an_error_fails_and_says_why() {
     assert_eq!(missing.status.code(), Some(1));
     assert!(text(&missing.stderr).contains("cannot read /nonexistent/ready.luau"));
 }
+
+const TESTING: &str =
+    "[[column]]\nname = \"Ready for testing\"\nscript = \"testing.luau\"\nafter = \"In review\"\n";
+
+#[test]
+fn a_custom_column_is_known_from_a_kanban_file() {
+    let dir = tempfile::tempdir().unwrap();
+    let kanban = dir.path().join("kanban.toml");
+    std::fs::write(&kanban, TESTING).unwrap();
+    let script = "function on_card(card)\n  if card.column_class == 'In review' then moebius.move('Ready for testing') end\nend";
+    let kanban = kanban.to_str().unwrap();
+    let output = check(
+        dir.path(),
+        script,
+        &["--column", "ready for testing", "--kanban", kanban],
+    );
+    assert!(output.status.success(), "{}", text(&output.stderr));
+    assert_eq!(
+        text(&output.stdout),
+        "moved the card to Ready for testing\n"
+    );
+
+    // Without the file the column is not there.
+    let output = check(dir.path(), script, &["--column", "Ready for testing"]);
+    assert_eq!(output.status.code(), Some(1));
+    assert!(text(&output.stderr).contains("no column \"Ready for testing\""));
+
+    // A file that is not a board is refused with what is wrong.
+    let bad = dir.path().join("bad.toml");
+    std::fs::write(&bad, "[[column]]\nname = \"Doing\"\n").unwrap();
+    let output = check(dir.path(), script, &["--kanban", bad.to_str().unwrap()]);
+    assert_eq!(output.status.code(), Some(1));
+    assert!(
+        text(&output.stderr).contains("after"),
+        "{}",
+        text(&output.stderr)
+    );
+}
+
+#[test]
+fn a_custom_column_is_known_from_a_project_of_the_harness_repository() {
+    let dir = tempfile::tempdir().unwrap();
+    let project = dir.path().join("data/harness/projects/Web");
+    std::fs::create_dir_all(&project).unwrap();
+    std::fs::write(project.join("kanban.toml"), TESTING).unwrap();
+    let config = dir.path().join("moebius.toml");
+    std::fs::write(&config, "data_dir = \"data\"\n").unwrap();
+    let script = "function on_card(card) moebius.move('Ready to merge') end";
+    let run = |project: &str| {
+        let file = dir.path().join("testing.luau");
+        std::fs::write(&file, script).unwrap();
+        Command::new(env!("CARGO_BIN_EXE_moebius"))
+            .arg("--config")
+            .arg(&config)
+            .arg("check-script")
+            .arg(&file)
+            .args(["--column", "Ready for testing", "--project", project])
+            .output()
+            .unwrap()
+    };
+    let output = run("Web");
+    assert!(output.status.success(), "{}", text(&output.stderr));
+    assert_eq!(text(&output.stdout), "moved the card to Ready to merge\n");
+    // A project without the file has the built-in columns; a name that is no folder is refused.
+    let output = run("Other");
+    assert_eq!(output.status.code(), Some(1));
+    assert!(text(&output.stderr).contains("no column"));
+    let output = run("../Web");
+    assert_eq!(output.status.code(), Some(1));
+    assert!(text(&output.stderr).contains("cannot be the name of a project"));
+}

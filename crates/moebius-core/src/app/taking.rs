@@ -389,7 +389,7 @@ impl App {
             return Ok(());
         }
         for card in self.store.cards(repository.id)? {
-            if card.closed || card.column == columns::DONE {
+            if card.closed || self.column_class(card.project_id, &card.column) == columns::DONE {
                 continue;
             }
             let Some(wanted) = self.is_ready(&card)? else {
@@ -413,7 +413,9 @@ impl App {
         {
             return Ok(None);
         }
-        let approved = card.confirmed || self.is_trusted(card) || card.column != columns::BACKLOG;
+        let approved = card.confirmed
+            || self.is_trusted(card)
+            || self.column_class(card.project_id, &card.column) != columns::BACKLOG;
         let blocked = !self.blocked_by(card)?.is_empty()
             || self
                 .children_of(card)?
@@ -548,7 +550,7 @@ impl App {
                     .as_deref()
                     .is_some_and(|t| !t.eq_ignore_ascii_case(&request.author));
                 if card.closed
-                    || card.column == columns::DONE
+                    || self.column_class(card.project_id, &card.column) == columns::DONE
                     || running
                     || taken_by_another
                     || !self.open_changes(&card)?.is_empty()
@@ -723,10 +725,14 @@ impl App {
             return Ok(());
         };
         self.store.resolve_inbox_for_card(card_id)?;
+        let project = self.card(card_id)?.project_id;
         let back = change
             .taken_from
             .as_deref()
-            .filter(|column| *column != columns::IN_REVIEW && *column != columns::DONE)
+            .filter(|column| {
+                let class = self.column_class(project, column);
+                class != columns::IN_REVIEW && class != columns::DONE
+            })
             .unwrap_or(columns::NOT_STARTED);
         self.move_card_from(card_id, columns::IN_REVIEW, back, None, None)?;
         Ok(())

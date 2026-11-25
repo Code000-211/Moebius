@@ -157,11 +157,12 @@ impl Store {
     /// Every card of the milestone, in the order of the cards, with the project each is on.
     pub fn milestone_cards(&self, id: i64) -> Result<Vec<MilestoneCard>> {
         let conn = self.read();
-        let mut stmt = conn.prepare(
+        let class = super::class_sql("c.column_name", "c.project_id");
+        let mut stmt = conn.prepare(&format!(
             "SELECT c.id, c.project_id, c.repository_id, c.number, c.title, c.column_name, \
-                    (c.closed OR c.column_name = 'Done') \
+                    (c.closed OR {class} = 'Done') \
              FROM milestone_cards m JOIN cards c ON c.id = m.card_id WHERE m.milestone_id = ?1 ORDER BY c.id",
-        )?;
+        ))?;
         Ok(stmt
             .query_map([id], card)?
             .collect::<rusqlite::Result<_>>()?)

@@ -21,7 +21,7 @@ Every `luau` example in the guide is a complete column script, and a test runs i
 
 Built and described here:
 
-- Column scripts, the default Kanban, and a project's overrides in its settings in the harness configuration repository (`projects/<project name>/`); a repository's checks, rules and review notes in its own (`repos/<repository name>/`).
+- Column scripts, the default Kanban, a project's overrides and [custom columns](custom-columns.md) in its settings in the harness configuration repository (`projects/<project name>/`); a repository's checks, rules and review notes in its own (`repos/<repository name>/`).
 - Rules: the built-in rules, rules in prose in a server file and in a repository's settings, and the teacher model.
 - Agents, skills and MCP servers, set up in `moebius.toml` or in a harness configuration repository. In the repository,
   every edit through the API is a commit, and it holds the server's `rules.md` too.
@@ -45,6 +45,7 @@ Built and described here:
 | Keep Moebius open as an app of its own on Linux or Windows, connected with an access token | [The desktop app](desktop-app.md) |
 | Change what a column does for one repository, and try the change | [Column scripts](column-scripts.md) |
 | Know how a card moves from Backlog to Done and what a person can do on the way | [Kanban](kanban.md) |
+| Add columns of your own to a project's board, each with a script, such as a column for a measurement | [Custom columns](custom-columns.md) |
 | Forbid something to every run, or to the runs of one repository, and see a refusal | [Rules](rules.md) |
 | Set up the Coder, the Reviewer or another agent, chat with one, or have the Moebius agent build something | [Agents](agents.md) |
 | Have an agent look for ways to improve a number you can measure, and keep what helps | [Autoresearch](autoresearch.md) |

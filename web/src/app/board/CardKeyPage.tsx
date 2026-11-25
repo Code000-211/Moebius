@@ -74,7 +74,7 @@ export function CardKeyPage() {
           }
           scrolls={false}
         />
-        {actions.focus(card, inboxOf(inbox, card))}
+        {actions.focus(card, inboxOf(inbox, card), board)}
         {actions.dialogs(board)}
       </div>
     );

@@ -263,7 +263,7 @@ export function CardPreview({
       </span>
       <span className="text-sm font-medium text-text">{card.title}</span>
       <span className="flex items-center gap-2 text-secondary">
-        <ColumnMark name={card.column} />
+        <ColumnMark name={card.column} counts={card.column_class} />
         {card.column}
       </span>
       {card.labels.length > 0 ? (

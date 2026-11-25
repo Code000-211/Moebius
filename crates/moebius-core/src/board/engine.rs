@@ -11,6 +11,7 @@ use std::sync::{Arc, RwLock};
 use super::cache::{Compiled, Quiet, ScriptMemo, Stamp};
 use super::sandbox::run_sandboxed;
 use super::{CardRuns, Column, Kanban, Limits, built_in_script, project_script};
+use crate::app::columns::KANBAN_FILE;
 use crate::app::{App, AppError, columns};
 use crate::decide::Actor;
 use crate::store::Card;
@@ -117,6 +118,64 @@ impl Engine {
             })
     }
 
+    /// The column of the card's board that decides which script runs for it, and a notice when that is not the card's
+    /// own column. A custom column runs its own script; one whose script file is missing, one the project's
+    /// `kanban.toml` no longer has and one nobody ever defined run the script of the class they count as (a column
+    /// nobody defined counts as Backlog), so a project whose file is wrong never makes a card fail at every tick.
+    fn column_of(&self, card: &Card) -> Result<(Column, Option<String>), BoardError> {
+        let project = self.app.project(card.project_id)?;
+        let text = self.memo.get(project.id, KANBAN_FILE, || {
+            self.app.project_file(&project, KANBAN_FILE)
+        });
+        let board = self.app.project_columns_from(&project, text);
+        let of_class = |class: &str| {
+            self.kanban
+                .columns
+                .iter()
+                .find(|c| c.name == class)
+                .cloned()
+                .ok_or_else(|| BoardError::NoColumn(class.to_string()))
+        };
+        match board.column(&card.column) {
+            Some(info) if !info.custom => Ok((of_class(info.counts_as)?, None)),
+            Some(info) => {
+                let script = info.script.clone();
+                let own = self.memo.get(project.id, &script, || {
+                    self.app.project_file(&project, &script)
+                });
+                if own.is_some() || built_in_script(&script).is_some() {
+                    return Ok((
+                        Column {
+                            name: info.name.clone(),
+                            script,
+                        },
+                        None,
+                    ));
+                }
+                let fallback = of_class(info.counts_as)?;
+                let notice = format!(
+                    "the script {script} of the column {} is missing from the project's settings; running the {} script",
+                    info.name, info.counts_as
+                );
+                Ok((fallback, Some(notice)))
+            }
+            None => {
+                let class = board.class_of(&card.column).unwrap_or(columns::BACKLOG);
+                let notice = board
+                    .problem
+                    .as_ref()
+                    .map(|(_, p)| p.clone())
+                    .unwrap_or_else(|| {
+                        format!(
+                            "the column {:?} is not in the project's board; running the {class} script",
+                            card.column
+                        )
+                    });
+                Ok((of_class(class)?, Some(notice)))
+            }
+        }
+    }
+
     /// Runs the script of the card's column once and applies what it did. A held card has no script run: it stays
     /// where it is, and nothing starts for it, until a person or the Moebius agent releases it. While all agents are
     /// paused no card has a script run, so the board starts no run and moves no card.
@@ -131,13 +190,8 @@ impl Engine {
             self.app.advance_external_reviews(card.id);
             return Ok(Step::default());
         }
-        let column = self
-            .kanban
-            .columns
-            .iter()
-            .find(|c| c.name == card.column)
-            .ok_or_else(|| BoardError::NoColumn(card.column.clone()))?;
-        let source = self.script(&card, column)?;
+        let (column, notice) = self.column_of(&card)?;
+        let source = self.script(&card, &column)?;
         let effects = Rc::new(RefCell::new(Effects::default()));
         self.scripts_run.fetch_add(1, Ordering::Relaxed);
         self.run_script(&column.script, &source, &card, effects.clone())
@@ -145,6 +199,10 @@ impl Engine {
                 script: column.script.clone(),
                 message: e.to_string(),
             })?;
+        if let Some(notice) = notice {
+            // The visible notice: the card says why it runs a script that is not its column's own.
+            effects.borrow_mut().waiting.get_or_insert(notice);
+        }
         self.apply(&card, effects.take())
     }
 
@@ -208,7 +266,7 @@ impl Engine {
                     started_run: effects.started_run,
                 });
             }
-            if card.column == columns::READY_TO_MERGE {
+            if self.app.column_class(card.project_id, &card.column) == columns::READY_TO_MERGE {
                 // The change is no longer waiting for a person.
                 self.app
                     .store

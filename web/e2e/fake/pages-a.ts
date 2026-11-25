@@ -8,7 +8,7 @@
  * A test can make the next request to a route fail with the server's own sentence (`refuseNext`).
  */
 import type { IncomingMessage, ServerResponse } from "node:http";
-import type { BoardFake } from "./board";
+import { type BoardFake, COLUMNS } from "./board";
 
 type Send = (event: { kind: string; data: unknown }) => void;
 
@@ -40,6 +40,7 @@ interface Project {
   kinds: number[];
   private: boolean;
   member: boolean;
+  columns?: Array<{ name: string; counts_as: string; custom?: boolean; script?: string }>;
 }
 
 interface InboxItem {
@@ -673,12 +674,20 @@ export function createPagesAFake(send: Send, board: BoardFake): PagesAFake {
   /** Every project, as `GET /v1/projects` answers: each repository's home project (with its id), then the ones made. */
   function projects(): Project[] {
     const { boards } = snapshot() as unknown as {
-      boards: Array<{ repository: Repository; cards: Array<{ column: string; closed?: boolean }> }>;
+      boards: Array<{
+        repository: Repository;
+        project_columns?: Record<
+          string,
+          Array<{ name: string; counts_as: string; custom?: boolean; script?: string }>
+        >;
+        cards: Array<{ column: string; closed?: boolean }>;
+      }>;
     };
     const members = [{ id: 1, handle: "owner", name: "Owner" }];
     const homes = boards
       .filter(({ repository }) => repository.files_of == null)
-      .map(({ repository, cards }) => ({
+      .map(({ repository, cards, project_columns }) => ({
+        columns: project_columns?.[String(repository.id)],
         id: repository.id,
         name: repository.name,
         key: repository.name
@@ -1133,14 +1142,7 @@ export function createPagesAFake(send: Send, board: BoardFake): PagesAFake {
       if (scripts && method === "GET") {
         // The home project of the first repository has a Not started script of its own; the others have none.
         const own = scripts[1] === "1";
-        const columns: Array<[string, string]> = [
-          ["Backlog", "backlog"],
-          ["Not started", "ready"],
-          ["In progress", "code"],
-          ["In review", "review"],
-          ["Ready to merge", "merge"],
-          ["Done", "done"],
-        ];
+        const columns: Array<[string, string]> = COLUMNS.map((each) => [each.name, each.file]);
         return ok(
           response,
           columns.map(([column, file]) => ({

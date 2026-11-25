@@ -27,6 +27,7 @@ mod card_repositories;
 mod cards;
 mod changes;
 mod chats;
+mod column_classes;
 mod commands;
 mod cycles;
 mod deletions;
@@ -81,6 +82,7 @@ pub use automations::{Automation, Firing, NewAutomation};
 pub use card_repositories::RunWorktree;
 pub use cards::{Card, CardMove, Held, Repository};
 pub use changes::Change;
+pub use column_classes::class_sql;
 pub use commands::DEFAULT_COMMAND_LIMIT;
 pub use cycles::{Cycle, CycleCard};
 pub use deletions::{ChatRemoved, ResearchRemoved};
@@ -533,6 +535,7 @@ UPDATE cards SET moved_at = COALESCE((SELECT MAX(at) FROM card_moves WHERE card_
     taking::SCHEMA,
     commands::SCHEMA,
     reviews::SCHEMA,
+    column_classes::SCHEMA,
 ];
 
 #[cfg(test)]

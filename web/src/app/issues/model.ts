@@ -1,5 +1,6 @@
 //! What the My issues page shows: the cards given to a person, grouped by status, as the flat list `VirtualList` draws.
 
+import { cardClass, isDone } from "../../api/columns";
 import type { Card } from "../../api/types/board";
 import type { StatusState } from "../../ui/page/StatusIcon";
 import type { ListItem } from "../../ui/page/VirtualList";
@@ -10,10 +11,10 @@ export const STATUS_GROUPS = ["In progress", "In review", "Not started", "Done"]
 export type StatusGroup = (typeof STATUS_GROUPS)[number];
 
 /** The group a card is in, from the column it stands in; a column of a workflow of the person's own is "Not started". */
-export function groupOf(card: Pick<Card, "column" | "closed">): StatusGroup {
-  if (card.closed || card.column === "Done") return "Done";
-  if (card.column === "In progress") return "In progress";
-  if (card.column === "In review" || card.column === "Ready to merge") return "In review";
+export function groupOf(card: Pick<Card, "column" | "column_class" | "closed">): StatusGroup {
+  if (card.closed || isDone(card)) return "Done";
+  if (cardClass(card) === "In progress") return "In progress";
+  if (cardClass(card) === "In review" || cardClass(card) === "Ready to merge") return "In review";
   return "Not started";
 }
 
@@ -25,7 +26,9 @@ const ICONS: Record<StatusGroup, StatusState> = {
 };
 
 /** The status icon of a card: a held card asks for a person, otherwise the icon of its group. */
-export function iconOf(card: Pick<Card, "column" | "closed" | "held">): StatusState {
+export function iconOf(
+  card: Pick<Card, "column" | "column_class" | "closed" | "held">,
+): StatusState {
   if (card.held && !card.closed) return "needsYou";
   return ICONS[groupOf(card)];
 }

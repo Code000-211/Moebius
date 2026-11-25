@@ -6,7 +6,8 @@ code is in `crates/moebius-core/src/board/` (`api.rs` for the `moebius` table, `
 
 ## How a column maps to a script
 
-Every board has the same six columns, in this order. Each column has one script file.
+Every board has six built-in columns, in this order, and a project may add columns of its own among them (see
+[Custom columns](#custom-columns)). Each column has one script file.
 
 | Column | Script |
 |---|---|
@@ -17,7 +18,10 @@ Every board has the same six columns, in this order. Each column has one script 
 | `Ready to merge` | `merge.luau` |
 | `Done` | `done.luau` |
 
-Column names are exact: capital first letter, one space between words. You cannot add, remove or rename columns yet.
+The six built-in columns cannot be renamed or removed, and Backlog is always first and Done always last. Their names are
+exact: capital first letter, one space between words. A custom column's name is as its project wrote it, and wherever a
+column is named (the argument of `moebius.move`, `--column` of `check-script`, `{column}` of the scripts routes, the
+`columns` filter of a view) it is found in any case.
 
 `Not started` was called `Ready` before. `Ready` is still accepted as its name wherever a column is named: the argument
 of `moebius.move`, `--column` of `check-script`, and `{column}` of the scripts routes of the desktop API. The column
@@ -64,6 +68,7 @@ end
 | `card.body` | string | The issue's body; an empty string when there is none. |
 | `card.author` | string | Who created the issue: `person:<handle>` for an issue a known person made in the web app (an issue from before people belongs to the first owner, `person:owner`), `person` for one made without a known person, otherwise the forge login. |
 | `card.column` | string | The column the card is in. |
+| `card.column_class` | string | The built-in column the card's column counts as: the column itself for a built-in one, and for a custom column the `counts_as` of its project's `kanban.toml` (see [Custom columns](#custom-columns)). One of the six names. Read-only. |
 | `card.confirmed` | boolean | True for a card made from a grilling a person confirmed (see `desktop-api.md`, grillings); the person has decided on it, so it needs no approval. |
 | `card.trusted` | boolean | True when the issue may move on without approval: it was made by a person in the web app on a repository without a forge, or its author is one of the repository's trusted GitHub logins (compared without regard to case). |
 | `card.test_first` | boolean | True when the card's repository works test first: its project has a `test-first` file in its settings. See Test first. |
@@ -196,8 +201,8 @@ comments are kept when they come to more than 8,000 characters.
 : True when an `[agents.<name>]` table or agent file of the configuration exists, or Moebius brings the agent itself: the `Moebius` agent, the `Grilling-partner`, the `Coder` and the `Reviewer` exist on every server.
 
 `moebius.move(column, note)`
-: Moves the card to `column` when the script returns. Raises an error `no column "<column>"` for a name that is not one
-of the six. Moving to the card's own column does nothing. The last call wins when a script calls it twice. `note` is
+: Moves the card to `column` when the script returns. Raises an error `no column "<column>"` for a name that is not a
+column of the card's project's board: one of the six, or a custom column of its `kanban.toml` (in any case). Moving to the card's own column does nothing. The last call wins when a script calls it twice. `note` is
 optional text (a string or nil) that is stored on the card as `card.note` when it moves, to say why it went back; the
 default `code.luau` gives it to the next `Coder` run. A card that moves out of `Ready to merge` has its inbox items
 resolved.
@@ -400,7 +405,7 @@ Error messages that come from Moebius:
 |---|---|
 | `the script ran out of time` | The time limit below was reached. |
 | a message containing `memory` | The memory limit below was reached. |
-| `no column "<name>"` | `moebius.move` with an unknown column. |
+| `no column "<name>"` | `moebius.move` with a column the card's board does not have. |
 | `no agent named <name>` | `moebius.start_run` with an agent that is not configured. |
 | `there is no runner named <name>` | `moebius.start_run` with a runner that is not configured. |
 | a message starting `the runner` and containing `is busy` | `moebius.start_run` on a runner that has `max_runs` runs going; no run was made, so a script may try again on a later tick. |
@@ -440,18 +445,19 @@ Both limits are fixed; the configuration cannot change them.
 
 ## Checking a script
 
-`moebius check-script <file> [--column <name>] [--title <text>] [--author <login>]` loads the file in the sandbox above
+`moebius check-script <file> [--column <name>] [--kanban <file>] [--title <text>] [--author <login>]` loads the file in the sandbox above
 and runs its `on_card` once against a made-up card, then prints what the script did. It needs no server, no
 configuration and no repository, and it stores and starts nothing.
 
 | Option | Default | Meaning |
 |---|---|---|
 | `<file>` | required | The script, such as `ready.luau` (the file name in a project's settings). |
-| `--column` | `Backlog` | The column the card is in: one of the six columns, spelled as in the table at the top (`Ready` for `Not started` too). |
+| `--column` | `Backlog` | The column the card is in: one of the six columns, spelled as in the table at the top (`Ready` for `Not started` too), or a custom column of the board given with `--kanban`. |
+| `--kanban` | none | A project's `kanban.toml` (see [Custom columns](#custom-columns)). The made-up card's board is then the one it defines: `moebius.move` accepts its columns, the card can be in one of them, and `card.column_class` is its class. A file that is not valid is refused with the message of the parser, as a save would be. |
 | `--title` | `A card to check the script with` | The card's `title`. |
 | `--author` | `person:owner` | The card's `author`. `card.trusted` is true only for a person (`person:<handle>`, or `person` on a record from before people), as on a repository without a forge. |
 
-The made-up card has `id` and `number` 1, an empty `body`, `blocked_by`, `children` and `labels` empty, no `parent`, `claimed_by` or `taken_by`, `assignees` empty, `priority` `none`, no `due`, no `estimate`, `kind` nil, `fields` empty, `merged` false, `rounds`, `reviews` and `tokens` 0, and
+The made-up card has `column_class` (its column's class), `id` and `number` 1, an empty `body`, `blocked_by`, `children` and `labels` empty, no `parent`, `claimed_by` or `taken_by`, `assignees` empty, `priority` `none`, no `due`, no `estimate`, `kind` nil, `fields` empty, `merged` false, `rounds`, `reviews` and `tokens` 0, and
 `stopped` and `test_first` false, and `attempts` empty. It has no `note`, `change`, `run`, `review` or `selection`. The `moebius` table has every constant and function of
 this page, but records its calls instead of acting:
 
@@ -463,7 +469,8 @@ this page, but records its calls instead of acting:
   `moebius.run_test` and `moebius.run_test_at_base` return `status` `pending` with an empty `output`.
 - `moebius.agent_budget` returns nil, `moebius.tokens_today` and `moebius.runs_active` return 0, and the limits are the
   defaults.
-- `moebius.move` raises `no column "<name>"` for a column that does not exist.
+- `moebius.move` raises `no column "<name>"` for a column the board (the six, or the one `--kanban` defines) does not
+  have.
 
 The output is one line for each call that does something, in the order of the calls, then the exit status 0:
 
@@ -512,6 +519,90 @@ A script from a project runs with the same sandbox and limits as a built-in one.
 The desktop API reads, saves and removes an override: `GET`, `PUT` and `DELETE` of
 [`/v1/projects/{id}/scripts/{column}`](desktop-api.md#get-v1projectsidscriptscolumn). A save checks the script
 like `moebius check-script`, commits it to the harness configuration repository and pushes it to its `origin`.
+
+## Custom columns
+
+A project may add columns of its own to its board. They are defined in `projects/<project name>/kanban.toml` of the
+[harness configuration repository](harness-configuration.md#project-settings), and each has a script of its own
+([ADR 0030](../adr/0030-custom-board-columns-per-project.md)). The guide has a worked example:
+[Custom columns](../guide/custom-columns.md).
+
+```toml
+[[column]]
+name = "Ready for testing"
+script = "testing.luau"
+after = "In review"
+counts_as = "In review"
+```
+
+Every `[[column]]` has these keys, and no other key is accepted:
+
+| Key | Required | Meaning |
+|---|---|---|
+| `name` | yes | The column's name, as the board shows it: 1 to 40 characters, without a control character, trimmed. Unique among the file's columns without regard to case, and not the name of a built-in column in any case (`Ready` is the alias of `Not started` and is taken too). |
+| `script` | no | The column's script, a file of the project's folder: a plain file name ending in `.luau`, of letters, digits, `-`, `_`, `.` and spaces, not starting or ending with a dot or a space, without `..` and without a folder. Left out, the column runs the script file of its class (`review.luau` for a column that counts as `In review`), so a project's own `review.luau` serves it too. |
+| `after` | one of `after` and `counts_as` | The column this one comes after: a built-in column other than `Done`, or another custom column of the file. Left out, the column comes after the built-in column that its `counts_as` names. |
+| `counts_as` | no | The column's class: one of `Backlog`, `Not started`, `In progress`, `In review`, `Ready to merge` or `Done`, spelled exactly so. Left out, the class of the column it comes after (the class of the built-in column, or the class the other custom column has). |
+
+**Order.** The board is Backlog, then each built-in column followed by the custom columns that come after it, and Done
+last. A custom column that comes after another custom column comes right behind it, before the later columns that come
+after the same built-in one. Columns that come after the same column keep the order they have in the file, so two
+columns that are both `after = "In review"` are `In review`, the first of them, the second. A file with no `[[column]]`
+is the six built-in columns, as no file is.
+
+**The class.** A card in a custom column counts exactly as the built-in column that is its class wherever built-in logic
+decides something from the column: whether the issue is closed, whether the card still blocks the cards that wait for
+it (a card whose class is `Done` is done), the burn-up of a cycle and the figures of the analytics and of milestones, the
+open cards of a project, `/done` and the other commands, the limits of review rounds, a merge from `Ready to merge`, the
+reviews of followed pull requests, the loops and the status of a card. A script reads it as `card.column_class`. The
+class is for reading only: what Moebius writes still goes through scripts. A card that enters a custom column that counts
+as `Done` is not closed by that, nor is its issue, unless the column's script closes it (`moebius.close_issue`); when the
+engine applies a close, the card goes to the built-in `Done`; and the moves that Moebius makes to a built-in column (the
+merge to `Done`, a reopened issue to `Backlog`) are to that column.
+
+**What runs.** The script of a custom column runs for its cards as a built-in one does, with the same sandbox and
+limits, and its file is read from the project's settings on every run. A custom column whose script file is not there
+runs the script of its class, and the card's waiting text says so. A column the file does not have (but a card is in)
+runs the script of the class it had, with the notice below.
+
+**Checks.** A file is refused as a whole, and the message starts with `kanban.toml:` and has every mistake in it,
+separated by `; `. The classes of mistake are:
+
+| Message | Cause |
+|---|---|
+| `kanban.toml: ` and the parser's message | The text is not TOML, or a `[[column]]` has a key that is not one of the four above, a value of the wrong type or no `name`. |
+| `column <n> has no name` | An empty `name`. |
+| `column <n> ("<name>"): a name has at most 40 characters and no control character` | A name that is too long or has a control character. |
+| `column <n> ("<name>"): the name is taken by a built-in column ("Ready" is the alias of "Not started")` | A name that is a built-in column's, in any case. |
+| `column <n> ("<name>"): the name is used twice (names are compared without case)` | Two columns with the same name. |
+| `column <n> ("<name>"): script "<file>" must be a plain file name ending in .luau, without a folder` | A script name that is not safe. |
+| `column <n> ("<name>"): counts_as "<class>" is none of Backlog, Not started, In progress, In review, Ready to merge, Done` | A class that is not one of the six. |
+| ``column "<name>": give `after` (the column it comes after) or `counts_as` `` | A column with neither key. |
+| `column "<name>": after "<column>" names no column` | An `after` that is no built-in or custom column. |
+| `column "<name>": nothing comes after Done` | `after = "Done"`. |
+| ``column "<name>": the `after` columns lead round in a circle`` | Custom columns that come after each other in a loop. |
+
+**Saving it.** A save is refused with `422` when the file is not valid (the messages above), and with `409` when it would
+remove a column while cards are in it: `kanban.toml would remove the column "<name>" while cards are in it (#12, #15);
+move them to another column first`, which names up to ten cards of the first such column. Removing the file removes all
+the custom columns, and is refused the same way. The same two checks hold wherever the file changes: a save through the
+API, the Moebius agent's edits and the merge of a proposal that changes it (the merge is refused and the proposal
+stays). A file that is committed by hand to the repository and fetched is not checked before it is read, so this is what
+happens to a board whose file is wrong when it is read:
+
+- **A file that is not valid** leaves the columns last known in force (the six built-in ones before there was a valid
+  file), and the project's `columns_problem` says what is wrong. The cards keep running their scripts, and nothing fails.
+- **Cards in a column the file has lost** (it was removed or renamed by hand) are not on the board's columns any more,
+  but each runs the script of the class that column had, and its waiting text says that the project's `kanban.toml` no
+  longer has the column. `columns_problem` names the columns and the classes. Move the cards to a column of the board, or
+  put the column back, and the notice goes. The cards still count as the class they had until then.
+- A card in a column nobody ever defined (moved by hand in the store) counts as `Backlog`, runs the script of
+  `Backlog`, and is told so.
+
+A project with no `kanban.toml` has the six built-in columns, as before. `GET /v1/projects/{id}` gives the board's
+`columns` and the `columns_problem`, and `GET /v1/snapshot` gives each card its `column_class` (see the [desktop
+API](desktop-api.md)). The file is read from the default branch of the harness configuration repository's clone, like
+the scripts, and the board built from it is kept for as long as the text is the same.
 
 ## Checks and conflicts
 

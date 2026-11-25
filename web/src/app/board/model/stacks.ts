@@ -2,6 +2,7 @@
  * Cards that have sub-issues: who is the parent of whom, the stack under a card, whether an issue is closed and which
  * card the board starts next.
  */
+import { isDone } from "../../../api/columns";
 import type { Board, Card } from "../../../api/types/board";
 import { plural } from "../../../ui/lib/format";
 import { isHeld } from "./status";
@@ -56,7 +57,7 @@ export function descendants(board: Board, card: Card): Card[] {
 
 /** Whether the issue is closed: it was closed, or its card is in Done. */
 export function isClosed(card: Card): boolean {
-  return card.closed || card.column === "Done";
+  return card.closed || isDone(card);
 }
 
 /** A card with sub-issues, and how its stack stands. */
