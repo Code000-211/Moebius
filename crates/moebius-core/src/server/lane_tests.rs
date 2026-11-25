@@ -1285,12 +1285,15 @@ async fn pid_of(file: &std::path::Path) -> String {
 }
 
 fn alive(pid: &str) -> bool {
-    std::process::Command::new("kill")
-        .args(["-0", pid])
-        .stderr(std::process::Stdio::null())
-        .status()
-        .unwrap()
-        .success()
+    // A process that was killed and not yet reaped (nothing here may be init) is a zombie: it is not running.
+    match std::fs::read_to_string(format!("/proc/{pid}/stat")) {
+        Ok(stat) => stat
+            .rsplit(')')
+            .next()
+            .map(str::trim_start)
+            .is_some_and(|rest| !rest.starts_with('Z')),
+        Err(_) => false,
+    }
 }
 
 /// Runs the pass on a thread of its own, as the server does, so that the test can act while a job goes.
