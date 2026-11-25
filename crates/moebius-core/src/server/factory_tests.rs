@@ -764,7 +764,10 @@ async fn approve_code_approves_the_code_labels_moves_and_replies_and_never_merge
         .find(|t| t.contains("measurement"))
         .unwrap_or_else(|| panic!("{told:?}"));
     assert!(reply.contains("## Measurement"), "{reply}");
-    assert!(reply.contains("@ada"), "{reply}");
+    // It promises only what works: the owner accepts the measurement; nothing reads the comment by itself yet.
+    assert!(reply.contains("accepts the measurement"), "{reply}");
+    assert!(!reply.contains("reviewed again"), "{reply}");
+    assert!(!reply.contains("@ada"), "{reply}");
     // The same head is not read again, and nothing merged since.
     f.author_says_done().await;
     assert_eq!(f.reviews_of(&card).len(), 1);
@@ -805,4 +808,137 @@ async fn approve_code_leaves_the_card_in_review_when_the_project_has_no_such_col
     assert!(f.merged_requests().is_empty());
     // The label is not on the issue once the poll has read it back, and a later round is possible after a push.
     assert!(Path::new(&f.repository.path).exists());
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_freeze_made_while_the_label_stands_is_its_own_cause_and_stays_when_the_label_goes() {
+    let (f, _card, _) = ready().await;
+    f.fake.edit_issue(1, |issue| {
+        issue["labels"] = json!([{ "name": FREEZE_LABEL }]);
+    });
+    f.server.poll_github().await;
+    assert_eq!(f.frozen().unwrap().source, "label");
+    // A person and a breaker freeze it while the label stands: each is a cause of its own.
+    f.server
+        .app
+        .freeze_repository(&owner(), f.repository.id, "looking into the benchmark")
+        .unwrap();
+    assert!(
+        f.server
+            .app
+            .freeze_for_failed_nightly(f.repository.id, "kernel tests red")
+            .unwrap()
+    );
+    let items = |f: &Fixture| {
+        f.server
+            .app
+            .store
+            .inbox()
+            .unwrap()
+            .into_iter()
+            .filter(|i| i.kind == "factory_frozen")
+            .map(|i| i.data["cause"].as_str().unwrap().to_string())
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(
+        items(&f),
+        ["label", "manual", "nightly"],
+        "each cause tells the owner"
+    );
+
+    // The label goes: only its cause is lifted, and nobody but a person lifts the others.
+    f.fake.edit_issue(1, |issue| issue["labels"] = json!([]));
+    f.server.poll_github().await;
+    let frozen = f.frozen().expect("the other causes stand");
+    assert!(
+        frozen.reason.contains("looking into the benchmark"),
+        "{}",
+        frozen.reason
+    );
+    assert!(
+        frozen.reason.contains("kernel tests red"),
+        "{}",
+        frozen.reason
+    );
+    assert!(!frozen.reason.contains(FREEZE_LABEL), "{}", frozen.reason);
+    assert_eq!(items(&f), ["manual", "nightly"]);
+    f.server.poll_github().await;
+    assert!(f.frozen().is_some(), "a later poll lifts nothing either");
+    // Each cause left its own record.
+    let actions = f.server.app.store.judgements("freeze_repository").unwrap();
+    assert_eq!(actions.len(), 3);
+    // A person lifts what is left.
+    f.server
+        .app
+        .unfreeze_repository(&owner(), f.repository.id, "looked")
+        .unwrap();
+    assert!(f.frozen().is_none());
+    assert!(items(&f).is_empty());
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_breaker_that_trips_while_the_label_stands_is_not_dropped_with_the_label() {
+    let (f, _card, _) = ready().await;
+    f.fake.edit_issue(1, |issue| {
+        issue["labels"] = json!([{ "name": FREEZE_LABEL }]);
+    });
+    f.server.poll_github().await;
+    let one = f.commit_on_main("first change");
+    let two = f.commit_on_main("second change");
+    f.merged_as(&one, 41);
+    f.merged_as(&two, 42);
+    f.commit_on_main(&format!("Revert \"first\"\n\nThis reverts commit {one}."));
+    f.commit_on_main(&format!("Revert \"second\"\n\nThis reverts commit {two}."));
+    f.server.poll_github().await;
+    assert!(f.frozen().unwrap().reason.contains("were reverted"));
+    f.fake.edit_issue(1, |issue| issue["labels"] = json!([]));
+    f.server.poll_github().await;
+    let frozen = f.frozen().expect("the breaker's freeze stands");
+    assert_eq!(frozen.source, "automatic");
+    assert!(frozen.reason.contains("2 merged changes were reverted"));
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn the_files_of_the_review_brief_and_a_boards_definition_are_locked_for_the_server() {
+    // The brief the repository names: a change to it merges only through a person.
+    let (f, card, _) = ready().await;
+    f.factory(FactoryEdit {
+        review_brief: Some(vec!["src/lib.rs".into()]),
+        ..Default::default()
+    });
+    f.author_says_done().await;
+    let run = f.reviews_of(&card).remove(0);
+    f.reviewer_ends(&card, &run, &said("approve", "Fine.", json!([])))
+        .await;
+    assert!(f.merged_requests().is_empty());
+    let items = f.open_items(&card, MERGE_REFUSED);
+    let reason = items[0].data["reason"].as_str().unwrap();
+    assert!(
+        reason.contains("src/lib.rs") && reason.contains("locked by /src/lib.rs"),
+        "{reason}"
+    );
+    // The same goes for the default, REVIEW.md, from the root only, and for a board's file.
+    for path in ["REVIEW.md", "kanban.toml", ".moebius/columns/review.luau"] {
+        let g = Fixture::new().await;
+        g.fake.threads.lock().unwrap().insert(1, Vec::new());
+        g.fake.writers.lock().unwrap().push("alice".into());
+        g.server
+            .app
+            .store
+            .set_repository_commands(g.repository.id, true, 3, true)
+            .unwrap();
+        g.server
+            .app
+            .set_review_runs(std::sync::Arc::new(super::taking_tests::ReviewerRuns));
+        let card = super::taking_tests::following(&g).await;
+        g.pull_adds(path);
+        g.checks_are("completed", "success");
+        g.server.poll_github().await;
+        g.author_says_done().await;
+        let run = g.reviews_of(&card).remove(0);
+        g.reviewer_ends(&card, &run, &said("approve", "Fine.", json!([])))
+            .await;
+        assert!(g.merged_requests().is_empty(), "{path}");
+        assert_eq!(g.open_items(&card, MERGE_REFUSED).len(), 1, "{path}");
+    }
 }

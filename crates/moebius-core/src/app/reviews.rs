@@ -1010,21 +1010,10 @@ impl App {
         {
             self.move_card(card.id, &column, Some(&reviewer()))?;
         }
-        let measurers = match repository.measurers.as_slice() {
-            [] => "a registered measurer".to_string(),
-            logins => format!(
-                "a registered measurer ({})",
-                logins
-                    .iter()
-                    .map(|login| format!("@{login}"))
-                    .collect::<Vec<_>>()
-                    .join(", ")
-            ),
-        };
         let text = format!(
             "Reviewed pull request #{number}: the code looks right, but the measurement this repository asks for is missing, so it is not merged. \
-             To go on, {measurers} posts a comment on this issue that starts with `## Measurement` and gives the measured numbers: \
-             before and after on one machine, and that the output is the same. The pull request is reviewed again once that comment is here."
+             The numbers go in a comment on this issue that starts with `## Measurement`: before and after on one machine, and that the output is the same. \
+             The repository owner checks them, accepts the measurement and merges the pull request. Nothing reads that comment by itself yet."
         );
         let by = reviewer();
         if let Err(e) = self.comment_issue(&by, card.id, &text) {

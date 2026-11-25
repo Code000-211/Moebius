@@ -4870,8 +4870,11 @@ harness configuration repository has no repository's rules and is not asked. In 
    refusal) is locked. A person's own Merge is how a locked path merges. Locked are the built-in globs `.github/**`,
    `.forgejo/**`, `.gitea/**`, `.gitlab-ci.yml`, `CMakeLists.txt`, `*.cmake`, `build.sh`, `Dockerfile`, `Dockerfile.*`,
    `Makefile`, `package.json`, `package-lock.json`, `pnpm-lock.yaml`, `yarn.lock`, `Cargo.toml`, `Cargo.lock`,
-   `pyproject.toml`, `requirements*.txt`, `go.mod`, `go.sum`, `AGENTS.md` and `CLAUDE.md`, and the repository's
-   `locked_paths`, which only add. A glob is read like a `.gitignore` line: `*` and `?` stay in one name, `**` as a name
+   `pyproject.toml`, `requirements*.txt`, `go.mod`, `go.sum`, `AGENTS.md`, `CLAUDE.md`, `.moebius/**` and `kanban.toml` (a
+   board's definition and column scripts, where a repository still keeps them; the harness configuration repository, which
+   holds them now, is no repository of the factory), and the repository's `locked_paths`, which only add. The files of the
+   repository's `review_brief` are locked too, from the root: a change that rewrote the rules the Reviewer is given would be
+   believed by every review after it. A glob is read like a `.gitignore` line: `*` and `?` stay in one name, `**` as a name
    is any number of directories, a glob with no `/` matches a name at any depth (and all under a directory of that
    name), one with a `/` is matched from the root, a trailing `/` is the directory and all under it.
 6. **Rules.** When the server's rules file or the repository's `rules.md` has rules, the decision `merge_check` is asked
@@ -4899,7 +4902,7 @@ inbox item `factory_frozen` and the web app says "Frozen: <reason>" in the card 
 - `manual`: `POST /v1/repositories/{id}/freeze`, by a person or the Moebius agent. Pausing all agents (`POST
   /v1/runs/pause`) is the same brake for every repository's runs, which also holds a card's merges by script.
 - `label`: the label `factory:freeze` on any open issue of the repository, read by the poll (an issue the poll does not
-  list does not count). The freeze lasts while a label is there and lifts when the last one is taken off.
+  list does not count). This cause lasts while a label is there and lifts when the last one is taken off.
 - `automatic`: a breaker, which trips once for what tripped it (so a person's unfreeze is not undone at the next poll
   while the cause stands): two different merged changes reverted within seven days (the poll reads the default branch's
   last week for a commit whose message says `This reverts commit <sha>` of a change's merge commit or head, or whose message
@@ -4907,7 +4910,12 @@ inbox item `factory_frozen` and the web app says "Frozen: <reason>" in the card 
   repository on a forge freezes; with no budget there is no such breaker); and `App::freeze_for_failed_nightly(repository,
   reason)`, the hook a nightly check calls when it fails.
 
-Only a person unfreezes (`POST /v1/repositories/{id}/unfreeze`), and what the label froze is lifted by taking the label off.
+A freeze has one cause for each of these: `manual`, `label`, and a breaker each (`reverts`, `tokens`, `nightly`). Causes are kept
+apart. A cause added while another holds (a person freezes it, or a breaker trips, while the label stands) is kept next to it,
+writes its own record (`freeze_repository`, with its `cause` in the context) and its own `factory_frozen` item (`data.cause`),
+and `frozen.reason` joins the reasons of all of them, `frozen.source` being the first cause's. Taking the label off lifts the
+`label` cause and its item, and nothing else. Only a person unfreezes the rest (`POST /v1/repositories/{id}/unfreeze` lifts every
+cause and resolves every item), and not while the label is still on an issue.
 
 ### The review brief
 
@@ -4934,10 +4942,11 @@ author (a review a person asked for only writes the review and answers on the is
 - the issue gets the repository's `testing_label` (default `ready-for-testing`), as a label script would write it;
 - the card moves to the project's column `Ready for testing` when the project's board has one (see [custom
   columns](../adr/0030-custom-board-columns-per-project.md)), and otherwise stays in `In review`;
-- the issue gets a comment that the code looks right, that the measurement is missing and not merged, and that a
-  registered measurer (the repository's `measurers`) posts a comment that starts with `## Measurement` with the numbers
-  (before and after on one machine, output parity). A measurer's comment starts the next round in the next release; until
-  then a person accepts a measurement with `POST /v1/changes/{id}/measurement`.
+- the issue gets a comment that the code looks right, that the measurement is missing and it is not merged, and that
+  the numbers go in a comment that starts with `## Measurement` (before and after on one machine, output parity), which
+  the owner checks before they accept the measurement with `POST /v1/changes/{id}/measurement` and merge. Nothing reads
+  that comment by itself yet: reading a registered measurer's comment (the repository's `measurers`, which are stored and
+  shown only) and starting the next round from it is the next release's.
 
 The card's `review.verdict` (a column script's `card.review.verdict`) is `approve_code`, which no script that tests for
 `approve` takes for an approval.

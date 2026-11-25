@@ -17,9 +17,14 @@ ALTER TABLE repositories ADD COLUMN locked_paths TEXT NOT NULL DEFAULT '[]';
 ALTER TABLE repositories ADD COLUMN review_brief TEXT NOT NULL DEFAULT '["REVIEW.md"]';
 ALTER TABLE repositories ADD COLUMN testing_label TEXT NOT NULL DEFAULT 'ready-for-testing';
 ALTER TABLE repositories ADD COLUMN measurers TEXT NOT NULL DEFAULT '[]';
-ALTER TABLE repositories ADD COLUMN frozen_reason TEXT;
-ALTER TABLE repositories ADD COLUMN frozen_source TEXT;
-ALTER TABLE repositories ADD COLUMN frozen_at INTEGER;
+CREATE TABLE freezes (
+    repository_id INTEGER NOT NULL REFERENCES repositories(id),
+    cause TEXT NOT NULL,
+    source TEXT NOT NULL,
+    reason TEXT NOT NULL,
+    at INTEGER NOT NULL,
+    PRIMARY KEY (repository_id, cause)
+);
 ALTER TABLE changes ADD COLUMN merge_commit TEXT;
 CREATE TABLE measurements (
     id INTEGER PRIMARY KEY,
@@ -69,6 +74,12 @@ pub struct FactorySettings {
     pub testing_label: String,
     pub measurers: Vec<String>,
 }
+
+/// The three columns of a repository select that say why it is frozen: all the causes' reasons together, the first
+/// cause's source and when the first began; null while no cause holds.
+pub(super) const FROZEN_COLUMNS: &str = "(SELECT group_concat(reason, '; ') FROM (SELECT reason FROM freezes WHERE repository_id = repositories.id ORDER BY at, cause)), \
+     (SELECT source FROM freezes WHERE repository_id = repositories.id ORDER BY at, cause LIMIT 1), \
+     (SELECT MIN(at) FROM freezes WHERE repository_id = repositories.id)";
 
 /// The default of `review_brief`.
 pub const DEFAULT_REVIEW_BRIEF: &str = "REVIEW.md";
@@ -120,22 +131,45 @@ impl Store {
         Ok(())
     }
 
-    /// Freezes the repository. False when it was frozen already, which keeps its first reason.
-    pub fn freeze_repository(&self, id: i64, source: &str, reason: &str) -> Result<bool> {
+    /// Adds a cause to the repository's freeze: `cause` is `manual`, `label` or the breaker's name (`tokens`, `reverts`,
+    /// `nightly`), `source` what the owner reads it as (`manual`, `label` or `automatic`). False when that cause holds
+    /// already, which keeps its first reason. Causes are kept apart, so that lifting one never lifts another.
+    pub fn freeze_repository(
+        &self,
+        id: i64,
+        cause: &str,
+        source: &str,
+        reason: &str,
+    ) -> Result<bool> {
         Ok(self.conn().execute(
-            "UPDATE repositories SET frozen_reason = ?1, frozen_source = ?2, frozen_at = ?3 \
-             WHERE id = ?4 AND frozen_reason IS NULL",
-            params![reason, source, now(), id],
+            "INSERT OR IGNORE INTO freezes (repository_id, cause, source, reason, at) VALUES (?1, ?2, ?3, ?4, ?5)",
+            params![id, cause, source, reason, now()],
         )? > 0)
     }
 
-    /// Lifts the freeze of the repository. False when it was not frozen.
-    pub fn unfreeze_repository(&self, id: i64) -> Result<bool> {
+    /// Lifts one cause of the freeze. False when it did not hold.
+    pub fn lift_freeze_cause(&self, id: i64, cause: &str) -> Result<bool> {
         Ok(self.conn().execute(
-            "UPDATE repositories SET frozen_reason = NULL, frozen_source = NULL, frozen_at = NULL \
-             WHERE id = ?1 AND frozen_reason IS NOT NULL",
-            [id],
+            "DELETE FROM freezes WHERE repository_id = ?1 AND cause = ?2",
+            params![id, cause],
         )? > 0)
+    }
+
+    /// Whether the cause holds.
+    pub fn has_freeze_cause(&self, id: i64, cause: &str) -> Result<bool> {
+        Ok(self.read().query_row(
+            "SELECT EXISTS(SELECT 1 FROM freezes WHERE repository_id = ?1 AND cause = ?2)",
+            params![id, cause],
+            |r| r.get(0),
+        )?)
+    }
+
+    /// Lifts every cause of the freeze. False when the repository was not frozen.
+    pub fn unfreeze_repository(&self, id: i64) -> Result<bool> {
+        Ok(self
+            .conn()
+            .execute("DELETE FROM freezes WHERE repository_id = ?1", [id])?
+            > 0)
     }
 
     /// Records when a change merged and, when it is known, the commit the merge made.
@@ -256,19 +290,44 @@ mod tests {
     }
 
     #[test]
-    fn freezing_keeps_the_first_reason_and_unfreezing_says_whether_it_lifted() {
+    fn causes_of_a_freeze_are_kept_apart_and_only_a_person_lifts_them_all() {
         let (_dir, store) = store();
         let repo = store.add_repository("r", "/r", "none", "main").unwrap();
-        assert!(store.freeze_repository(repo.id, "manual", "first").unwrap());
+        assert!(
+            store
+                .freeze_repository(repo.id, "label", "label", "the label is on #1")
+                .unwrap()
+        );
+        assert!(
+            store
+                .freeze_repository(repo.id, "nightly", "automatic", "the nightly check failed")
+                .unwrap()
+        );
+        // The same cause twice keeps the first reason.
         assert!(
             !store
-                .freeze_repository(repo.id, "automatic", "second")
+                .freeze_repository(repo.id, "label", "label", "again")
                 .unwrap()
         );
         let frozen = store.repository(repo.id).unwrap().unwrap().frozen.unwrap();
+        assert_eq!(frozen.source, "label");
+        assert!(
+            frozen.reason.contains("the label is on #1"),
+            "{}",
+            frozen.reason
+        );
+        assert!(
+            frozen.reason.contains("nightly check failed"),
+            "{}",
+            frozen.reason
+        );
+        // Lifting the label's cause leaves the other.
+        assert!(store.lift_freeze_cause(repo.id, "label").unwrap());
+        assert!(!store.lift_freeze_cause(repo.id, "label").unwrap());
+        let frozen = store.repository(repo.id).unwrap().unwrap().frozen.unwrap();
         assert_eq!(
             (frozen.reason.as_str(), frozen.source.as_str()),
-            ("first", "manual")
+            ("the nightly check failed", "automatic")
         );
         assert!(store.unfreeze_repository(repo.id).unwrap());
         assert!(!store.unfreeze_repository(repo.id).unwrap());

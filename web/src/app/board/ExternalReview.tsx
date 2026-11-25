@@ -72,8 +72,8 @@ export function ExternalReview({ review, forge }: { review: Round; forge: string
       {needsMeasurement && (
         <p data-testid="measurement-needed" className="m-0 text-sm text-secondary">
           The code is right, but the measurement the repository asks for is missing. It is not
-          merged. A comment that starts with "## Measurement" from a registered measurer starts the
-          next round.
+          merged. A person accepts the measurement ({"POST /v1/changes/{id}/measurement"}) and then
+          merges it; a "## Measurement" comment does not start anything by itself yet.
         </p>
       )}
       {review.summary && (

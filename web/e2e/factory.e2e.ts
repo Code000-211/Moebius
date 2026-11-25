@@ -117,7 +117,7 @@ describe.skipIf(usesRealServer)("the factory", () => {
     const review = page.locator("[data-card-window]").getByTestId("external-review");
     await review.waitFor();
     expect(await review.textContent()).toContain("Code approved, measurement needed");
-    expect(await review.textContent()).toContain("## Measurement");
+    expect(await review.textContent()).toContain("accepts the measurement");
   });
 
   for (const scheme of ["light", "dark"] as const) {

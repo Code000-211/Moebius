@@ -45,7 +45,9 @@ describe("a review whose code is approved and whose measurement is missing", () 
     const review = screen.getByTestId("external-review");
     expect(review.textContent).toContain("Code approved, measurement needed");
     expect(review.textContent).not.toContain("Approved and merged");
-    expect(screen.getByTestId("measurement-needed").textContent).toContain("## Measurement");
+    expect(screen.getByTestId("measurement-needed").textContent).toContain(
+      "accepts the measurement",
+    );
     expect(review.textContent).toContain("The kernel change is right.");
   });
 });

@@ -5,8 +5,8 @@
 //! A repository is frozen by
 //!
 //! - a person, with `POST /v1/repositories/{id}/freeze` (`manual`);
-//! - the label `factory:freeze` on any open issue of the repository, which the poll reads (`label`): the freeze lasts
-//!   as long as a label is there, and the person who takes it off has lifted it;
+//! - the label `factory:freeze` on any open issue of the repository, which the poll reads (`label`): this cause lasts
+//!   as long as a label is there, and the person who takes it off has lifted it, and only it;
 //! - a breaker (`automatic`): two merged changes reverted within seven days, more than 80% of the day's token budget
 //!   used, or a failed nightly check ([`App::freeze_for_failed_nightly`] is the hook the nightly check calls).
 //!
@@ -50,7 +50,7 @@ impl App {
             }
             reason => reason.to_string(),
         };
-        self.freeze(&repository, "manual", &reason, by)
+        self.freeze(&repository, "manual", "manual", &reason, by)
     }
 
     /// A person lifts the freeze. Refused for an agent or a script, and while the label `factory:freeze` is still on an
@@ -73,19 +73,25 @@ impl App {
         self.lift(&repository, by, reason)
     }
 
-    /// Freezes the repository for a breaker. True when it was not frozen before.
+    /// Adds the breaker's (or the label's) cause to the repository's freeze. True when this cause did not hold before.
+    /// A cause that is added while another holds is kept next to it and is lifted only as its own kind is.
     pub(crate) fn freeze_automatically(
         &self,
         repository: &Repository,
-        source: &str,
+        cause: &str,
         reason: &str,
     ) -> Result<bool> {
         let by = Actor::Script {
             column: "factory".into(),
         };
-        let was = self.repository(repository.id)?.frozen.is_some();
-        self.freeze(repository, source, reason, &by)?;
-        Ok(!was)
+        let source = if cause == "label" {
+            "label"
+        } else {
+            "automatic"
+        };
+        let had = self.store.has_freeze_cause(repository.id, cause)?;
+        self.freeze(repository, cause, source, reason, &by)?;
+        Ok(!had)
     }
 
     /// The hook for a nightly check that failed: freezes the repository with the check's reason, so that nothing is
@@ -94,7 +100,7 @@ impl App {
         let repository = self.repository(repository_id)?;
         self.freeze_automatically(
             &repository,
-            "automatic",
+            "nightly",
             &format!("the nightly check failed: {}", why.trim()),
         )
     }
@@ -102,16 +108,18 @@ impl App {
     fn freeze(
         &self,
         repository: &Repository,
+        cause: &str,
         source: &str,
         reason: &str,
         by: &Actor,
     ) -> Result<Repository> {
         if !self
             .store
-            .freeze_repository(repository.id, source, reason)?
+            .freeze_repository(repository.id, cause, source, reason)?
         {
             return self.repository(repository.id);
         }
+        // Each cause leaves its own record and its own inbox item.
         self.record_action(
             by,
             "freeze_repository",
@@ -120,6 +128,7 @@ impl App {
             BTreeMap::from([
                 ("repository".into(), repository.name.clone()),
                 ("source".into(), source.into()),
+                ("cause".into(), cause.into()),
             ]),
             reason,
         )?;
@@ -132,6 +141,7 @@ impl App {
                 "repository_id": repository.id,
                 "reason": reason,
                 "source": source,
+                "cause": cause,
             }),
         )?;
         let repository = self.repository(repository.id)?;
@@ -140,6 +150,7 @@ impl App {
         Ok(repository)
     }
 
+    /// A person lifts every cause of the freeze.
     fn lift(&self, repository: &Repository, by: &Actor, reason: &str) -> Result<Repository> {
         self.store.unfreeze_repository(repository.id)?;
         self.record_action(
@@ -150,15 +161,24 @@ impl App {
             BTreeMap::from([("repository".into(), repository.name.clone())]),
             reason,
         )?;
-        for item in self.store.inbox()? {
-            if item.kind == FACTORY_FROZEN && item.data["repository_id"] == repository.id {
-                self.store.resolve_inbox_item(item.id)?;
-            }
-        }
+        self.resolve_frozen_items(repository, None)?;
         let repository = self.repository(repository.id)?;
         self.bus
             .publish(Event::RepositoryUpdated(repository.clone()));
         Ok(repository)
+    }
+
+    /// Resolves the repository's `factory_frozen` items: all of them, or those of one cause.
+    fn resolve_frozen_items(&self, repository: &Repository, cause: Option<&str>) -> Result<()> {
+        for item in self.store.inbox()? {
+            if item.kind == FACTORY_FROZEN
+                && item.data["repository_id"] == repository.id
+                && cause.is_none_or(|cause| item.data["cause"] == cause)
+            {
+                self.store.resolve_inbox_item(item.id)?;
+            }
+        }
+        Ok(())
     }
 
     /// The number of an open issue of the repository that carries the label `factory:freeze`, if one does.
@@ -181,27 +201,39 @@ impl App {
         Ok(self.repository(repository_id)?.frozen)
     }
 
-    /// Follows the label `factory:freeze` as the poll just read the issues: an issue that has it freezes the
-    /// repository, and a freeze the label made lifts when no issue has it.
+    /// Follows the label `factory:freeze` as the poll just read the issues: an issue that has it adds the cause `label`
+    /// to the freeze, and when no issue has it any longer that cause, and only that one, is lifted. A freeze a person or
+    /// a breaker made while the label stood is a cause of its own and stays until a person lifts it.
     pub fn sync_freeze_label(&self, repository: &Repository) -> Result<()> {
         let repository = self.repository(repository.id)?;
-        match (self.label_on(&repository)?, &repository.frozen) {
-            (Some(number), None) => {
+        let holds = self.store.has_freeze_cause(repository.id, "label")?;
+        match (self.label_on(&repository)?, holds) {
+            (Some(number), false) => {
                 self.freeze_automatically(
                     &repository,
                     "label",
                     &format!("the label {FREEZE_LABEL} is on #{number}"),
                 )?;
             }
-            (None, Some(frozen)) if frozen.source == "label" => {
+            (None, true) => {
+                self.store.lift_freeze_cause(repository.id, "label")?;
                 let by = Actor::Script {
                     column: "factory".into(),
                 };
-                self.lift(
-                    &repository,
+                self.record_action(
                     &by,
+                    "unfreeze_repository",
+                    None,
+                    None,
+                    BTreeMap::from([
+                        ("repository".into(), repository.name.clone()),
+                        ("cause".into(), "label".into()),
+                    ]),
                     &format!("the label {FREEZE_LABEL} is gone"),
                 )?;
+                self.resolve_frozen_items(&repository, Some("label"))?;
+                self.bus
+                    .publish(Event::RepositoryUpdated(self.repository(repository.id)?));
             }
             _ => {}
         }
@@ -236,7 +268,7 @@ impl App {
         }
         self.freeze_automatically(
             repository,
-            "automatic",
+            "tokens",
             &format!(
                 "more than {BUDGET_PERCENT}% of the day's token budget is used ({used} of {budget} tokens)"
             ),
@@ -307,7 +339,7 @@ impl App {
         {
             self.freeze_automatically(
                 repository,
-                "automatic",
+                "reverts",
                 &format!("{count} merged changes were reverted within 7 days"),
             )?;
         }

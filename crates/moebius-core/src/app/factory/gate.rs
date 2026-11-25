@@ -120,10 +120,22 @@ impl App {
                     )));
                 }
                 Ok(files) => {
+                    // The repository's rules for its reviews are locked too, from the root: a change that rewrote
+                    // them would be believed by every review after it.
+                    let brief: Vec<String> = repository
+                        .review_brief
+                        .iter()
+                        .map(|path| format!("/{}", path.trim_start_matches('/')))
+                        .collect();
                     let owners = repository.locked_paths.iter().map(String::as_str);
-                    let locked = paths::DEFAULT_LOCKED.iter().copied().chain(owners);
+                    let locked = paths::DEFAULT_LOCKED
+                        .iter()
+                        .copied()
+                        .chain(owners)
+                        .chain(brief.iter().map(String::as_str));
                     let hit = files.iter().find_map(|file| {
-                        paths::locked_by(locked.clone(), file).map(|pattern| (file, pattern))
+                        paths::locked_by(locked.clone(), file)
+                            .map(|pattern| (file, pattern.to_string()))
                     });
                     if let Some((file, pattern)) = hit {
                         return Ok(Err(format!(

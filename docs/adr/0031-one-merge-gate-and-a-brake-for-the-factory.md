@@ -72,8 +72,8 @@ with as little of their own work as possible, which asks more of the server than
   and merges nothing; the round ends `awaiting_measurement` and counts. The issue gets the repository's
   `testing_label` (default `ready-for-testing`), the card moves to the project's column "Ready for testing" when the
   project has one (custom columns, [0030](0030-custom-board-columns-per-project.md)) and otherwise stays in In review,
-  and the issue is told a measurement is needed and how to post one. Starting the next round from a measurer's comment
-  is the next release's.
+  and the issue is told a measurement is needed, that the numbers go in a comment, and that the owner accepts it. Nothing
+  reads that comment yet: starting the next round from a registered measurer's comment is the next release's.
 - **The settings** live with the repository's others, in the "Working with others" box, and a person changes them: an
   agent does not (an agent that could turn off the measurement would hold nothing back).
 

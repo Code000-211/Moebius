@@ -29,6 +29,10 @@ pub const DEFAULT_LOCKED: &[&str] = &[
     "go.sum",
     "AGENTS.md",
     "CLAUDE.md",
+    // A project's board and its column scripts, where a repository still keeps them (the harness configuration
+    // repository, which holds them now, is no repository of the factory).
+    ".moebius/**",
+    "kanban.toml",
 ];
 
 /// Whether `text` matches `pattern`, where `*` is any run of characters and `?` is one, inside one name.
@@ -135,6 +139,8 @@ mod tests {
             "package.json",
             "AGENTS.md",
             "CLAUDE.md",
+            ".moebius/columns/review.luau",
+            "kanban.toml",
         ] {
             assert!(
                 locked_by(DEFAULT_LOCKED.iter().copied(), path).is_some(),

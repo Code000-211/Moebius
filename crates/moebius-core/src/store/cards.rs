@@ -270,7 +270,12 @@ fn card_records_last(runs: &str, changes: &str, cards: &str) -> Vec<String> {
     ]
 }
 
-const REPOSITORY_COLUMNS: &str = "id, name, path, forge, default_branch, github, trusted, project, home_project_id, files_of, mark_ready, ready_label, agents_take, commands, command_limit, answer_on_forge, merge_reviewed, require_measurement, locked_paths, review_brief, testing_label, measurers, frozen_reason, frozen_source, frozen_at";
+fn repository_columns() -> String {
+    format!(
+        "id, name, path, forge, default_branch, github, trusted, project, home_project_id, files_of, mark_ready, ready_label, agents_take, commands, command_limit, answer_on_forge, merge_reviewed, require_measurement, locked_paths, review_brief, testing_label, measurers, {}",
+        super::factory::FROZEN_COLUMNS
+    )
+}
 
 fn repository_from_row(r: &rusqlite::Row) -> rusqlite::Result<Repository> {
     let trusted: String = r.get(6)?;
@@ -408,7 +413,10 @@ impl Store {
 
     pub fn repositories(&self) -> Result<Vec<Repository>> {
         self.rows(
-            &format!("SELECT {REPOSITORY_COLUMNS} FROM repositories ORDER BY id"),
+            &format!(
+                "SELECT {} FROM repositories ORDER BY id",
+                repository_columns()
+            ),
             [],
             repository_from_row,
         )
@@ -428,7 +436,10 @@ impl Store {
         Ok(self
             .conn()
             .query_row(
-                &format!("SELECT {REPOSITORY_COLUMNS} FROM repositories WHERE id = ?1"),
+                &format!(
+                    "SELECT {} FROM repositories WHERE id = ?1",
+                    repository_columns()
+                ),
                 [id],
                 repository_from_row,
             )

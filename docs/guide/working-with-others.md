@@ -180,9 +180,11 @@ says why.
   When the rules ask for a measurement the pull request does not carry, and the code is right, the Reviewer answers
   `approve_code`: the server approves the code on the forge, merges nothing, labels the issue (the **Ready for testing label**,
   default `ready-for-testing`), moves the card to the project's **Ready for testing** column when it has one, and tells
-  the author a measurement is needed. The round counts toward the three.
-- **Measurers.** The logins whose `## Measurement` comments will count. They are stored and shown here; reading their
-  comments is the next release's.
+  the author a measurement is needed, and that you accept it once you have checked the numbers. The round counts toward the
+  three. You accept the measurement with `POST /v1/changes/{id}/measurement`, then merge; nothing reads the author's
+  `## Measurement` comment by itself yet.
+- **Measurers.** The logins whose `## Measurement` comments will count once the next release reads them. For now they are
+  only stored and shown here.
 - **Freeze.** The brake. A frozen repository starts no review round, merges nothing and starts no agent run of its cards.
   **Freeze** in the box does it, or `POST /v1/repositories/{id}/freeze`, or the label `factory:freeze` on any open issue.
   It also freezes by itself when two merged changes are reverted within seven days, when more than 80% of the day's token
