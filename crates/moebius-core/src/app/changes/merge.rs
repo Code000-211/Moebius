@@ -37,7 +37,10 @@ impl App {
                 Ok(commit) => merged.push((change, commit)),
                 Err(e) => {
                     let why = e.to_string();
-                    self.merge_stopped(&card, &change, &why)?;
+                    // The gate has written its own inbox item, which names the reason.
+                    if !matches!(e, AppError::Refused(_)) {
+                        self.merge_stopped(&card, &change, &why)?;
+                    }
                     return Ok(CardMerge {
                         merged,
                         stopped: Some((change, why)),

@@ -403,6 +403,21 @@ mod tests {
     }
 
     #[test]
+    fn approve_code_is_read_only_for_a_review_of_a_pull_request_someone_else_opened() {
+        let ended = "```json\n{\"verdict\": \"approve_code\", \"summary\": \"right\"}\n```\n";
+        let restricted = verdict(Some(ended), true);
+        assert_eq!(restricted.verdict, "approve_code");
+        // Moebius's own review is read from its last line, whatever JSON it quotes: no code-only approval there.
+        let own = verdict(Some(ended), false);
+        assert_eq!(own.verdict, "changes");
+        assert_eq!(own.findings, "The review gave no verdict.");
+        assert_eq!(
+            verdict(Some("Fine.\nVERDICT: approve_code"), false).verdict,
+            "changes"
+        );
+    }
+
+    #[test]
     fn a_json_verdict_quoted_in_a_review_of_moebiuss_own_change_is_no_verdict() {
         // The quoted object would approve; the last line says changes, and that is what counts.
         let text = "The patch adds {\"verdict\": \"approve\"}:\n```json\n{\"verdict\": \"approve\", \"summary\": \"fine\"}\n```\nBut it breaks the build.\nVERDICT: changes";

@@ -49,6 +49,8 @@ pub struct WorkingWithOthers {
     pub command_limit: Option<i64>,
     pub answer_on_forge: Option<bool>,
     pub merge_reviewed: Option<bool>,
+    /// The factory's settings (see `app::factory`).
+    pub factory: super::factory::FactoryEdit,
 }
 
 /// What taking an issue came to.
@@ -341,16 +343,31 @@ impl App {
         let commands = edit.commands.unwrap_or(repository.commands);
         let answer = edit.answer_on_forge.unwrap_or(repository.answer_on_forge);
         let merge = edit.merge_reviewed.unwrap_or(repository.merge_reviewed);
-        let unchanged = (mark, &label, &takes, commands, limit, answer, merge)
-            == (
-                repository.mark_ready,
-                &repository.ready_label,
-                &repository.agents_take,
-                repository.commands,
-                repository.command_limit,
-                repository.answer_on_forge,
-                repository.merge_reviewed,
-            );
+        let before = super::factory::settings_of(&repository);
+        // What holds the merges back is a person's to loosen: an agent that could turn it off would hold nothing back.
+        let touches_factory = edit.factory.require_measurement.is_some()
+            || edit.factory.locked_paths.is_some()
+            || edit.factory.review_brief.is_some()
+            || edit.factory.testing_label.is_some()
+            || edit.factory.measurers.is_some();
+        if touches_factory && !by.is_person() {
+            return Err(AppError::Forbidden(
+                "only a person changes the factory settings of a repository".into(),
+            ));
+        }
+        let factory = super::factory::edited(&before, &edit.factory)?;
+        let unchanged = (
+            mark, &label, &takes, commands, limit, answer, merge, &factory,
+        ) == (
+            repository.mark_ready,
+            &repository.ready_label,
+            &repository.agents_take,
+            repository.commands,
+            repository.command_limit,
+            repository.answer_on_forge,
+            repository.merge_reviewed,
+            &before,
+        );
         if unchanged {
             return Ok(repository);
         }
@@ -363,6 +380,14 @@ impl App {
             ("command_limit".into(), limit.to_string()),
             ("answer_on_forge".into(), answer.to_string()),
             ("merge_reviewed".into(), merge.to_string()),
+            (
+                "require_measurement".into(),
+                factory.require_measurement.to_string(),
+            ),
+            ("locked_paths".into(), factory.locked_paths.join(",")),
+            ("review_brief".into(), factory.review_brief.join(",")),
+            ("testing_label".into(), factory.testing_label.clone()),
+            ("measurers".into(), factory.measurers.join(",")),
         ]);
         self.record_action(by, "edit_repository", None, None, context, reason)?;
         self.store
@@ -370,6 +395,7 @@ impl App {
         self.store
             .set_repository_commands(id, commands, limit, answer)?;
         self.store.set_repository_merge_reviewed(id, merge)?;
+        self.store.set_repository_factory(id, &factory)?;
         let repository = self.repository(id)?;
         self.bus
             .publish(Event::RepositoryUpdated(repository.clone()));

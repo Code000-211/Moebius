@@ -950,7 +950,7 @@ export function createPagesAFake(send: Send, board: BoardFake): PagesAFake {
         /^\/v1\/projects\/\d+(\/access|\/intake|\/repositories(\/\d+)?)?$/.test(path) ||
         /^\/v1\/projects\/\d+\/scripts$/.test(path) ||
         /^\/v1\/webhooks\/[a-z]+\/secret$/.test(path) ||
-        /^\/v1\/repositories\/\d+(\/(tree|files|search|settings|plugin-settings)(\/.*)?)?$/.test(
+        /^\/v1\/repositories\/\d+(\/(tree|files|search|settings|plugin-settings|freeze|unfreeze)(\/.*)?)?$/.test(
           path,
         ) ||
         /^\/v1\/(proposals|takeovers|grillings)\/\d+\/(merge|dismiss|confirm)$/.test(path) ||
@@ -1207,7 +1207,7 @@ export function createPagesAFake(send: Send, board: BoardFake): PagesAFake {
         return ok(response, made.repository);
       }
       const repository =
-        /^\/v1\/repositories\/(\d+)(?:\/(tree|files|search|settings|plugin-settings)(\/.*)?)?$/.exec(
+        /^\/v1\/repositories\/(\d+)(?:\/(tree|files|search|settings|plugin-settings|freeze|unfreeze)(\/.*)?)?$/.exec(
           path,
         );
       if (repository) {
@@ -1233,6 +1233,11 @@ export function createPagesAFake(send: Send, board: BoardFake): PagesAFake {
                 "command_limit",
                 "answer_on_forge",
                 "merge_reviewed",
+                "require_measurement",
+                "locked_paths",
+                "review_brief",
+                "testing_label",
+                "measurers",
               ]
                 .filter((key) => key in body)
                 .map((key) => [key, body[key]]),
@@ -1249,6 +1254,20 @@ export function createPagesAFake(send: Send, board: BoardFake): PagesAFake {
             return fail(response, 422, "a login is blank or has other characters");
           }
           trusted.set(id, [...new Set(list)]);
+          const view = repositoryView(found);
+          send({ kind: "repository_updated", data: view });
+          return ok(response, view);
+        }
+        if ((part === "freeze" || part === "unfreeze") && method === "POST") {
+          const reason =
+            typeof body.reason === "string" && body.reason ? body.reason : "a person froze it";
+          working.set(id, {
+            ...working.get(id),
+            frozen:
+              part === "freeze"
+                ? { reason, source: "manual", since: Math.floor(Date.now() / 1000) }
+                : null,
+          });
           const view = repositoryView(found);
           send({ kind: "repository_updated", data: view });
           return ok(response, view);

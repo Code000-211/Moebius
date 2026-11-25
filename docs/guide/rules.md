@@ -167,3 +167,11 @@ that has run is long.
 | A rule is ignored by the teacher. | The text is too vague to judge from one call. Name the paths or commands. The rule's name must also be one the teacher can repeat exactly. |
 | Refusals say `teacher: ...`. | The teacher failed or timed out (`teacher.timeout_seconds`, from 1 to 29), or the upstream for its protocol is missing from `[[router.upstreams]]`. |
 | A harmful call got through. | The patterns do not see everything (`sed -i`, `cp`, `mv`, variables, scripts). Add a prose rule for it. |
+
+## Rules hold the server's merges too
+
+A rule is checked against what the server merges as well as against an agent's tool call: the merge gate asks the same
+guard, with the rules in prose, before the server merges anything (see [Running it as a
+factory](working-with-others.md#running-it-as-a-factory)). "No change to a kernel merges without a measurement" is a rule
+for the agents' work and for the server's merge alike. As for tool calls, rules in prose with no teacher configured refuse
+every merge, so configure the teacher before writing prose rules.
