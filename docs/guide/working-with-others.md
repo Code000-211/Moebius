@@ -337,7 +337,7 @@ in the Inbox, which says so; Moebius never merges it by itself.
 (optional)`, `What is wanted` and `How we will know it is done`; a column script reads an issue as `card.issue.fields`.
 Issues the backlog sync makes keep their own format. For a repository with a measured merge bar, copy
 [`examples/project-templates/`](../../examples/project-templates/README.md) to `projects/<project>/templates/`: an item ID
-such as `K-47`, a `[measured]` or `[needs testing]` tag on the title, and an optional table of numbers.
+such as `K-47`, a `[measured] K-47: <subject>` or `[needs testing] K-47: <subject>` title, the merge bar, the GPU-less checks of a C++/CMake project, and a `Measurement` section that names the committed file the numbers are in.
 
 **A field is a claim.** What a pull request says (`Measurement: not needed`, a ticked test) is data for the Reviewer. It never
 satisfies the merge gate, lifts `require_measurement` or replaces the `no-measurement` label, which only a person sets.

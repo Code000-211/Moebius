@@ -688,10 +688,19 @@ fn the_project_templates_are_templates_and_a_body_that_follows_them_is_read() {
         std::fs::read_to_string(examples_root().join("project-templates").join(file)).unwrap()
     };
     let pull = PullTemplate::read(&read("pull-request.md")).unwrap();
-    assert_eq!(pull.sections.len(), 5);
-    assert!(!pull.sections[4].required, "the table is optional");
+    assert_eq!(pull.sections.len(), 4);
+    assert!(pull.sections.iter().all(|s| s.required));
+    assert!(
+        pull.sections[2].hint.contains("hyv4flash_arch_test")
+            && !pull.sections[2].hint.contains("cargo")
+    );
+    assert!(
+        pull.sections[3]
+            .hint
+            .contains("notes/backlog/measurements/")
+    );
     let body = "Fixes #47\n\n### Item\nK-47: cache the plan\n\n### What the change does\nIt caches.\n\n\
-        ### Tests I ran\n- [x] `cargo test`: 3 passed\n\n### Measurement\nmeasured: +5.8%\n";
+        ### Tests I ran\n- [x] `cargo test`: 3 passed\n\n### Measurement\nmeasured notes/backlog/measurements/K-47.md\n";
     assert!(parse(body, &pull).missing.is_empty());
     let issue = PullTemplate::read(&read("issue.md")).unwrap();
     let form = issue.issue_form();
