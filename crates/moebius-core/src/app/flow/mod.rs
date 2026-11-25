@@ -61,6 +61,7 @@ impl App {
                 .status_prefix
                 .as_deref()
                 .map_or(before.status_prefix.clone(), |p| p.trim().to_string()),
+            work_on_forge: edit.work_on_forge.unwrap_or(before.work_on_forge),
         };
         let prefix = &after.status_prefix;
         if prefix.is_empty() || prefix.len() > 30 || prefix.contains([',', '\n', '\r']) {
@@ -96,6 +97,7 @@ impl App {
             ),
             ("status_labels".into(), after.status_labels.to_string()),
             ("status_prefix".into(), after.status_prefix.clone()),
+            ("work_on_forge".into(), after.work_on_forge.to_string()),
         ]);
         self.record_action(by, "edit_flow", None, None, context, reason)?;
         self.store.set_flow(repository_id, &after)?;
@@ -219,4 +221,5 @@ pub struct FlowEdit {
     pub unbound_close_days: Option<i64>,
     pub status_labels: Option<bool>,
     pub status_prefix: Option<String>,
+    pub work_on_forge: Option<bool>,
 }

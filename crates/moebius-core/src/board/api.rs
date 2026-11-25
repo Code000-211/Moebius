@@ -21,6 +21,11 @@
 //! - `moebius.publish_change() -> changes`: publishes the card's latest successful `code` run on the branch of its
 //!   change in each of its repositories (once per commit), without a pull request, which `moebius.offer_change`
 //!   opens, and returns the changes, as `card.changes` is.
+//! - `moebius.post_review(review) -> url`: writes the review of the card (its `card.review`: `verdict`, `findings`,
+//!   `judgements` and `comments`) on the pull request of the card's change as a review of it: changes requested with a
+//!   comment on each line the findings name, or an approval. Where the repository does not work on the forge
+//!   (`work_on_forge`) or the change has no pull request it does nothing. Once for each round and head. Answers where the
+//!   review is, or nil. See `app::forms::own`.
 //! - `moebius.open_pull_request() -> changes`: publishes the changes as `moebius.publish_change` does and opens their
 //!   pull requests at once, so the forge runs its checks while the review of the card still reads the changes.
 //! - `moebius.run_checks() -> changes`: starts each repository's own checks on its change, if it has any.
@@ -54,6 +59,7 @@ use super::card::changes_table;
 use super::engine::Effects;
 use super::resolve_column;
 use super::sandbox::outside_script;
+use crate::app::forms::{OwnReview, Posted};
 use crate::app::{App, Reproduction, TestRun, columns};
 use crate::decide::{Actor, Question};
 use crate::store::Card;
@@ -300,6 +306,52 @@ impl Engine {
         )?;
 
         self.attempts_api(lua, &m, card, effects.clone(), deadline.clone())?;
+
+        let (app, clock) = (self.app.clone(), deadline.clone());
+        m.set(
+            "post_review",
+            lua.create_function(move |_, review: Table| {
+                let mut comments = Vec::new();
+                if let Some(list) = review.get::<Option<Table>>("comments")? {
+                    for comment in list.sequence_values::<Table>() {
+                        let comment = comment?;
+                        comments.push(crate::store::ReviewComment {
+                            path: comment.get("path")?,
+                            line: comment.get("line")?,
+                            body: comment.get("body")?,
+                        });
+                    }
+                }
+                let review = OwnReview {
+                    verdict: review.get("verdict")?,
+                    findings: review
+                        .get::<Option<String>>("findings")?
+                        .unwrap_or_default(),
+                    count: review.get::<Option<i64>>("count")?.unwrap_or_default(),
+                    judgements: review
+                        .get::<Option<String>>("judgements")?
+                        .unwrap_or_default(),
+                    comments,
+                };
+                // A forge that refuses the review is reported, and the card goes on: the verdict is the Reviewer's.
+                let posted = outside_script(&clock, || app.post_own_review(card_id, &review));
+                Ok(match posted {
+                    Ok(Posted::Written(url)) => Some(url),
+                    Ok(_) => None,
+                    Err(e) => {
+                        let repository = app
+                            .card(card_id)
+                            .ok()
+                            .and_then(|card| app.repository(card.repository_id).ok());
+                        app.bus.publish(crate::bus::Event::ForgeError {
+                            repository: repository.map(|r| r.name).unwrap_or_default(),
+                            message: format!("the review of the pull request: {e}"),
+                        });
+                        None
+                    }
+                })
+            })?,
+        )?;
 
         let (app, fx, clock) = (self.app.clone(), effects.clone(), deadline.clone());
         m.set(

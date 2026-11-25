@@ -188,7 +188,9 @@ async fn poll_outside_requests<F: Polled>(
     blocking(move || {
         app.follow_open_requests(&repository, &requests, &writers)?;
         // What is left that names no issue is asked to (ADR 0033).
-        app.nudge_unbound_requests(&repository, &requests)
+        app.nudge_unbound_requests(&repository, &requests)?;
+        // What a followed pull request's body says is read by the repository's template (ADR 0034).
+        app.read_pull_requests(&repository, &requests)
     })
     .await
 }

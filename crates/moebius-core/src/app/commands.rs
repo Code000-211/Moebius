@@ -16,6 +16,7 @@
 
 use std::collections::BTreeMap;
 
+use super::forms;
 use super::{App, AppError, Result};
 use crate::bus::Event;
 use crate::decide::Actor;
@@ -39,6 +40,19 @@ pub enum Command {
 /// The command a comment gives, with the rest of the comment: the first line whose first word is a command, outside
 /// quotes and code. The rest is what follows the command on its line, then the other lines of the comment.
 pub fn command_in(body: &str) -> Option<(Command, String)> {
+    // A report that starts with the heading `## Done` is a `/done` too (ADR 0034).
+    if let Some(first) = body.lines().find(|l| !l.trim().is_empty())
+        && first.trim().eq_ignore_ascii_case("## done")
+    {
+        let rest = body
+            .trim_start()
+            .get(first.trim().len()..)
+            .unwrap_or_default();
+        return Some((
+            Command::Done,
+            rest.trim().chars().take(REASON_LIMIT).collect(),
+        ));
+    }
     let mut fence: Option<char> = None;
     let lines: Vec<&str> = body.lines().collect();
     let mut found = None;
@@ -153,9 +167,44 @@ impl App {
             if !repository.commands {
                 continue;
             }
-            let Some((command, rest)) = command_in(&comment.body) else {
+            // A comment of a kind with fields that lacks one is refused with a reply that names it (ADR 0034); a
+            // review answer that holds is kept for the next round and thanked; a `/done` that holds goes on.
+            let filled = match self.read_filled_comment(card, comment) {
+                Ok(filled) => filled,
+                Err(e) => {
+                    self.bus.publish(Event::ForgeError {
+                        repository: repository.name.clone(),
+                        message: format!("#{}: a comment of @{}: {e}", card.number, comment.author),
+                    });
+                    None
+                }
+            };
+            if let Some((read, Some(reply))) = &filled {
+                let refused = !read.missing.is_empty();
+                self.answer(&repository, card.id, reply);
+                if refused || read.kind == forms::Kind::ReviewAnswer {
+                    continue;
+                }
+            }
+            let Some((command, mut rest)) = command_in(&comment.body) else {
                 continue;
             };
+            // A report with sections says what was done, the tests and the open points in the owner's question.
+            if let Some((read, _)) = &filled
+                && read.kind == forms::Kind::Done
+                && !read.legacy
+            {
+                let field = |name: &str| read.fields.get(name).cloned().unwrap_or_default();
+                rest = format!(
+                    "{}\n\nTests: {}\nOpen points: {}",
+                    field("what_was_done"),
+                    field("tests_run"),
+                    field("open_points")
+                )
+                .chars()
+                .take(REASON_LIMIT)
+                .collect();
+            }
             let done = self.card(card.id).and_then(|current| {
                 self.run_command(&repository, &current, &comment.author, command, &rest)
             });

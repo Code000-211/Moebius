@@ -4,11 +4,13 @@ The exact contracts of the parts that keep the owner's work small ([ADR
 0032](../adr/0032-the-factory-keeps-the-owners-work-small.md)): the daily digest, the stale handling of issues and
 pull requests, and the backlog sync; and of the parts that let measurements and reviews flow without the owner's clicks
 ([ADR 0033](../adr/0033-measurements-and-reviews-flow-without-the-owners-clicks.md)): measurements read from comments,
-review on green checks, and pull requests that name no issue. How to set them up is in [the
+review on green checks, and pull requests that name no issue; and of [the templates for everything written on a forge
+and the agents that work there](templates.md) ([ADR 0034](../adr/0034-templates-and-agents-that-work-on-the-forge.md)).
+How to set them up is in [the
 guide](../guide/software-factory.md) and [Helping on someone else's
 repository](../guide/working-with-others.md#measurements-without-a-click); the routes are in the [desktop
 API](desktop-api.md#the-software-factory) and the commands in the [command line](cli.md). The code is `app/digest.rs`,
-`app/upkeep.rs`, `app/backlog.rs`, `app/flow/` and `store/factory.rs`, `store/flow.rs` of `moebius-core`.
+`app/upkeep.rs`, `app/backlog.rs`, `app/flow/`, `app/forms/` and `store/factory.rs`, `store/flow.rs`, `store/forms.rs` of `moebius-core`.
 
 ## The log
 

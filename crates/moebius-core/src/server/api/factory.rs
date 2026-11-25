@@ -4,9 +4,14 @@
 //! - `GET /v1/repositories/{id}/upkeep` and `PUT` `{release_after_days, stale_after_days, close_after_days, reason}`:
 //!   after how many days the stale handling releases an issue that was taken, reminds and closes a followed pull
 //!   request; 0 turns one off (see [`crate::app::Upkept`]).
-//! - `GET /v1/repositories/{id}/flow` and `PUT` `{review_on_green, green_wait_minutes, unbound_close_days, reason}`: whether a
-//!   followed pull request is reviewed once its checks have been green for a few minutes, and after how many days one that
-//!   names no issue is closed (ADR 0033).
+//! - `GET /v1/repositories/{id}/flow` and `PUT` `{review_on_green, green_wait_minutes, unbound_close_days, status_labels,
+//!   status_prefix, work_on_forge, reason}`: whether a followed pull request is reviewed once its checks have been green
+//!   for a few minutes, and after how many days one that names no issue is closed (ADR 0033); and whether Moebius's own
+//!   agents work on the forge as people do (ADR 0034).
+//! - `GET /v1/repositories/{id}/templates`: the pull request and comment templates in effect, and whether each is the
+//!   shipped one or the project's. `POST /v1/repositories/{id}/templates/sync` `{reason}` opens a pull request that brings
+//!   the repository's copies of them (`.github/PULL_REQUEST_TEMPLATE.md`, `.github/moebius/*.md`) up to date; `.github/`
+//!   is locked, so it waits for the owner's click. Answers `{change}`, or `{change: null}` when the copies are current.
 //! - `GET /v1/projects/{id}/backlog` (or `null`), `PUT` and `DELETE`: where the project's backlog is and how its items
 //!   are read. `POST /v1/projects/{id}/backlog/sync` `{dry_run}` makes the issues of its items.
 //! - `POST /v1/digest` `{force}`: makes today's digest now when it has none yet (or with `force` makes it again) and
@@ -31,6 +36,8 @@ pub(super) fn routes() -> Router<ApiState> {
             get(get_upkeep).put(put_upkeep),
         )
         .route("/v1/repositories/{id}/flow", get(get_flow).put(put_flow))
+        .route("/v1/repositories/{id}/templates", get(get_templates))
+        .route("/v1/repositories/{id}/templates/sync", post(sync_templates))
         .route(
             "/v1/projects/{id}/backlog",
             get(get_backlog).put(put_backlog).delete(delete_backlog),
@@ -127,6 +134,8 @@ pub(super) struct EditedFlow {
     #[serde(default)]
     status_prefix: Option<String>,
     #[serde(default)]
+    work_on_forge: Option<bool>,
+    #[serde(default)]
     reason: String,
 }
 
@@ -157,10 +166,46 @@ async fn put_flow(
                 unbound_close_days: edit.unbound_close_days,
                 status_labels: edit.status_labels,
                 status_prefix: edit.status_prefix,
+                work_on_forge: edit.work_on_forge,
             },
             &edit.reason,
         )?;
         Ok(flow)
+    })
+    .await
+}
+
+async fn get_templates(
+    State(state): State<ApiState>,
+    UrlPath(id): UrlPath<i64>,
+) -> Result<axum::Json<crate::app::forms::TemplateOverview>, ApiError> {
+    blocking(&state.app, move |app| {
+        let repository = app.repository(id)?;
+        Ok(app.template_overview(&repository))
+    })
+    .await
+}
+
+/// What `POST /v1/repositories/{id}/templates/sync` takes.
+#[derive(Debug, Default, Deserialize)]
+pub(super) struct SyncRequest {
+    #[serde(default)]
+    reason: String,
+}
+
+async fn sync_templates(
+    State(state): State<ApiState>,
+    Extension(by): Extension<Actor>,
+    UrlPath(id): UrlPath<i64>,
+    body: Option<axum::Json<SyncRequest>>,
+) -> Result<axum::Json<serde_json::Value>, ApiError> {
+    let reason = body.map(|b| b.0.reason).unwrap_or_default();
+    blocking(&state.app, move |app| {
+        let change = app.sync_templates(&by, id, &reason)?;
+        Ok(match change {
+            Some(change) => serde_json::json!({ "change": change }),
+            None => serde_json::json!({ "change": null, "message": "the repository's templates are current" }),
+        })
     })
     .await
 }
@@ -209,7 +254,7 @@ async fn delete_backlog(
 
 /// The body of `POST /v1/projects/{id}/backlog/sync`.
 #[derive(Debug, Default, Deserialize)]
-pub(super) struct SyncRequest {
+pub(super) struct TemplateSync {
     #[serde(default)]
     dry_run: bool,
 }
@@ -218,7 +263,7 @@ async fn sync_backlog(
     State(state): State<ApiState>,
     Extension(by): Extension<Actor>,
     UrlPath(id): UrlPath<i64>,
-    body: Option<axum::Json<SyncRequest>>,
+    body: Option<axum::Json<TemplateSync>>,
 ) -> Result<axum::Json<SyncReport>, ApiError> {
     let dry_run = body.is_some_and(|b| b.0.dry_run);
     blocking(&state.app, move |app| app.sync_backlog(&by, id, dry_run)).await

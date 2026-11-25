@@ -35,6 +35,7 @@ mod events;
 mod factory;
 mod favourites;
 mod flow;
+mod forms;
 mod found;
 mod grillings;
 mod imports;
@@ -93,6 +94,7 @@ pub use events::Event;
 pub use factory::{DEFAULT_REVIEW_BRIEF, DEFAULT_TESTING_LABEL, FactorySettings, Frozen};
 pub use favourites::{PLACE_KINDS, Place, RECENT_LIMIT};
 pub use flow::{DEFAULT_STATUS_PREFIX, Flow, MeasurementReport, Unbound};
+pub use forms::ForgePost;
 pub use found::Found;
 pub use grillings::{Grilling, GrillingIssue};
 pub use imports::Imported;
@@ -549,6 +551,7 @@ UPDATE cards SET moved_at = COALESCE((SELECT MAX(at) FROM card_moves WHERE card_
     factory::SCHEMA,
     tending::SCHEMA,
     flow::SCHEMA,
+    forms::SCHEMA,
 ];
 
 #[cfg(test)]

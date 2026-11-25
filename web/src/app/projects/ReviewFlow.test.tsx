@@ -20,6 +20,7 @@ function show(
     unbound_close_days: 14,
     status_labels: false,
     status_prefix: "status:",
+    work_on_forge: true,
   },
 ) {
   const fetcher = vi.fn(async (_url: string, init?: RequestInit) =>
@@ -67,7 +68,22 @@ describe("the review flow box", () => {
         unbound_close_days: 0,
         status_labels: false,
         status_prefix: "status:",
+        work_on_forge: true,
       });
+    });
+  });
+
+  it("is on for working on the forge by default, and saves that alone when it is turned off", async () => {
+    const fetcher = show();
+    const forge = () => screen.getByLabelText("Work on the forge");
+    await waitFor(() => expect(forge().getAttribute("aria-checked")).toBe("true"));
+    expect(save().disabled).toBe(true);
+    fireEvent.click(forge());
+    expect(save().disabled).toBe(false);
+    fireEvent.click(save());
+    await waitFor(() => {
+      const put = fetcher.mock.calls.find(([, init]) => init?.method === "PUT");
+      expect(JSON.parse(String(put?.[1]?.body)).work_on_forge).toBe(false);
     });
   });
 

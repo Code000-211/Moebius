@@ -274,6 +274,101 @@ win over the column while they hold, in this order: `status:frozen`, `status:awa
 is swapped within a poll of the change, a label removed by hand is put back, and a closed issue keeps its last one. It is
 off by default. The followed pull request itself is not labelled.
 
+## Templates for pull requests and comments
+
+So that a card and the Reviewer read what people did instead of searching for words, a pull request and every comment
+Moebius reads has a form with fixed headings ([ADR 0034](../adr/0034-templates-and-agents-that-work-on-the-forge.md);
+the exact contracts are in [the reference](../reference/templates.md)). Helpers and Moebius's own agents write the same
+ones.
+
+**A pull request** starts with `Fixes #N` and has four sections, which the forge shows in the box of a new pull request
+once the repository has the template file:
+
+```
+Fixes #12
+
+### Item
+K-4: cache the plan
+
+### What the change does
+Plans are cached for the life of a request, so a second query does not plan again.
+
+### Tests I ran
+- [x] `cargo test`: 412 passed, 0 failed
+- [x] `cargo bench plan`: 4.2% faster
+
+### Measurement
+measured: 4.2% faster on 2x MI300X, see the measurement comment
+```
+
+`Measurement` starts with `measured`, `needs testing` or `not needed`, then the reason. When a section is missing or
+empty, the server of the repository's owner writes one reply on the pull request that names it (`## Missing`, with the
+headings it lacks), where commands and answers are on; it does not guess. Edit the body, and the next poll reads it again.
+A column script can read the result as `card.change.fields` and `card.change.missing`.
+
+**Comments** start with a fixed first line that names them:
+
+| First line | What it is | Fields |
+|---|---|---|
+| `/take`, `/release` | take or give back an issue | none |
+| `/done` or `## Done` | the work is done: asks the owner to look, or has the Reviewer read your pull request | `### What was done`, `### Tests run`, `### Open points`; `/done` with plain words still works |
+| `## Review answer` | what you changed for each finding of the last review | one list line for each finding |
+| `## Measurement` | a measurer's numbers | [as above](#measurement) |
+
+A comment that lacks a field is answered with `## Missing` and the fields it lacks, and does nothing until it is posted
+again complete.
+
+**Where the templates are.** In the repository, the pull request template is `.github/PULL_REQUEST_TEMPLATE.md` and each
+comment template is `.github/moebius/<name>.md` (`done.md`, `review-answer.md`, `measurement.md`, `take.md`,
+`release.md`): that is where a helper looks. Moebius ships defaults. A project changes them in the harness configuration
+repository, `projects/<project>/templates/pull-request.md` and `projects/<project>/templates/<name>.md`; a pull request
+template may rename the headings, add sections of its own and mark one `(optional)`. Then keep the repository's copies
+current:
+
+```sh
+"$MOEBIUS" templates 3            # which templates are in effect, from where
+"$MOEBIUS" templates 3 --sync     # open the pull request that updates .github/
+```
+
+`.github/` is a locked path of [the merge gate](software-factory.md), so that pull request waits for the owner's click
+in the Inbox, which says so; Moebius never merges it by itself.
+
+**Issues** have a template too, kept as a GitHub issue form, `.github/ISSUE_TEMPLATE/moebius.yml`, with the sections `Item
+(optional)`, `What is wanted` and `How we will know it is done`; a column script reads an issue as `card.issue.fields`.
+Issues the backlog sync makes keep their own format. For a repository with a measured merge bar, copy
+[`examples/project-templates/`](../../examples/project-templates/README.md) to `projects/<project>/templates/`: an item ID
+such as `K-47`, a `[measured] K-47: <subject>` or `[needs testing] K-47: <subject>` title, the merge bar, the GPU-less checks of a C++/CMake project, and a `Measurement` section that names the committed file the numbers are in.
+
+**A field is a claim.** What a pull request says (`Measurement: not needed`, a ticked test) is data for the Reviewer. It never
+satisfies the merge gate, lifts `require_measurement` or replaces the `no-measurement` label, which only a person sets.
+
+**What is posted.** Plans, commits, tests with numbers, findings and waiting reasons: what happened. Never a prompt,
+the output of a tool, a token, a cost or a link into Moebius. Everything is redacted first.
+
+## Own agents work on the forge
+
+Where a repository has `work_on_forge` on (the default, for GitHub, GitLab and Forgejo), Moebius's own agents work the
+way a developer does ([ADR 0034](../adr/0034-templates-and-agents-that-work-on-the-forge.md)):
+
+1. After the first round of the Coder the pull request opens at once, as a **draft**, with `Fixes #N` and a body
+   written from the template out of the Coder's report. One pull request for all the rounds; its body is written again
+   after each round.
+2. The Coder commits its own work, with messages that say what it did.
+3. The Reviewer's verdict is a **review of the pull request**: changes requested with a comment on each line a finding
+   names, or an approval. GitHub refuses a verdict on a pull request by the user who opened it, so for Moebius's own
+   pull requests the review is written as a review that only comments, whose first line is the verdict.
+4. The next round **answers each finding** in a `## Review answer` comment, and the Reviewer's next prompt gets it.
+5. On approval the pull request leaves draft and merges through the merge gate as before.
+6. The issue holds only the status label and the link to the pull request: the history is in the pull request.
+7. The branch is `moebius/card-12`, or `moebius/K-47-card-12` when the issue came from a backlog item, and the merge commit
+   says the item and what the change does, from the pull request's fields, with `Fixes #12`.
+
+A card that is already under way when you turn the setting on gets its draft pull request at the next tick of In review, and a
+verdict it already has is written once; a card waiting in Ready to merge is left as it is.
+
+Turn it off for a repository with `PUT /v1/repositories/{id}/flow` `{"work_on_forge": false}` or the repository's flow
+settings in the web app; the pull request then opens when the change is offered, as before.
+
 ## How to try it
 
 Run two servers against one test repository, each with a different person and login. On the first, take an issue; the

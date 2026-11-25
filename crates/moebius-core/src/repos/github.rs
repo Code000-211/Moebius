@@ -128,6 +128,12 @@ pub struct PullRequest {
     /// The branch it is against now.
     #[serde(default)]
     pub base: Option<Base>,
+    /// Whether it is still a draft.
+    #[serde(default)]
+    pub draft: bool,
+    /// Its id in the GraphQL API, which marking it ready for review needs.
+    #[serde(default)]
+    pub node_id: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
@@ -519,11 +525,12 @@ impl GitHub {
         &self,
         github: &str,
         title: &str,
-        head: &str,
-        base: &str,
+        (head, base): (&str, &str),
         body: &str,
+        draft: bool,
     ) -> Result<i64, GitHubError> {
-        let request = json!({ "title": title, "head": head, "base": base, "body": body });
+        let request =
+            json!({ "title": title, "head": head, "base": base, "body": body, "draft": draft });
         let created: Created = self
             .repository_call(github, Method::POST, "/pulls", Some(&request))
             .await?;
@@ -546,6 +553,45 @@ impl GitHub {
             Some(&request),
         )
         .await
+    }
+
+    /// Takes pull request `number` of `github` out of draft, as the button "Ready for review" does. The REST API cannot:
+    /// it is the GraphQL mutation `markPullRequestReadyForReview`, which needs the request's node id. Does nothing
+    /// when it is not a draft.
+    pub async fn mark_ready_for_review(
+        &self,
+        github: &str,
+        number: i64,
+    ) -> Result<(), GitHubError> {
+        let pull = self.pull_request(github, number).await?;
+        let Some(id) = pull.node_id.filter(|_| pull.draft) else {
+            return Ok(());
+        };
+        let (owner, repo) = github
+            .split_once('/')
+            .ok_or_else(|| GitHubError::Repository(github.to_string()))?;
+        let token = self.access_token(owner, repo).await?;
+        // `https://api.github.com` has GraphQL at `/graphql`, an Enterprise Server at `/api/graphql` beside `/api/v3`.
+        let url = match self.api_url.strip_suffix("/api/v3") {
+            Some(root) => format!("{root}/api/graphql"),
+            None => format!("{}/graphql", self.api_url),
+        };
+        let request = self.http.post(url).json(&json!({
+            "query": "mutation($id: ID!) { markPullRequestReadyForReview(input: {pullRequestId: $id}) { pullRequest { id } } }",
+            "variables": { "id": id },
+        }));
+        let answer: serde_json::Value = self.send(request, &token).await?;
+        match answer["errors"].as_array().filter(|e| !e.is_empty()) {
+            Some(errors) => Err(GitHubError::Status {
+                url: "graphql".into(),
+                status: reqwest::StatusCode::UNPROCESSABLE_ENTITY,
+                body: errors[0]["message"]
+                    .as_str()
+                    .unwrap_or_default()
+                    .to_string(),
+            }),
+            None => Ok(()),
+        }
     }
 
     /// Opens an issue in `github` and returns its number.
@@ -961,7 +1007,12 @@ impl GitHub {
         title: &str,
         head: Option<&str>,
     ) -> Result<String, GitHubError> {
+        // A message of several lines is the title, then the body of the merge commit.
+        let (title, rest) = title.split_once("\n\n").unwrap_or((title, ""));
         let mut request = json!({ "commit_title": title, "merge_method": "merge" });
+        if !rest.trim().is_empty() {
+            request["commit_message"] = json!(rest.trim());
+        }
         // GitHub refuses the merge (409) when the head is not the one the person looked at.
         if let Some(head) = head {
             request["sha"] = json!(head);
@@ -993,8 +1044,8 @@ impl GitHub {
             .collect();
         let request = json!({
             "commit_id": review.head,
-            "body": review.body,
-            "event": if review.approve { "APPROVE" } else { "REQUEST_CHANGES" },
+            "body": review.summary(),
+            "event": if review.comment_only { "COMMENT" } else if review.approve { "APPROVE" } else { "REQUEST_CHANGES" },
             "comments": comments,
         });
         let posted: serde_json::Value = self

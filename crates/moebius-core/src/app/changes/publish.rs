@@ -115,7 +115,7 @@ impl App {
             // another project and so has another key.
             let branch = match &existing {
                 Some(change) => change.branch.clone(),
-                None if own => format!("moebius/card-{}", card.number),
+                None if own => self.own_branch(&card),
                 None => format!("moebius/card-{}-{}", card.project_key, card.project_number),
             };
             let publish = Publish {
@@ -143,20 +143,44 @@ impl App {
         open_pull_request: bool,
         judgements: Option<&str>,
     ) -> Result<Change> {
-        let opened = |c: &Change| c.pull_request.is_some() || !open_pull_request;
+        // Where the agents work on the forge as people do (ADR 0034) the pull request opens with the first round, as a
+        // draft, and is kept current after each round.
+        let draft_mode = self.works_on_forge(repository);
+        let open = open_pull_request || draft_mode;
+        let opened = |c: &Change| c.pull_request.is_some() || !open;
         if let Some(change) = existing
             .as_ref()
             .filter(|c| c.head.as_deref() == Some(head) && opened(c))
         {
+            // The link on the issue that a write which was skipped or failed left out is tried again.
+            if draft_mode && let Err(e) = self.link_pull_request(card, repository, change) {
+                self.bus.publish(Event::ForgeError {
+                    repository: repository.name.clone(),
+                    message: format!("#{}: the link to the pull request: {e}", card.number),
+                });
+            }
             return Ok(change.clone());
         }
         let forge = self.forge(repository)?;
         let clone = Path::new(&repository.path);
         self.repos.point_branch(clone, branch, head)?;
         let pull_request = existing.as_ref().and_then(|c| c.pull_request);
-        let pull_request = if open_pull_request {
-            let body = self.pull_request_body(card, repository, branch, judgements);
-            forge.publish(repository, &card.title, &body, branch, pull_request)?
+        let as_draft =
+            draft_mode && (pull_request.is_none() || existing.as_ref().is_some_and(|c| c.draft));
+        let mut written = None;
+        let pull_request = if open {
+            let body = if draft_mode {
+                let (body, template) = self.own_pull_body(card, repository);
+                written = Some((body.clone(), template));
+                body
+            } else {
+                self.pull_request_body(card, repository, branch, judgements)
+            };
+            if as_draft {
+                forge.publish_draft(repository, &card.title, &body, branch, pull_request)?
+            } else {
+                forge.publish(repository, &card.title, &body, branch, pull_request)?
+            }
         } else {
             forge.push(repository, branch)?;
             pull_request
@@ -175,8 +199,50 @@ impl App {
                     .add_change(repository.id, Some(card.id), branch, pull_request, head)?
             }
         };
+        let change = match (as_draft, pull_request) {
+            (true, Some(_)) if !change.draft => {
+                self.store.set_change_draft(change.id, true)?;
+                self.change(change.id)?
+            }
+            _ => change,
+        };
+        if let Some((body, template)) = &written {
+            // What the round's publish writes on the forge must not fail the round: it is reported.
+            if let Err(e) = self
+                .after_round_published(card, repository, &change, (body, template))
+                .and_then(|()| self.link_pull_request(card, repository, &change))
+            {
+                self.bus.publish(Event::ForgeError {
+                    repository: repository.name.clone(),
+                    message: format!("#{}: the pull request: {e}", card.number),
+                });
+            }
+        }
+        let change = self.change(change.id)?;
         self.bus.publish(Event::ChangeUpdated(change.clone()));
         Ok(change)
+    }
+
+    /// The branch of the card's change in its own repository: `moebius/card-<number>`, or `moebius/<ID>-card-<number>` when
+    /// its issue was made from a backlog item (`moebius/K-47-card-12`), so that people and the binding of a pull request to
+    /// its issue (ADR 0033) see the item.
+    pub(crate) fn own_branch(&self, card: &Card) -> String {
+        match self
+            .store
+            .backlog_item_of(card.id)
+            .ok()
+            .flatten()
+            .map(|id| id.trim().to_string())
+            .filter(|id| {
+                !id.is_empty()
+                    && id.len() <= 40
+                    && id
+                        .chars()
+                        .all(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_'))
+            }) {
+            Some(id) => format!("moebius/{id}-card-{}", card.number),
+            None => format!("moebius/card-{}", card.number),
+        }
     }
 
     /// The card's open changes, one per repository it works in that has one, in the order the card names them.
@@ -208,6 +274,7 @@ impl App {
     ) -> Result<(Vec<Change>, bool)> {
         let seen = self.card(card_id)?.column;
         let changes = self.publish_card_changes(card_id, true, judgements)?;
+        let changes = self.make_ready(changes)?;
         if changes.is_empty() {
             return Err(AppError::Invalid(
                 "the card has nothing new to offer: its changes are merged".into(),

@@ -37,6 +37,7 @@ mod diffs;
 mod digest;
 pub mod factory;
 pub mod flow;
+pub mod forms;
 mod intake;
 mod issues;
 mod jira;

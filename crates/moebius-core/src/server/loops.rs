@@ -693,6 +693,8 @@ mod tests {
     #[tokio::test(flavor = "multi_thread")]
     async fn an_offered_change_is_pushed_and_opened_as_a_pull_request() {
         let f = Fixture::new().await;
+        // The classic path: the pull request opens when the change is offered.
+        crate::server::fake_github::classic_flow(&f.server.app, &f.repository);
         let change = f.offered_change().await;
 
         assert!(git(&f.remote, &["rev-parse", "--verify", "moebius/card-1"]).is_ok());
@@ -987,6 +989,8 @@ mod tests {
     #[tokio::test(flavor = "multi_thread")]
     async fn the_pull_request_opens_when_the_change_is_offered_not_when_it_is_published() {
         let f = Fixture::new().await;
+        // The classic path: the pull request opens when the change is offered.
+        crate::server::fake_github::classic_flow(&f.server.app, &f.repository);
         let card = f.card_in_review().await;
         let app = f.server.app.clone();
         let published = tokio::task::spawn_blocking(move || app.publish_change(card.id).unwrap())
@@ -1093,6 +1097,8 @@ mod tests {
     #[tokio::test(flavor = "multi_thread")]
     async fn a_person_merges_a_pull_request_from_the_app() {
         let f = Fixture::new().await;
+        // The classic merge message: the pull request's fields are not read.
+        crate::server::fake_github::classic_flow(&f.server.app, &f.repository);
         let change = f.offered_change().await;
 
         let app = f.server.app.clone();

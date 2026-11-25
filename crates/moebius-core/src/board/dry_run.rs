@@ -106,6 +106,10 @@ fn made_up_card(
     let changes = lua.create_table()?;
     super::card::array_of_changes(lua, &changes)?;
     t.set("changes", changes)?;
+    let issue = lua.create_table()?;
+    issue.set("fields", lua.create_table()?)?;
+    issue.set("missing", Vec::<String>::new())?;
+    t.set("issue", issue)?;
     t.set("rounds", 0)?;
     t.set("reviews", 0)?;
     t.set("tokens", 0)?;
@@ -294,6 +298,18 @@ fn recording_api(
                 None => log("settled the attempts: none passed".into()),
             }
             Ok(())
+        })?,
+    )?;
+
+    let log = record.clone();
+    m.set(
+        "post_review",
+        lua.create_function(move |_, review: Table| {
+            let verdict: String = review.get("verdict")?;
+            log(format!(
+                "wrote the review ({verdict}) on the pull request of the change"
+            ));
+            Ok(None::<String>)
         })?,
     )?;
 
