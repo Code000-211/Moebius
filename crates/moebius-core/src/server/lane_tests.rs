@@ -66,6 +66,9 @@ fn lane_config(isolation: Isolation, runtime: &str) -> LaneConfig {
         groups: vec!["video".into(), "render".into()],
         user: "65534:65534".into(),
         timeout_seconds: 120,
+        memory: "16g".into(),
+        cpus: None,
+        disk: "1m".into(),
         gpus: Some("2x MI300X".into()),
         power_cap: Some("750 W".into()),
         rocm: Some("6.2.1".into()),
@@ -202,8 +205,13 @@ impl Lane {
         self.jobs().pop().expect("a job")
     }
 
+    /// What was written on the pull request about the lane: not the template's notice of what the description lacks.
     fn replies_on_the_pull_request(&self) -> Vec<String> {
-        self.f.on_the_pull_request()
+        self.f
+            .on_the_pull_request()
+            .into_iter()
+            .filter(|text| !text.starts_with("## Missing"))
+            .collect()
     }
 }
 
@@ -323,6 +331,10 @@ async fn a_job_checks_out_exactly_the_pinned_commits_and_runs_each_command_in_a_
             "--device /dev/kfd --device /dev/dri",
             "--group-add video --group-add render",
             "--label moebius-lane=",
+            "--label moebius-lane-job=",
+            "--memory 16g --memory-swap 16g",
+            "--oom-score-adj 1000",
+            "--ulimit fsize=",
             "rocm/dev-ubuntu:6.2 sh -c",
         ] {
             assert!(joined.contains(part), "{part} in {joined}");
@@ -1498,26 +1510,60 @@ async fn the_exit_codes_the_runtime_and_the_shell_use_are_the_changes_own_when_i
     }
 }
 
-#[tokio::test(flavor = "multi_thread")]
-async fn running_out_of_the_jobs_total_time_is_the_lanes_and_names_that_limit() {
-    let lane = Lane::new(Isolation::Off, &one_step("sleep 60")).await;
+/// A lane whose jobs are given `seconds` altogether.
+async fn short_lane(definition: &str, seconds: u64) -> Lane {
+    let lane = Lane::new(Isolation::Off, definition).await;
     let mut config = lane_config(Isolation::Off, "podman");
-    config.timeout_seconds = 8;
+    config.timeout_seconds = seconds;
     lane.app()
         .lanes
         .configure(vec![config], vec![lane.runner()]);
+    lane
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_head_that_runs_out_of_the_jobs_total_time_fails_and_names_that_limit() {
+    let lane = short_lane(&one_step("sleep 60"), 8).await;
     lane.code_approved().await;
     let began = Instant::now();
     lane.pass().await;
     assert!(began.elapsed() < Duration::from_secs(40));
+    // The head took all the time it was given: that is the change's, so it is a failure with the limit in it, and it is
+    // not an error of the lane, which would count towards pausing it.
     let job = lane.the_job();
-    assert_eq!(job.state, "errored", "{job:?}");
-    assert!(job.summary.contains("total"), "{}", job.summary);
+    assert_eq!(job.state, "failed", "{job:?}");
+    assert!(job.summary.contains("total time"), "{}", job.summary);
     assert!(job.summary.contains("8 seconds"), "{}", job.summary);
     assert!(
         !job.summary.contains("900"),
         "the step's own limit did not run out: {}",
         job.summary
+    );
+    assert_eq!(
+        lane.app().store.lane_infrastructure_streak("gpu1").unwrap(),
+        0
+    );
+    let replies = lane.replies_on_the_pull_request();
+    assert_eq!(replies.len(), 1, "{replies:?}");
+    assert!(replies[0].contains("8 seconds"), "{replies:?}");
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_merge_base_that_runs_out_of_the_jobs_total_time_is_the_lanes() {
+    let both = "[[step]]\nname = \"check\"\non = \"both\"\ncommand = \"sleep 60\"\n";
+    let lane = short_lane(both, 8).await;
+    lane.code_approved().await;
+    lane.pass().await;
+    let job = lane.the_job();
+    assert_eq!(job.state, "errored", "{job:?}");
+    assert!(
+        job.summary.contains("total time of 8 seconds"),
+        "{}",
+        job.summary
+    );
+    assert_eq!(
+        lane.app().store.lane_infrastructure_streak("gpu1").unwrap(),
+        1
     );
     // The change is not blamed: no reply, and the card stays where it was.
     assert!(lane.replies_on_the_pull_request().is_empty());
@@ -1709,4 +1755,463 @@ async fn only_a_person_changes_what_runs_on_the_owners_machine() {
             .iter()
             .any(|f| f.contains("lane"))
     );
+}
+
+// ---------------------------------------------------------------------------------------------------------------------
+// The measuring harness cannot be changed by what it measures, and its rows cannot be forged.
+
+/// A commit on `parent` in the server's clone of the repository that adds `files`, made as a person would.
+fn commit_files(f: &Fixture, parent: &str, files: &[(&str, &str)]) -> String {
+    let clone = std::path::Path::new(&f.repository.path);
+    let work = f
+        ._dir
+        .path()
+        .join(format!("work-{}", files.len() + parent.len()));
+    let _ = std::fs::remove_dir_all(&work);
+    git(
+        f._dir.path(),
+        &[
+            "clone",
+            "--quiet",
+            &f.repository.path,
+            work.to_str().unwrap(),
+        ],
+    )
+    .unwrap();
+    git(&work, &["checkout", "--quiet", "--detach", parent]).unwrap();
+    for (path, text) in files {
+        std::fs::create_dir_all(work.join(path).parent().unwrap()).unwrap();
+        std::fs::write(work.join(path), text).unwrap();
+    }
+    git(&work, &["add", "-A"]).unwrap();
+    git(
+        &work,
+        &[
+            "-c",
+            "user.name=a",
+            "-c",
+            "user.email=a@example.com",
+            "commit",
+            "--quiet",
+            "-m",
+            "x",
+        ],
+    )
+    .unwrap();
+    let commit = git(&work, &["rev-parse", "HEAD"]).unwrap();
+    git(
+        clone,
+        &[
+            "fetch",
+            "--quiet",
+            work.to_str().unwrap(),
+            &format!("+HEAD:refs/test/{commit}"),
+        ],
+    )
+    .unwrap();
+    commit
+}
+
+impl Lane {
+    /// Queues a job of the card's change for `head` on `base` by hand and runs it to its end.
+    async fn run_job_for(&self, head: &str, base: &str, external: bool) -> LaneJob {
+        let app = self.app();
+        let change = app
+            .store
+            .add_change(
+                self.f.repository.id,
+                Some(self.card.id),
+                &format!("moebius/own-{head}"),
+                None,
+                head,
+            )
+            .unwrap();
+        let id = app
+            .store
+            .add_lane_job(
+                self.f.repository.id,
+                self.card.id,
+                change.id,
+                "gpu1",
+                head,
+                base,
+                external,
+                0,
+            )
+            .unwrap()
+            .unwrap();
+        assert!(app.store.claim_lane_job(id).unwrap());
+        let app2 = app.clone();
+        tokio::task::spawn_blocking(move || app2.run_lane_job(id))
+            .await
+            .unwrap();
+        app.store.lane_job(id).unwrap().unwrap()
+    }
+}
+
+/// The step that measures with the harness `bench/run.sh`, and the one that builds, which overwrites that harness.
+const OVERWRITES: &str = "harness = [\"bench/\"]\n\
+[[step]]\nname = \"build\"\ncommand = '''\n\
+echo 'echo \"MEASURE tps 999\"' > bench/run.sh || true\n\
+echo 'echo \"MEASURE tps 999\"' > bench/more.sh || true\n'''\n\
+[[step]]\nname = \"measure\"\ncommand = 'sh bench/run.sh'\n\
+[step.measure]\nruns = 3\nprefix = \"MEASURE \"\n";
+
+fn tps(job: &LaneJob, side: &str) -> serde_json::Value {
+    job.report["measurements"][0]["rows"][0][side].clone()
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_step_of_the_head_cannot_overwrite_the_harness_that_measures_it_in_a_container() {
+    let lane = Lane::new(Isolation::Always, OVERWRITES).await;
+    let base = commit_files(
+        &lane.f,
+        &lane.base,
+        &[("bench/run.sh", "echo \"MEASURE tps 100\"\n")],
+    );
+    let head = commit_files(&lane.f, &base, &[("app.txt", "x\n")]);
+    let job = lane.run_job_for(&head, &base, false).await;
+    assert_eq!(job.state, "measured", "{job:?}");
+    // The build step wrote its own bench/run.sh; the measurement ran the merge base's.
+    assert_eq!(tps(&job, "after"), json!([100.0, 100.0, 100.0]));
+    assert_eq!(tps(&job, "before"), json!([100.0, 100.0, 100.0]));
+    // The harness is laid over the checkout of both sides, read-only, after the checkout's own mount.
+    for call in lane.runs_in_containers() {
+        let mounts: Vec<&String> = call
+            .iter()
+            .enumerate()
+            .filter(|(at, _)| *at > 0 && call[*at - 1] == "-v")
+            .map(|(_, a)| a)
+            .collect();
+        assert!(mounts[0].ends_with(":/work:rw"), "{mounts:?}");
+        assert!(
+            mounts[1].ends_with("/harness/bench:/work/bench:ro"),
+            "{mounts:?}"
+        );
+    }
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_step_of_the_head_cannot_overwrite_the_harness_that_measures_it_on_the_machine() {
+    let lane = Lane::new(Isolation::Off, OVERWRITES).await;
+    let base = commit_files(
+        &lane.f,
+        &lane.base,
+        &[("bench/run.sh", "echo \"MEASURE tps 100\"\n")],
+    );
+    let head = commit_files(&lane.f, &base, &[("app.txt", "x\n")]);
+    let job = lane.run_job_for(&head, &base, false).await;
+    assert_eq!(job.state, "measured", "{job:?}");
+    // The step overwrote the file in the checkout; it was put back from the job's own copy before the measuring run.
+    assert_eq!(tps(&job, "after"), json!([100.0, 100.0, 100.0]));
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_link_the_head_put_where_the_harness_is_does_not_let_the_harness_be_written_outside() {
+    let plant = "harness = [\"bench/\"]\n\
+[[step]]\nname = \"build\"\ncommand = '''\nrm -rf bench; ln -s @DIR@/outside bench\n'''\n\
+[[step]]\nname = \"measure\"\ncommand = 'echo \"MEASURE tps 1\"'\n\
+[step.measure]\nruns = 3\nprefix = \"MEASURE \"\n";
+    let lane = Lane::new(Isolation::Off, plant).await;
+    std::fs::create_dir_all(lane.f._dir.path().join("outside")).unwrap();
+    let base = commit_files(
+        &lane.f,
+        &lane.base,
+        &[("bench/run.sh", "echo \"MEASURE tps 100\"\n")],
+    );
+    let head = commit_files(&lane.f, &base, &[("app.txt", "x\n")]);
+    let job = lane.run_job_for(&head, &base, false).await;
+    assert_eq!(job.state, "failed", "{job:?}");
+    assert!(job.summary.contains("harness"), "{}", job.summary);
+    assert!(
+        std::fs::read_dir(lane.f._dir.path().join("outside"))
+            .unwrap()
+            .next()
+            .is_none(),
+        "the harness was written through the link"
+    );
+}
+
+async fn measured_with(script: &str) -> LaneJob {
+    let definition = format!(
+        "[[step]]\nname = \"measure\"\ncommand = '''\n{script}'''\n[step.measure]\nruns = 3\nprefix = \"MEASURE \"\n"
+    );
+    let lane = Lane::new(Isolation::Off, &definition).await;
+    lane.code_approved().await;
+    lane.pass().await;
+    lane.the_job()
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_forged_row_followed_by_more_lines_than_are_read_fails_the_step() {
+    // The code under test prints a row, then more lines than are kept, then the row the harness would print.
+    let job = measured_with(
+        "echo 'MEASURE tps 999'\ni=0; while [ $i -lt 20100 ]; do echo \"MEASURE junk$i 1\"; i=$((i+1)); done\necho 'MEASURE tps 41'\n",
+    )
+    .await;
+    assert_eq!(job.state, "failed", "{job:?}");
+    assert!(job.summary.contains("more lines"), "{}", job.summary);
+    assert!(job.report["measurements"].as_array().unwrap().is_empty());
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn more_rows_than_a_run_may_give_fail_the_step_and_are_not_cut() {
+    let job =
+        measured_with("i=0; while [ $i -lt 600 ]; do echo \"MEASURE row$i 1\"; i=$((i+1)); done\n")
+            .await;
+    assert_eq!(job.state, "failed", "{job:?}");
+    assert!(job.summary.contains("more than 500"), "{}", job.summary);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_row_name_that_is_given_twice_fails_the_step() {
+    let job = measured_with("echo 'MEASURE tps 999'\necho 'MEASURE tps 41'\n").await;
+    assert_eq!(job.state, "failed", "{job:?}");
+    assert!(
+        job.summary.contains("tps was given twice"),
+        "{}",
+        job.summary
+    );
+}
+
+// ---------------------------------------------------------------------------------------------------------------------
+// What a job leaves behind, and what it may use up.
+
+/// The `PATH` of the machine with the `rm` of a user who does not own what a container's user wrote first.
+fn denying_rm(lane: &Lane) {
+    let shim = lane.f._dir.path().join("denying-rm");
+    std::fs::create_dir_all(&shim).unwrap();
+    let source = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("testdata/denying-rm/rm");
+    std::fs::copy(source, shim.join("rm")).unwrap();
+    let path = std::env::var("PATH").unwrap_or_default();
+    lane.app()
+        .lanes
+        .set_test_environment(vec![("PATH".into(), format!("{}:{path}", shim.display()))]);
+}
+
+const FILL: &str =
+    "mkdir keep ..keep && echo x > keep/file && echo y > ..keep/file && chmod 000 keep";
+
+#[tokio::test(flavor = "multi_thread")]
+async fn what_a_container_made_that_the_machine_cannot_remove_is_removed_by_the_container() {
+    let lane = Lane::new(Isolation::Always, &one_step(FILL)).await;
+    denying_rm(&lane);
+    lane.code_approved().await;
+    lane.pass().await;
+    assert_eq!(lane.the_job().state, "passed", "{:?}", lane.the_job());
+    // A directory of mode 000 and a name of two dots: the directory of the job is gone, and nothing went wrong.
+    let left = std::fs::read_dir(lane.machine.join("lanes/gpu1/jobs"))
+        .map(|d| d.count())
+        .unwrap_or(0);
+    assert_eq!(left, 0);
+    assert!(lane.app().store.lane_pause("gpu1").unwrap().is_none());
+    let cleanup: Vec<Vec<String>> = lane
+        .container_calls()
+        .into_iter()
+        .filter(|c| c.iter().any(|a| a == "--rm"))
+        .collect();
+    assert!(!cleanup.is_empty());
+    let text = cleanup[0].join(" ");
+    assert!(text.contains("chmod -R u+rwX /work"), "{text}");
+    assert!(text.contains("find /work -mindepth 1 -delete"), "{text}");
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_directory_that_cannot_be_removed_is_an_error_of_the_lane_that_pauses_it() {
+    let lane = Lane::new(Isolation::Always, &one_step(FILL)).await;
+    denying_rm(&lane);
+    // The cleanup container cannot be started either.
+    std::fs::write(format!("{}.fail-cleanup", lane.podman.display()), "").unwrap();
+    lane.code_approved().await;
+    lane.pass().await;
+    let left = std::fs::read_dir(lane.machine.join("lanes/gpu1/jobs"))
+        .map(|d| d.count())
+        .unwrap_or(0);
+    assert_eq!(left, 1, "the directory survived");
+    let pause = lane
+        .app()
+        .store
+        .lane_pause("gpu1")
+        .unwrap()
+        .expect("a pause");
+    assert!(
+        pause.reason.contains("could not be removed"),
+        "{}",
+        pause.reason
+    );
+    let id = lane.the_job().id;
+    assert!(
+        pause.reason.contains(&format!("job {id}")),
+        "{}",
+        pause.reason
+    );
+    // Nothing starts on the lane until a person has looked.
+    assert!(lane.app().start_lane_jobs().unwrap().is_empty());
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_job_does_not_start_where_the_disk_has_less_free_than_the_lane_allows() {
+    let lane = Lane::new(Isolation::Always, &one_step("echo ran > @DIR@/ran")).await;
+    let mut config = lane_config(Isolation::Always, lane.podman.to_str().unwrap());
+    config.disk = "1000t".into();
+    lane.app()
+        .lanes
+        .configure(vec![config], vec![lane.runner()]);
+    lane.code_approved().await;
+    lane.pass().await;
+    let job = lane.the_job();
+    assert_eq!(job.state, "errored", "{job:?}");
+    assert!(job.summary.contains("free"), "{}", job.summary);
+    assert!(job.summary.contains("job was not run"), "{}", job.summary);
+    assert!(!lane.f._dir.path().join("ran").exists());
+    assert!(lane.runs_in_containers().is_empty());
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_server_that_starts_while_a_job_runs_ends_what_it_left_and_queues_the_job_again() {
+    use std::os::unix::process::CommandExt;
+    let lane = Lane::new(Isolation::Always, &one_step("true")).await;
+    let app = lane.app();
+    let change = lane
+        .f
+        .server
+        .app
+        .followed_change(&lane.card)
+        .unwrap()
+        .unwrap();
+    let id = app
+        .store
+        .add_lane_job(
+            lane.f.repository.id,
+            lane.card.id,
+            change.id,
+            "gpu1",
+            &lane.head,
+            &lane.base,
+            true,
+            0,
+        )
+        .unwrap()
+        .unwrap();
+    assert!(app.store.claim_lane_job(id).unwrap());
+    // What the server that stopped left: a container of the job and a process group of a direct command in its directory.
+    let job_dir = lane.machine.join(format!("lanes/gpu1/jobs/{id}"));
+    std::fs::create_dir_all(&job_dir).unwrap();
+    let name = format!("moebius-lane-{id}-0");
+    let mut container = std::process::Command::new(&lane.podman)
+        .args([
+            "run",
+            "--name",
+            &name,
+            "--label",
+            &format!("moebius-lane-job={id}"),
+        ])
+        .args([
+            "-v",
+            &format!("{}:/work:rw", job_dir.display()),
+            "-w",
+            "/work",
+            "image",
+            "sh",
+            "-c",
+            "sleep 300",
+        ])
+        .spawn()
+        .unwrap();
+    let mut direct = std::process::Command::new("sh")
+        .args(["-c", "echo $$ > pid-1; exec sleep 300"])
+        .current_dir(&job_dir)
+        .process_group(0)
+        .spawn()
+        .unwrap();
+    let there = format!("{}.running.{name}", lane.podman.display());
+    let pid = pid_of(&job_dir.join("pid-1")).await;
+    let deadline = Instant::now() + Duration::from_secs(20);
+    while !std::path::Path::new(&there).exists() {
+        assert!(Instant::now() < deadline, "the container did not start");
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+    assert!(alive(&pid));
+
+    let app2 = app.clone();
+    tokio::task::spawn_blocking(move || app2.recover_lane_jobs())
+        .await
+        .unwrap();
+    container.wait().unwrap();
+    direct.wait().unwrap();
+    assert!(
+        !std::path::Path::new(&there).exists(),
+        "the container is still there"
+    );
+    assert!(!alive(&pid), "the direct command is still running");
+    assert!(!job_dir.exists(), "the job's directory is still there");
+    let asked = lane.container_calls().iter().any(|c| {
+        c.first().map(String::as_str) == Some("ps")
+            && c.join(" ")
+                .contains(&format!("label=moebius-lane-job={id}"))
+    });
+    assert!(asked, "{:?}", lane.container_calls());
+    assert_eq!(app.store.lane_job(id).unwrap().unwrap().state, "queued");
+    assert!(app.store.lane_pause("gpu1").unwrap().is_none());
+
+    // What cannot be ended pauses the lane: a directory the machine cannot remove.
+    denying_rm(&lane);
+    assert!(app.store.claim_lane_job(id).unwrap());
+    std::fs::create_dir_all(job_dir.join("keep")).unwrap();
+    std::fs::write(job_dir.join("keep/file"), "x").unwrap();
+    std::fs::set_permissions(
+        job_dir.join("keep"),
+        std::os::unix::fs::PermissionsExt::from_mode(0o000),
+    )
+    .unwrap();
+    let app3 = app.clone();
+    tokio::task::spawn_blocking(move || app3.recover_lane_jobs())
+        .await
+        .unwrap();
+    let pause = app.store.lane_pause("gpu1").unwrap().expect("a pause");
+    assert!(
+        pause.reason.contains("when the server stopped"),
+        "{}",
+        pause.reason
+    );
+    assert_eq!(app.store.lane_job(id).unwrap().unwrap().state, "queued");
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn the_reason_a_lane_paused_names_a_card_only_to_those_who_see_it() {
+    let lane = Lane::new(Isolation::Off, &one_step("true")).await;
+    let app = lane.app();
+    let secret = "3 jobs in a row ended because of the lane itself; the last: the step of SECRET-CARD said token";
+    app.pause_lane_for_test("gpu1", secret, Some(lane.card.id));
+    let card = app.card(lane.card.id).unwrap();
+    let everyone = crate::app::Sight::everything();
+    let hidden = crate::app::Sight::hiding(&[card.project_id]);
+    let pause = |sight: &crate::app::Sight| {
+        app.lane_views(sight)
+            .unwrap()
+            .remove(0)
+            .paused
+            .expect("paused")
+    };
+    assert_eq!(pause(&everyone).reason, secret);
+    let seen = pause(&hidden);
+    assert!(!seen.reason.contains("SECRET-CARD"), "{}", seen.reason);
+    assert!(seen.reason.contains("stopped itself"), "{}", seen.reason);
+    // What the API sends is that, and carries no card.
+    let json = serde_json::to_string(&app.lane_views(&hidden).unwrap()).unwrap();
+    assert!(
+        !json.contains("SECRET-CARD") && !json.contains("card_id"),
+        "{json}"
+    );
+    // The answer of a resume is the same list as seen by the one who resumes: a person who sees no card sees no reason.
+    let listed = serde_json::to_string(
+        &app.repository_lane_view(lane.f.repository.id, &hidden)
+            .unwrap(),
+    )
+    .unwrap();
+    assert!(!listed.contains("SECRET-CARD"), "{listed}");
+    // A pause no card made is told as it is.
+    app.resume_lane(&owner(), "gpu1", "").unwrap();
+    app.pause_lane_for_test("gpu1", "the runner went away", None);
+    assert_eq!(pause(&hidden).reason, "the runner went away");
 }

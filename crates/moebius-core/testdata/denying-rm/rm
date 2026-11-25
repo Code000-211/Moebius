@@ -1,0 +1,14 @@
+#!/bin/sh
+# An `rm` for the tests of the test lane, as one run by a user who owns none of what a container's user wrote: it fails,
+# and removes nothing, on a tree that holds a directory of mode 000 or a directory whose name starts with two dots, as a
+# `rm` that is not root's fails inside what it does not own. Anything else it removes as `rm` does. (The tests may run as
+# root, whose `rm` removes it all; the fake runtime does not put this directory in the `PATH` of its containers.)
+PATH=${PATH#*/denying-rm:}
+for a in "$@"; do
+    case "$a" in -*) continue ;; esac
+    if [ -e "$a" ] && [ -n "$(find "$a" -type d \( -perm 000 -o -name '..*' \) 2>/dev/null | head -n 1)" ]; then
+        echo "rm: cannot remove '$a': Permission denied" >&2
+        exit 1
+    fi
+done
+exec "$(command -v rm)" "$@"

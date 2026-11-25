@@ -15,8 +15,8 @@ use serde_json::{Value, json};
 
 use super::definition::{self, Definition, LANE_FILE, On, Step};
 use super::exec::{
-    Ended, Finish, GIT, GIT_ENVIRONMENT, Machine, contained_script, describe, direct_script, quote,
-    read_status,
+    Ended, Finish, GIT, GIT_ENVIRONMENT, Isolated, Machine, contained_script, describe,
+    direct_script, harness_path, quote, read_status,
 };
 use super::report::{Measured, Report, Series, StepResult, tail};
 use super::rows::{self, Row};
@@ -60,6 +60,8 @@ struct Job<'a> {
     commands: std::cell::Cell<u32>,
     /// Whether the command that is going was given less time than its step allows, since the job's own time was running out.
     cut: std::cell::Cell<bool>,
+    /// The paths of the harness that the merge base has (see [`Job::prepare`]), as the job's copy and the checkouts have them.
+    harness: std::cell::RefCell<Vec<String>>,
     report: std::cell::RefCell<Report>,
 }
 
@@ -116,6 +118,7 @@ impl App {
             started: Instant::now(),
             commands: std::cell::Cell::new(0),
             cut: std::cell::Cell::new(false),
+            harness: std::cell::RefCell::new(Vec::new()),
             report: std::cell::RefCell::new(Report {
                 lane: lane.clone(),
                 contained,
@@ -197,6 +200,8 @@ struct Done {
     finish: Finish,
     output: String,
     prefixed: Vec<String>,
+    /// Whether more lines had the prefix than are read.
+    prefixed_cut: bool,
 }
 
 /// A shell prefix that stops unless `$f` is a regular file inside the checkout `side`, not reached through a link: the
@@ -259,8 +264,17 @@ impl Job<'_> {
     fn prepare(&self, harness: &[String]) -> Result<(), Stop> {
         let cancelled = || self.cancelled();
         let mut checks = String::from(
-            "for tool in git timeout sha256sum readlink; do command -v $tool >/dev/null 2>&1 || { echo \"$tool is missing on the machine\"; exit 3; }; done;",
+            "for tool in git timeout sha256sum readlink tar find xargs cp df awk ps; do command -v $tool >/dev/null 2>&1 || { echo \"$tool is missing on the machine\"; exit 3; }; done;",
         );
+        // A job fills the disk it is given and no more: it does not start where there is less than that free.
+        let work = quote(self.machine.work_dir());
+        let disk = self.lane.disk_bytes();
+        checks.push_str(&format!(
+            " mkdir -p {work} && free=$(df -Pk {work} | awk 'NR==2 {{print $4}}') && [ \"${{free:-0}}\" -ge {needed} ] || \
+             {{ echo \"the directory {here} of the lane has only $((${{free:-0}} / 1024)) MiB free, and a job needs {disk} bytes\"; exit 6; }};",
+            needed = disk.div_ceil(1024),
+            here = self.machine.work_dir(),
+        ));
         // Fail closed: a job that has to be contained never runs without the runtime.
         if self.contained {
             let runtime = quote(&self.lane.runtime);
@@ -276,6 +290,12 @@ impl Job<'_> {
         match &checked.ended {
             Ended::Exit(0) => {}
             Ended::Cancelled => return Err(Stop::Cancelled),
+            Ended::Exit(6) => {
+                return Err(Stop::Errored(format!(
+                    "{}; the job was not run",
+                    checked.output.trim()
+                )));
+            }
             Ended::Exit(4) => {
                 return Err(Stop::Errored(format!(
                     "{}; the job was not run, since this lane never runs a job that must be isolated without the container runtime",
@@ -335,16 +355,33 @@ impl Job<'_> {
                 commit = quote(commit),
             ));
         }
-        // The harness of the measurement is the merge base's: what the head has there is taken away and put back as it
-        // was, so that the code under review cannot choose how it is measured.
+        // The harness of the measurement is the merge base's: it is taken out of the merge base into a directory of the
+        // job's own that no step can write to (and it is never made writable), and what the head has there is replaced
+        // by it. A container has that directory laid over the checkout, read-only; a direct command has it put back before
+        // every measurement. The hash of every file is kept to be checked then.
+        let harness_dir = format!("{dir}/harness");
+        script.push_str(&format!(" mkdir -p {harness_dir};"));
         for path in harness {
-            let path = quote(path.trim_start_matches('/'));
+            let path = harness_path(path);
+            let quoted = quote(path);
+            let parent = path
+                .rsplit_once('/')
+                .map_or(String::new(), |(p, _)| format!("/{p}"));
             script.push_str(&format!(
-                " rm -rf {dir}/after/{path}; if [ -n \"$({GIT} -C {dir}/after ls-tree -r --name-only {base} -- {path})\" ]; then \
-                 {GIT} -C {dir}/after checkout --quiet {base} -- {path}; fi;",
+                " rm -rf {dir}/after/{quoted}; if [ -n \"$({GIT} --git-dir={bare} ls-tree -r --name-only {base} -- {quoted})\" ]; then \
+                 {GIT} --git-dir={bare} archive --format=tar --output={dir}/harness.tar {base} -- {quoted}; \
+                 tar -x -C {harness_dir} -f {dir}/harness.tar; rm -f {dir}/harness.tar; \
+                 mkdir -p {dir}/after{parent}; cp -a {harness_dir}/{quoted} {dir}/after/{quoted}; \
+                 printf 'HARNESS %s\\n' {quoted}; fi;",
+                bare = quote(&bare),
                 base = quote(&self.job.base),
+                parent = quote(&parent),
             ));
         }
+        script.push_str(&format!(
+            " [ -z \"$(find {harness_dir} -type l)\" ] || {{ echo \"the harness of the merge base holds a link\"; exit 5; }}; \
+             (cd {harness_dir} && find . -type f -print0 | xargs -0 -r sha256sum > {dir}/harness.sha256);"
+        ));
         script.push_str(&format!(
             " {GIT} --git-dir={bare} update-ref -d {after}; {GIT} --git-dir={bare} update-ref -d {before}; \
              chmod -R a+rwX {dir}/before {dir}/after",
@@ -352,11 +389,22 @@ impl Job<'_> {
             after = quote(&after),
             before = quote(&before),
         ));
-        let checked_out = self
-            .machine
-            .run(&script, Duration::from_secs(900), &cancelled, None);
+        let checked_out = self.machine.run(
+            &script,
+            Duration::from_secs(900),
+            &cancelled,
+            Some("HARNESS "),
+        );
         match checked_out.ended {
-            Ended::Exit(0) => Ok(()),
+            Ended::Exit(0) => {
+                *self.harness.borrow_mut() = checked_out
+                    .prefixed
+                    .iter()
+                    .filter_map(|line| line.strip_prefix("HARNESS "))
+                    .map(str::to_string)
+                    .collect();
+                Ok(())
+            }
             Ended::Cancelled => Err(Stop::Cancelled),
             _ => Err(Stop::Errored(format!(
                 "the commits could not be checked out on the machine: {}",
@@ -406,24 +454,48 @@ impl Job<'_> {
                     self.job.id,
                     self.machine.name()
                 ),
+                Some(self.job.card_id),
             );
         }
     }
 
-    /// Runs `command` of a step in the checkout `side`. `run` is the number of the run of a measurement.
+    /// The step as a report names it for `side`.
+    fn labelled(step: &Step, side: &str) -> String {
+        if step.on == On::Both || step.measure.is_some() {
+            format!("{} ({side})", step.name)
+        } else {
+            step.name.clone()
+        }
+    }
+
+    /// What the job's own time running out at `step` on `side` means: on the merge base it is the lane's (the base is
+    /// not the change's doing), on the head it is the change's, which was given the whole time and named the limit.
+    fn out_of_time(&self, step: &Step, side: &str, output: &str) -> Stop {
+        let limit = self.lane.timeout_seconds;
+        if side == "before" {
+            return Stop::Errored(format!(
+                "the job ran out of its total time of {limit} seconds at the step {}",
+                step.name
+            ));
+        }
+        Stop::Failed {
+            step: Self::labelled(step, side),
+            why: format!("it ran out of the lane's total time of {limit} seconds for a job"),
+            output: output.to_string(),
+        }
+    }
+
+    /// Runs `command` of `step` in the checkout `side`. `run` is the number of the run of a measurement.
     fn command(
         &self,
+        step: &Step,
         side: &str,
-        command: &str,
-        seconds: u64,
         run: Option<usize>,
         prefix: Option<&str>,
     ) -> Result<Done, Stop> {
+        let (command, seconds) = (step.command.as_str(), step.timeout_seconds);
         let Some(left) = self.remaining() else {
-            return Err(Stop::Errored(format!(
-                "the job took longer than the lane's total limit of {} seconds",
-                self.lane.timeout_seconds
-            )));
+            return Err(self.out_of_time(step, side, ""));
         };
         self.cut.set(left.as_secs().max(1) < seconds);
         let seconds = seconds.min(left.as_secs().max(1));
@@ -443,10 +515,14 @@ impl Job<'_> {
         let script = if self.contained {
             contained_script(
                 self.lane,
-                &format!("moebius-lane-{}-{n}", self.job.id),
-                &self.dir,
-                side,
-                &environment,
+                &Isolated {
+                    job: self.job.id,
+                    name: &format!("moebius-lane-{}-{n}", self.job.id),
+                    job_dir: &self.dir,
+                    side,
+                    environment: &environment,
+                    harness: &self.harness.borrow(),
+                },
                 command,
                 seconds,
                 &token,
@@ -481,6 +557,7 @@ impl Job<'_> {
                     finish: Finish::TimedOut,
                     output,
                     prefixed: ran.prefixed,
+                    prefixed_cut: ran.prefixed_cut,
                 })
             }
             (Ended::Failed(why), _) => {
@@ -492,6 +569,7 @@ impl Job<'_> {
                 finish,
                 output,
                 prefixed: ran.prefixed,
+                prefixed_cut: ran.prefixed_cut,
             }),
             (_, None) => {
                 self.stop_command(n);
@@ -513,12 +591,9 @@ impl Job<'_> {
                     tail(&done.output).lines().last().unwrap_or("")
                 )));
             }
-            // The job's own time was running out: that is the lane's, not the change's.
+            // The job's own time was running out: on the merge base that is the lane's, on the head the change's.
             Finish::TimedOut if self.cut.get() => {
-                return Err(Stop::Errored(format!(
-                    "the job ran out of its total time of {} seconds at the step {}",
-                    self.lane.timeout_seconds, step.name
-                )));
+                return Err(self.out_of_time(step, side, &done.output));
             }
             Finish::Exit(code) => format!("it exited with code {code}"),
             Finish::TimedOut => {
@@ -533,13 +608,8 @@ impl Job<'_> {
                 step.name
             )));
         }
-        let name = if step.on == On::Both || step.measure.is_some() {
-            format!("{} ({side})", step.name)
-        } else {
-            step.name.clone()
-        };
         Err(Stop::Failed {
-            step: name,
+            step: Self::labelled(step, side),
             why,
             output: done.output.clone(),
         })
@@ -561,7 +631,7 @@ impl Job<'_> {
         };
         for side in sides {
             self.at(&format!("{} ({side})", step.name));
-            let done = self.command(side, &step.command, step.timeout_seconds, None, None)?;
+            let done = self.command(step, side, None, None)?;
             self.judge(step, side, &done)?;
         }
         Ok(())
@@ -619,19 +689,22 @@ impl Job<'_> {
                 for file in [&measure.json, &measure.parity_file].into_iter().flatten() {
                     self.remove_file(side, file);
                 }
-                let done = self.command(
-                    side,
-                    &step.command,
-                    step.timeout_seconds,
-                    Some(run),
-                    measure.prefix.as_deref(),
-                )?;
+                self.restore_harness(step, side)?;
+                let done = self.command(step, side, Some(run), measure.prefix.as_deref())?;
                 self.judge(step, side, &done)?;
-                let mut found: Vec<Row> = measure
-                    .prefix
-                    .as_deref()
-                    .map(|prefix| rows::from_lines(&done.prefixed, prefix))
-                    .unwrap_or_default();
+                // Rows are read only from a run that was read whole: lines past the cap are the code's noise, and
+                // which of the lines before it were the harness's is not known.
+                if done.prefixed_cut {
+                    return Err(failed(
+                        "it printed more lines that start with the measurement prefix than a run may; the measurement is not trusted".into(),
+                        &done.output,
+                    ));
+                }
+                let mut found: Vec<Row> = match measure.prefix.as_deref() {
+                    Some(prefix) => rows::from_lines(&done.prefixed, prefix)
+                        .map_err(|why| failed(why, &done.output))?,
+                    None => Vec::new(),
+                };
                 if let Some(path) = &measure.json {
                     let more = self
                         .read_file(side, path)
@@ -645,6 +718,17 @@ impl Job<'_> {
                         &done.output,
                     ));
                 }
+                if found.len() > rows::ROWS_AT_MOST {
+                    return Err(failed(
+                        format!(
+                            "run {run} on {side} gave more than {} rows",
+                            rows::ROWS_AT_MOST
+                        ),
+                        &done.output,
+                    ));
+                }
+                rows::names_are_unique(&found)
+                    .map_err(|why| failed(format!("run {run} on {side}: {why}"), &done.output))?;
                 for row in found {
                     let entry = series.entry(row.name.clone()).or_insert_with(|| {
                         order.push(row.name.clone());
@@ -720,25 +804,165 @@ impl Job<'_> {
         Ok(())
     }
 
-    /// Takes the job's directory off the machine, whatever came of the job.
+    /// Before a measuring run of a command that runs directly on the machine: the harness is put back from the job's
+    /// own copy of the merge base's, through the guard that stops at a link leading out of the checkout, and every file
+    /// of it is checked against the hash taken when the copy was made. In a container the copy lies over the checkout,
+    /// read-only, and there is nothing to put back.
+    fn restore_harness(&self, step: &Step, side: &str) -> Result<(), Stop> {
+        let paths = self.harness.borrow().clone();
+        if self.contained || paths.is_empty() {
+            return Ok(());
+        }
+        let dir = quote(&self.dir);
+        let mut script = String::from("set -e;");
+        for path in &paths {
+            let path = harness_path(path);
+            script.push_str(&format!(
+                " {guard}; rm -rf -- \"$f\"; mkdir -p -- \"$(dirname -- \"$f\")\"; cp -a -- {dir}/harness/{path} \"$f\";",
+                guard = inside(&self.dir, side, path, false),
+                path = quote(path),
+            ));
+        }
+        script.push_str(&format!(
+            " (cd {dir}/harness && sha256sum -c --quiet {dir}/harness.sha256 >/dev/null); \
+             (cd {dir}/{side} && sha256sum -c --quiet {dir}/harness.sha256 >/dev/null)"
+        ));
+        let ran = self.machine.run(
+            &script,
+            Duration::from_secs(300),
+            &|| self.cancelled(),
+            None,
+        );
+        match ran.ended {
+            Ended::Exit(0) => Ok(()),
+            Ended::Cancelled => Err(Stop::Cancelled),
+            _ if side == "before" => Err(Stop::Errored(format!(
+                "the measuring harness could not be put back on the merge base: {}",
+                describe(&ran)
+            ))),
+            _ => Err(Stop::Failed {
+                step: Self::labelled(step, side),
+                why: format!(
+                    "the measuring harness of the merge base could not be put back in the checkout of the head (a link or a changed file): {}",
+                    describe(&ran)
+                ),
+                output: String::new(),
+            }),
+        }
+    }
+
+    /// Takes the job's directory off the machine, whatever came of the job, and what its commands left running first.
+    /// A directory that is still there afterwards is an error of the lane, which pauses until a person has looked.
     fn clean_up(&self) {
         let dir = quote(&self.dir);
-        let mut script = format!("rm -rf {dir} 2>/dev/null;");
-        if self.contained {
-            // Files a container's user made may not be the machine user's to remove.
+        let mut script = format!(
+            "{} rm -rf {dir} 2>/dev/null;",
+            reap_script(self.lane, self.job.id, &self.dir, self.contained)
+        );
+        if self.contained && self.lane.image.is_some() {
+            // What a container's user made may not be the machine user's to remove, and may have no mode to be read at
+            // all: the container makes it its own again (`chmod`) and removes everything, a name of two dots and a
+            // directory of mode 000 included.
+            script.push_str(&format!(" if [ -e {dir} ]; then"));
             for side in ["before", "after", "home"] {
                 script.push_str(&format!(
-                    " [ ! -d {dir}/{side} ] || {runtime} run --rm --network none --user {user} -v {dir}/{side}:/work:rw {image} \
-                     sh -c 'rm -rf /work/* /work/.[!.]*' >/dev/null 2>&1;",
+                    " [ ! -d {dir}/{side} ] || {runtime} run --rm --network none --cap-drop ALL --user {user} -v {dir}/{side}:/work:rw {image} \
+                     sh -c 'chmod -R u+rwX /work 2>/dev/null; find /work -mindepth 1 -delete' >/dev/null 2>&1;",
                     runtime = quote(&self.lane.runtime),
                     user = quote(&self.lane.user),
                     image = quote(self.lane.image.as_deref().unwrap_or_default()),
                 ));
             }
-            script.push_str(&format!(" rm -rf {dir};"));
+            script.push_str(" rm -rf ");
+            script.push_str(&format!("{dir}; fi;"));
         }
-        let _ = self
+        script.push_str(&format!(" [ ! -e {dir} ]"));
+        let ran = self
             .machine
-            .run(&script, Duration::from_secs(120), &|| false, None);
+            .run(&script, Duration::from_secs(300), &|| false, None);
+        // The machine that cannot be reached is the lane's trouble that the job already counted.
+        if !matches!(ran.ended, Ended::Exit(0) | Ended::Failed(_)) {
+            self.app.pause_lane_for(
+                &self.job.lane,
+                &format!(
+                    "what job {} left on {} could not be removed ({}), so no job starts there until a person has looked",
+                    self.job.id,
+                    self.machine.name(),
+                    describe(&ran)
+                ),
+                Some(self.job.card_id),
+            );
+        }
+    }
+}
+
+/// The shell commands that end whatever commands of job `id` left on the machine: its containers, found by the label
+/// they were made with, and the process groups of its direct commands, whose ids are in the `pid-*` files of its
+/// directory `dir`. The script exits with 8 when something is still there, and goes on to its next command when not.
+pub(super) fn reap_script(lane: &LaneConfig, id: i64, dir: &str, contained: bool) -> String {
+    let runtime = quote(&lane.runtime);
+    let label = format!("label=moebius-lane-job={id}");
+    let dir = quote(dir);
+    let containers = if contained {
+        format!(
+            "{runtime} ps -aq --filter {label} 2>/dev/null | xargs -r {runtime} rm -f >/dev/null 2>&1; \
+             [ -z \"$({runtime} ps -aq --filter {label} 2>/dev/null)\" ] || exit 8; "
+        )
+    } else {
+        String::new()
+    };
+    format!(
+        "{containers}for f in {dir}/pid-*; do [ -f \"$f\" ] || continue; p=$(cat \"$f\" 2>/dev/null); \
+           case \"$p\" in ''|*[!0-9]*) continue;; esac; [ \"$p\" -gt 1 ] || continue; i=0; \
+           while [ $i -lt 5 ]; do kill -KILL -$p 2>/dev/null; \
+             ps -A -o pgid= -o stat= 2>/dev/null | awk -v p=$p '$1 == p && $2 !~ /^Z/ {{ found = 1 }} END {{ exit !found }}' || break; \
+             i=$((i + 1)); sleep 1; done; \
+           ! ps -A -o pgid= -o stat= 2>/dev/null | awk -v p=$p '$1 == p && $2 !~ /^Z/ {{ found = 1 }} END {{ exit !found }}' || exit 8; done;"
+    )
+}
+
+impl App {
+    /// What a stopped server left of the jobs that were running: the containers and processes of each are ended and its
+    /// directory is removed, and then the job waits its turn again. A lane where something cannot be ended pauses itself.
+    pub fn recover_lane_jobs(&self) {
+        let running: Vec<LaneJob> = self
+            .store
+            .lane_active()
+            .unwrap_or_default()
+            .into_iter()
+            .filter(|job| job.state == "running")
+            .collect();
+        for job in &running {
+            let Some(lane) = self.lanes.lane(&job.lane) else {
+                continue;
+            };
+            let runner = lane
+                .runner
+                .as_deref()
+                .and_then(|name| self.lanes.runner(name));
+            let machine = Machine::new(&lane, runner.as_ref(), &self.data_dir);
+            #[cfg(test)]
+            let machine = machine.with_environment(self.lanes.test_environment());
+            let dir = format!("{}/jobs/{}", machine.work_dir(), job.id);
+            let script = format!(
+                "{} rm -rf {dir} 2>/dev/null; [ ! -e {dir} ] || exit 7",
+                reap_script(&lane, job.id, &dir, lane.isolation.contained(job.external)),
+                dir = quote(&dir)
+            );
+            let ran = machine.run(&script, Duration::from_secs(300), &|| false, None);
+            if ran.ended != Ended::Exit(0) {
+                self.pause_lane_for(
+                    &job.lane,
+                    &format!(
+                        "what job {} left running on {} when the server stopped could not be ended ({}), so no job starts there until a person has looked",
+                        job.id,
+                        machine.name(),
+                        describe(&ran)
+                    ),
+                    Some(job.card_id),
+                );
+            }
+        }
+        let _ = self.store.requeue_interrupted_lane_jobs();
     }
 }

@@ -43,6 +43,7 @@ CREATE TABLE lane_state (
     paused INTEGER NOT NULL DEFAULT 0,
     since INTEGER NOT NULL DEFAULT 0,
     reason TEXT NOT NULL DEFAULT '',
+    card_id INTEGER,
     floor_job INTEGER NOT NULL DEFAULT 0
 );
 "#;
@@ -114,6 +115,10 @@ fn read(r: &rusqlite::Row) -> rusqlite::Result<LaneJob> {
 pub struct LanePause {
     pub since: i64,
     pub reason: String,
+    /// The card whose job made the lane pause, when one did: the reason may quote what that card's job printed, so it is
+    /// shown only to those who see the card. It is never sent itself.
+    #[serde(skip_serializing)]
+    pub card_id: Option<i64>,
 }
 
 impl Store {
@@ -362,28 +367,30 @@ impl Store {
         Ok(self
             .read()
             .query_row(
-                "SELECT since, reason FROM lane_state WHERE lane = ?1 AND paused = 1",
+                "SELECT since, reason, card_id FROM lane_state WHERE lane = ?1 AND paused = 1",
                 params![lane],
                 |r| {
                     Ok(LanePause {
                         since: r.get(0)?,
                         reason: r.get(1)?,
+                        card_id: r.get(2)?,
                     })
                 },
             )
             .optional()?)
     }
 
-    /// Pauses the lane. False when it was paused already, which keeps its first reason.
-    pub fn pause_lane(&self, lane: &str, reason: &str) -> Result<bool> {
+    /// Pauses the lane, for the job of `card_id` when one made it. False when it was paused already, which keeps its first
+    /// reason.
+    pub fn pause_lane(&self, lane: &str, reason: &str, card_id: Option<i64>) -> Result<bool> {
         let conn = self.conn();
         conn.execute(
             "INSERT OR IGNORE INTO lane_state (lane) VALUES (?1)",
             params![lane],
         )?;
         Ok(conn.execute(
-            "UPDATE lane_state SET paused = 1, since = ?2, reason = ?3 WHERE lane = ?1 AND paused = 0",
-            params![lane, now(), reason],
+            "UPDATE lane_state SET paused = 1, since = ?2, reason = ?3, card_id = ?4 WHERE lane = ?1 AND paused = 0",
+            params![lane, now(), reason, card_id],
         )? > 0)
     }
 
@@ -493,8 +500,8 @@ mod tests {
         end("e", "errored");
         end("f", "errored");
         assert_eq!(s.lane_infrastructure_streak("gpu1").unwrap(), 3);
-        assert!(s.pause_lane("gpu1", "three in a row").unwrap());
-        assert!(!s.pause_lane("gpu1", "again").unwrap());
+        assert!(s.pause_lane("gpu1", "three in a row", None).unwrap());
+        assert!(!s.pause_lane("gpu1", "again", None).unwrap());
         assert_eq!(
             s.lane_pause("gpu1").unwrap().unwrap().reason,
             "three in a row"

@@ -35,8 +35,8 @@ import { PluginSettings } from "./PluginSettings";
 import { ReviewFlow } from "./ReviewFlow";
 import { SettingsPanel } from "./SettingsPanel";
 import { StaleHandling } from "./StaleHandling";
-import { TestLane } from "./TestLane";
 import { Templates } from "./Templates";
+import { TestLane } from "./TestLane";
 import { WorkingWithOthers } from "./WorkingWithOthers";
 
 export function ProjectPage() {

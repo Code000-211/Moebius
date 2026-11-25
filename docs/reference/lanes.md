@@ -76,9 +76,12 @@ A `[step.measure]` table has these keys, and no other:
 At least one of `prefix` and `json` is needed. A row of output is `<prefix><name> <value> [unit]` or
 `<prefix><name>=<value> [unit]`. A JSON file is `{"rows": [{"name": "decode_tps", "value": 41.5, "unit": "tok/s"}]}` or a
 flat object of names and numbers. A name is 1 to 80 characters of letters, digits and `_ . / : + - % @ [ ] ( )`, a unit
-is up to 20 of the same, a value is a finite number, and a run has at most 500 rows; anything else is left out, since
-what a step printed is data written by the code under review. A run with no row fails the step, and so does a row that is
-not given in every run of both sides.
+is up to 20 of the same, and a value is a finite number; a line that is not that is left out, since what a step printed is
+data written by the code under review. The step **fails closed** where the code could crowd the harness's rows out: a
+run that prints more than 20000 lines that start with the prefix (`it printed more lines that start with the measurement
+prefix than a run may`), a run with more than 500 rows (`it gave more than 500 rows in one run`) and a run in which a name is
+given twice (`the row <name> was given twice in one run`, whether in the output or the JSON file) are not cut but failed.
+A run with no row fails the step, and so does a row that is not given in every run of both sides.
 
 ## The job
 
@@ -88,7 +91,9 @@ queued) and `external` (whether the change is a pull request someone else opened
 
 What a job does, in order, on the lane's machine, each command with a time limit:
 
-1. **Preflight.** `git`, `timeout` and `sha256sum` are there; for a job that has to be contained the container program
+1. **Preflight.** `git`, `timeout`, `sha256sum`, `readlink`, `tar`, `find`, `xargs`, `cp`, `df`, `awk` and `ps` are there; the lane's
+   directory (`work_dir`) has at least `disk` free (`df`), else the job ends `errored` with `the directory <work_dir> of the
+   lane has only <n> MiB free, and a job needs <disk> bytes; the job was not run`; for a job that has to be contained the container program
    is there and `--version` works, else the job ends `errored` with `the container runtime <name> is missing on the
    machine` (or `does not run`) and `the job was not run, since this lane never runs a job that must be isolated without
    the container runtime`. Nothing runs directly instead.
@@ -97,20 +102,32 @@ What a job does, in order, on the lane's machine, each command with a time limit
    over SSH for a runner and by path for the server. Each is fetched into `<work_dir>/jobs/<job>/after` and `.../before`
    and checked out detached, and the job is refused (`errored`) unless `git rev-parse HEAD` there is exactly the commit.
    The refs are removed again. Submodules are not fetched. Each side is made writable (`chmod -R a+rwX`) on its own, the job's directory is not.
+   The **harness** is taken out of the merge base with `git archive` into `<job directory>/harness`, which belongs to the
+   machine's account, is never made writable and is never mounted writable; the sha256 of every file is kept in
+   `<job directory>/harness.sha256`, and a harness that holds a link refuses the job. The same files are copied into the
+   head's checkout (what the head has at those paths is removed first), for the steps that use them.
 3. **The steps**, in order. A step runs in `after` (the head), and a step with `on = "both"` first in `before` (the merge
    base). A measuring step runs `runs` times: `before`, `after`, `before`, `after`, ..., so that what the machine does
    over time falls on both. Every command has the variables `LANE_SIDE` (`before` or `after`), `LANE_RUN` (the number of
    the run of a measurement, else empty), `LANE_JOB`, `LANE_HEAD`, `LANE_BASE` and `CI=1`, and `HOME` is
    `<job directory>/home` (`/tmp` in a container).
-4. **The report** and the end of the job. The directory of the job is removed from the machine, the container of each
-   command is removed whatever came of it.
+4. **The report** and the end of the job. What the job's commands left is ended (its containers, found by the label
+   `moebius-lane-job=<job>`, and the process group of each `pid-<n>`), and the directory of the job is removed from the
+   machine. A container's user may have made what the machine's account cannot remove (a directory of mode 000, a name that
+   starts with two dots): the lane then runs one more container, with no network and no capability, that does
+   `chmod -R u+rwX /work; find /work -mindepth 1 -delete` on each side. If the directory is still there afterwards that is
+   an error of the lane: it **pauses** (`lane_paused`, naming the job) and no next job starts until a person has looked.
+
+If a server stops while a job runs, the next start ends what that job left in the same way (containers by their label,
+process groups from the `pid-*` files, the directory) before the job is queued again; when that cannot be done the lane
+pauses. A container of the same name is also removed before a command starts.
 
 The job never pushes to a forge and has no secret of the server. The server runs the machine's commands with only `PATH`
 and `HOME` (and `SSH_AUTH_SOCK` for `ssh`) of its own environment, and a container has only the variables above.
 
 ### Stopping a command
 
-A command that is cancelled (a new push), runs past the time the server allows, or whose script was lost is stopped **on the machine**, over SSH for a runner, and the job is not over until that is confirmed: a container is removed by name and asked for until it is gone, a direct command's process group is killed until it is. A lane that cannot confirm it pauses itself (`lane_paused`), so that no next job starts on the same GPUs. The `timeout` that starts a command, `--timeout` of `podman` and the kill of the process group all bound it on the machine, not only the client on the server. Whatever a command left running in its process group ends with it, and its pipes are read for five seconds after it ended and then let go, so that a background process cannot hold the lane. A job that runs out of its total time is `errored` (the lane's), says `the job ran out of its total time of <n> seconds at the step <name>`, and gets no reply on the pull request.
+A command that is cancelled (a new push), runs past the time the server allows, or whose script was lost is stopped **on the machine**, over SSH for a runner, and the job is not over until that is confirmed: a container is removed by name and asked for until it is gone, a direct command's process group is killed until it is. A lane that cannot confirm it pauses itself (`lane_paused`), so that no next job starts on the same GPUs. The `timeout` that starts a command, `--timeout` of `podman` and the kill of the process group all bound it on the machine, not only the client on the server. Whatever a command left running in its process group ends with it, and its pipes are read for five seconds after it ended and then let go, so that a background process cannot hold the lane. A job that runs out of its total time on the **merge base** is `errored` (the lane's), says `the job ran out of its total time of <n> seconds at the step <name>`, and gets no reply on the pull request. On the **head** it is `failed`, naming the limit (`it ran out of the lane's total time of <n> seconds for a job`): the head was given the whole time, so it does not count towards pausing the lane.
 
 ### Isolation
 
@@ -121,13 +138,14 @@ A command that is cancelled (a new push), runs past the time the server allows, 
 | `off` | directly on the machine | directly on the machine |
 
 A **container** is made for every command: `run --name moebius-lane-<job>-<n> --label moebius-lane=moebius-lane-<job>-<n> --network none --read-only --cap-drop
-ALL --security-opt no-new-privileges --user <user> --pids-limit 4096 --tmpfs /tmp:rw,exec,nosuid,size=8g -e HOME=/tmp -e
-<LANE_...> --device <each device> --group-add <each group> -v <job directory>/<before or after>:/work:rw -w /work <image>
-sh -c <command>` (and `--timeout <timeout_seconds>` for `podman`), started by `timeout -k 10 <timeout_seconds>`. **The container sees the checkout of its own side and nothing else of the job**: the other side is not mounted, so the head's code cannot rewrite the merge base's scripts or copy its output over its own. The files a measuring step is read from (rows, the parity file) are read and hashed by the host after the container has ended, never by the container, and only if each is a regular file inside the checkout, reached through no link (`readlink -f` and `! -L`); anything else fails the step with `it wrote no regular file <path> inside its checkout`, and a file is removed before a run only by the same rule. After the command the container is asked how it ended (`inspect`), then removed (`rm -f`), whatever came of it. It has no
+ALL --security-opt no-new-privileges --user <user> --pids-limit 4096 --memory <memory> --memory-swap <memory> --oom-score-adj 1000 --ulimit fsize=<disk>:<disk> [--cpus <cpus>] --tmpfs /tmp:rw,exec,nosuid,size=<the smaller of 8 GiB and memory> -e HOME=/tmp -e
+<LANE_...> --device <each device> --group-add <each group> -v <job directory>/<before or after>:/work:rw
+[-v <job directory>/harness/<path>:/work/<path>:ro for each harness path the merge base has] -w /work <image>
+sh -c <command>` (and `--timeout <timeout_seconds>` for `podman`), labelled `moebius-lane=<name>` and `moebius-lane-job=<job>`, started by `timeout -k 10 <timeout_seconds>`. **The container sees the checkout of its own side and nothing else of the job** (and the harness, read-only, over it): the other side is not mounted, so the head's code cannot rewrite the merge base's scripts or copy its output over its own, and a step that overwrites a harness file writes nowhere the measurement reads. The files a measuring step is read from (rows, the parity file) are read and hashed by the host after the container has ended, never by the container, and only if each is a regular file inside the checkout, reached through no link (`readlink -f` and `! -L`); anything else fails the step with `it wrote no regular file <path> inside its checkout`, and a file is removed before a run only by the same rule. After the command the container is asked how it ended (`inspect`), then removed (`rm -f`), whatever came of it. It has no
 network, no credentials and no SSH key, an unprivileged user, a read-only image and the job's directory as the only place
 to write, besides `/tmp`. A container that is not there to be asked (the runtime could not start it: the image is missing, a device is not there) ends the job `errored`. **The command's exit code is its own result**, whatever the number is: its last line, which says how it ended, starts with a random word only the server knows, so an exit code of 124, 125 or 255 of the change's own command is a `failed` step, not an error of the lane, and a pull request cannot make a lane pause by exiting with one.
 
-A job **directly on the machine** runs `cd <job directory>/<side> && timeout -k 10 <timeout_seconds> sh -c <command>`, in a process group of its own whose id is kept in `<job directory>/pid-<n>` and which is killed when the command ends, as the
+A job **directly on the machine** has no mount to lay over the checkout, so before **every run of a measuring step** the harness is put back from `<job directory>/harness` (each path through the guard that stops at a link leading out of the checkout) and the hash of every file is checked, in both places, against `harness.sha256`; a harness that cannot be put back or does not match fails the step of the head (`the measuring harness of the merge base could not be put back ...`). It runs `cd <job directory>/<side> && timeout -k 10 <timeout_seconds> sh -c <command>`, in a process group of its own whose id is kept in `<job directory>/pid-<n>` and which is killed when the command ends, as the
 account the lane logs in as, which can reach what that account can. This is why the settings of a repository whose lane is
 not `always` show a warning, and the daily digest tells it each day: the warning is the text of `GET
 /v1/repositories/{id}/lane` `current.warning`.
@@ -201,7 +219,7 @@ nothing).
 When the last three jobs of a lane that ended (not counting the cancelled) all `errored`, the lane pauses: its queued jobs
 wait, no job starts, the Inbox gets an item `lane_paused` (`data.lane`, `data.reason`), and the log has a line
 `lane_paused` for each repository that uses it. A person resumes it (`POST /v1/lanes/{name}/resume`), which resolves the
-item and starts the count again. An agent does not.
+item and starts the count again. An agent does not. A lane also pauses at once when a command or what a job left cannot be ended or removed (see above). The pause remembers the card whose job made it: its reason is shown to those who see that card, and a generic one to everyone else.
 
 ## The report
 
@@ -231,7 +249,9 @@ value a run gave.
 | What | Limit |
 |---|---|
 | A command's output kept | the last 256 KiB |
-| Rows of one run | 500 |
+| Rows of one run | 500 (more fails the step) |
+| Lines with the prefix of one run | 20000 (more fails the step) |
+| What a container may use | `memory` (swap included), `cpus`, and a file of `disk` bytes |
 | A measurement text | 20000 characters |
 | A reply's output | 40 lines, 300 characters a line, 3500 characters |
 | A job altogether | `timeout_seconds` of the lane |

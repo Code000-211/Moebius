@@ -103,7 +103,10 @@ parity_file = "out/logits.bin"
 
 `harness` names the scripts and tools that do the measuring: for the head they are taken from the merge base, so a pull
 request cannot change how it is measured; one that touches them is not measured by the lane but waits for you (an Inbox
-item says so), and only a person merges it. List what a hostile change must not be able to rewrite: the bench scripts and
+item says so), and only a person merges it. The copy the measurement runs is the job's own, taken out of the merge base
+before anything of the pull request runs: a container has it laid over the checkout read-only, and on the machine it is
+put back (and its hashes checked) before every measuring run, so a build step that overwrites a script changes nothing the
+measurement runs. List what a hostile change must not be able to rewrite: the bench scripts and
 the benchmark's sources. Only a person saves `lane.toml`: an agent's save is refused.
 
 The build runs on both sides (`on = "both"`): the merge base is built too, since the measurement needs it. A measuring
@@ -191,6 +194,12 @@ change back to its coder with the failure as the note; the script does not have 
 - A job that **errored** is the lane's, not the change's: the machine could not be reached, the image could not start, the
   merge base itself does not build, the definition is wrong or the job took longer than `timeout_seconds`. Three in a row
   pause the lane and put an item `lane_paused` in your Inbox; fix the cause and resume it with `POST /v1/lanes/{name}/resume`.
+  A head that uses up the job's whole time is `failed` and names the limit, not an error of the lane. A lane also pauses
+  by itself when a command or the directory of a job could not be removed; look at the machine, then resume.
+- A step that prints more than 500 rows, more than 20000 lines with its prefix, or a name twice **fails**; nothing is cut
+  to make it fit, since the lines that were cut might have been the harness's.
+- A lane that is the server itself needs `work_dir` outside the data directory, on a disk of its own; `memory`, `cpus` and
+  `disk` of the lane bound what a container may use, and a job does not start with less than `disk` free.
 - A job that **failed** names its step. The same step on the merge base is shown as `errored` ("the merge base itself
   fails"), since that is not the change's doing.
 - A pull request that touches a locked path (`.github/**`, build files, your `locked_paths`, the review brief) gets no

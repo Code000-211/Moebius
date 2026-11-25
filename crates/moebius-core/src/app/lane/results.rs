@@ -85,12 +85,16 @@ impl App {
         }
         let reason =
             format!("{streak} jobs in a row ended because of the lane itself; the last: {why}");
-        self.pause_lane_for(&job.lane, &reason);
+        self.pause_lane_for(&job.lane, &reason, Some(job.card_id));
     }
 
     /// Pauses the lane for `reason`, once, and tells the owner in the Inbox and the digest.
-    pub(super) fn pause_lane_for(&self, lane: &str, reason: &str) {
-        if !self.store.pause_lane(lane, reason).unwrap_or(false) {
+    pub(super) fn pause_lane_for(&self, lane: &str, reason: &str, card_id: Option<i64>) {
+        if !self
+            .store
+            .pause_lane(lane, reason, card_id)
+            .unwrap_or(false)
+        {
             return;
         }
         let _ = self.store.add_inbox_item(
@@ -109,6 +113,12 @@ impl App {
                 &json!({ "lane": lane }),
             );
         }
+    }
+
+    /// [`App::pause_lane_for`], for the tests of other modules (which need a Unix program to run).
+    #[cfg(all(test, unix))]
+    pub(crate) fn pause_lane_for_test(&self, lane: &str, reason: &str, card_id: Option<i64>) {
+        self.pause_lane_for(lane, reason, card_id);
     }
 
     /// A person lifts the pause of a lane, and its count of failures starts over.

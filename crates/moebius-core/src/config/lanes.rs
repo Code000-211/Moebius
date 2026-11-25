@@ -67,8 +67,9 @@ pub struct LaneConfig {
     /// The `[[runners]]` entry the lane is reached through (over SSH); without one the lane is the server itself.
     #[serde(default)]
     pub runner: Option<String>,
-    /// Where the lane keeps its clones and the jobs' directories: absolute, on the machine. Without it, the runner's
-    /// `working_dir` or the server's data directory, then `lanes/<name>`.
+    /// Where the lane keeps its clones and the jobs' directories: absolute, on the machine. Without it, a lane on a
+    /// runner uses the runner's `working_dir`, then `lanes/<name>`. A lane that is the server itself must name it, and
+    /// not inside the data directory: a job that fills its disk must not be able to stop the server's store.
     #[serde(default)]
     pub work_dir: Option<String>,
     #[serde(default)]
@@ -91,6 +92,17 @@ pub struct LaneConfig {
     /// How long one job may take altogether, in seconds.
     #[serde(default = "default_timeout")]
     pub timeout_seconds: u64,
+    /// The memory a container may use, swap included (`16g`, `512m`; a number of bytes): the container is the first the
+    /// kernel kills when the machine runs short, and its `/tmp` is no larger than this.
+    #[serde(default = "default_memory")]
+    pub memory: String,
+    /// How many processors a container may use (`8`, `2.5`); without it, all of them.
+    #[serde(default)]
+    pub cpus: Option<String>,
+    /// The largest file a command of a job may write (`ulimit -f` of the container), and the free space the lane's
+    /// directory must have for a job to start (`50g`, `1t`; a number of bytes).
+    #[serde(default = "default_disk")]
+    pub disk: String,
     /// What the report says of the machine.
     #[serde(default)]
     pub gpus: Option<String>,
@@ -125,6 +137,44 @@ fn default_timeout() -> u64 {
     7200
 }
 
+fn default_memory() -> String {
+    "16g".into()
+}
+
+fn default_disk() -> String {
+    "20g".into()
+}
+
+/// A size such as `16g`, `512m`, `64k` or `1024` (bytes) in bytes; none when it is not one, or is zero.
+pub fn parse_size(text: &str) -> Option<u64> {
+    let text = text.trim().to_ascii_lowercase();
+    let text = text.strip_suffix('b').unwrap_or(&text);
+    let (digits, unit) = match text.chars().last()? {
+        'k' => (&text[..text.len() - 1], 1u64 << 10),
+        'm' => (&text[..text.len() - 1], 1 << 20),
+        'g' => (&text[..text.len() - 1], 1 << 30),
+        't' => (&text[..text.len() - 1], 1 << 40),
+        _ => (text, 1),
+    };
+    digits
+        .parse::<u64>()
+        .ok()
+        .and_then(|n| n.checked_mul(unit))
+        .filter(|bytes| *bytes > 0)
+}
+
+impl LaneConfig {
+    /// The memory limit in bytes (the configuration is checked, so it is always one).
+    pub fn memory_bytes(&self) -> u64 {
+        parse_size(&self.memory).unwrap_or(16 << 30)
+    }
+
+    /// The disk limit in bytes.
+    pub fn disk_bytes(&self) -> u64 {
+        parse_size(&self.disk).unwrap_or(20 << 30)
+    }
+}
+
 /// A word that cannot be taken for an option or split by a shell.
 fn is_word(text: &str) -> bool {
     !text.is_empty()
@@ -136,6 +186,7 @@ fn is_word(text: &str) -> bool {
 pub(super) fn lanes(
     lanes: Vec<LaneConfig>,
     runners: &[RunnerConfig],
+    data_dir: &std::path::Path,
 ) -> Result<Vec<LaneConfig>, ConfigError> {
     let mut names = BTreeSet::new();
     for lane in &lanes {
@@ -162,6 +213,16 @@ pub(super) fn lanes(
                 "work_dir must be an absolute path without quotes or line breaks",
             ));
         }
+        if parse_size(&lane.memory).is_none() || parse_size(&lane.disk).is_none() {
+            return Err(bad(
+                "memory and disk are sizes such as 16g, 512m or a number of bytes, and not zero",
+            ));
+        }
+        if let Some(cpus) = &lane.cpus
+            && !cpus.parse::<f64>().is_ok_and(|n| n.is_finite() && n > 0.0)
+        {
+            return Err(bad("cpus is a number above zero, such as 8 or 2.5"));
+        }
         if !is_word(&lane.runtime) {
             return Err(bad("runtime must be one word, `podman` or `docker`"));
         }
@@ -184,6 +245,19 @@ pub(super) fn lanes(
             return Err(bad(&format!(
                 "timeout_seconds must be from 60 to {LANE_TIMEOUT_AT_MOST}"
             )));
+        }
+        match (&lane.runner, &lane.work_dir) {
+            (None, None) => {
+                return Err(bad(
+                    "is the server itself, so it needs a work_dir, on a disk a full job cannot hurt the server with",
+                ));
+            }
+            (None, Some(dir)) if std::path::Path::new(dir).starts_with(data_dir) => {
+                return Err(bad(
+                    "work_dir must be outside the data directory: a job that fills the disk would stop the store",
+                ));
+            }
+            _ => {}
         }
     }
     Ok(lanes)
@@ -242,7 +316,7 @@ mod tests {
     #[test]
     fn a_lane_is_read_with_the_defaults_of_an_isolated_one() {
         let config = parse(&format!(
-            "{RUNNER}[[lanes]]\nname = \"gpu1\"\nrunner = \"box\"\nimage = \"rocm/dev:6.2\"\ngpus = \"2x MI300X\"\nrocm = \"6.2.1\"\n[[lanes]]\nname = \"here\"\nisolation = \"off\"\n"
+            "{RUNNER}[[lanes]]\nname = \"gpu1\"\nrunner = \"box\"\nimage = \"rocm/dev:6.2\"\ngpus = \"2x MI300X\"\nrocm = \"6.2.1\"\n[[lanes]]\nname = \"here\"\nisolation = \"off\"\nwork_dir = \"/mnt/lanes/here\"\n"
         ))
         .unwrap();
         let lane = &config.lanes[0];
@@ -251,6 +325,8 @@ mod tests {
         assert_eq!(lane.devices, ["/dev/kfd", "/dev/dri"]);
         assert_eq!(lane.user, "65534:65534");
         assert_eq!(lane.timeout_seconds, 7200);
+        assert_eq!((lane.memory.as_str(), lane.cpus.as_deref()), ("16g", None));
+        assert_eq!(lane.disk_bytes(), 20 << 30);
         assert_eq!(lane.stack(), "ROCm 6.2.1");
         assert_eq!(config.lanes[1].runner, None);
         assert!(parse("").unwrap().lanes.is_empty());
@@ -259,17 +335,62 @@ mod tests {
     #[test]
     fn a_lane_that_is_not_valid_is_refused_with_its_name() {
         let refused = |text: &str| parse(&format!("{RUNNER}{text}")).unwrap_err().to_string();
-        let lane = |extra: &str| format!("[[lanes]]\nname = \"gpu1\"\nimage = \"x\"\n{extra}");
+        let lane = |extra: &str| {
+            format!("[[lanes]]\nname = \"gpu1\"\nimage = \"x\"\nwork_dir = \"/mnt/l\"\n{extra}")
+        };
         assert!(refused(&lane("runner = \"nobody\"\n")).contains("no `[[runners]]` name"));
         assert!(refused(&lane("isolation = \"sometimes\"\n")).contains("isolation"));
         assert!(refused(&lane("timeout_seconds = 5\n")).contains("timeout_seconds"));
         assert!(refused(&lane("devices = [\"kfd\"]\n")).contains("devices"));
         assert!(refused(&lane("runtime = \"--privileged\"\n")).contains("runtime"));
         assert!(refused(&lane("typo = 1\n")).contains("typo"));
-        assert!(refused("[[lanes]]\nname = \"gpu1\"\n").contains("image"));
+        assert!(refused("[[lanes]]\nname = \"gpu1\"\nwork_dir = \"/mnt/l\"\n").contains("image"));
         assert!(refused(&format!("{}{}", lane(""), lane(""))).contains("two lanes"));
-        assert!(refused("[[lanes]]\nname = \"local\"\nimage = \"x\"\n").contains("not `local`"));
+        assert!(
+            refused("[[lanes]]\nname = \"local\"\nimage = \"x\"\nwork_dir = \"/mnt/l\"\n")
+                .contains("not `local`")
+        );
         // Without a container there is no image to name.
-        assert!(parse("[[lanes]]\nname = \"gpu1\"\nisolation = \"off\"\n").is_ok());
+        assert!(
+            parse("[[lanes]]\nname = \"gpu1\"\nisolation = \"off\"\nwork_dir = \"/mnt/l\"\n")
+                .is_ok()
+        );
+        assert!(refused(&lane("memory = \"lots\"\n")).contains("memory"));
+        assert!(refused(&lane("disk = \"0\"\n")).contains("disk"));
+        assert!(refused(&lane("cpus = \"-1\"\n")).contains("cpus"));
+    }
+
+    #[test]
+    fn a_lane_on_the_server_itself_names_a_directory_outside_the_data_directory() {
+        let refused = |dir: &str| {
+            parse(&format!(
+                "[[lanes]]\nname = \"here\"\nisolation = \"off\"\n{dir}"
+            ))
+            .unwrap_err()
+            .to_string()
+        };
+        assert!(refused("").contains("work_dir"));
+        // The data directory of the parse is /srv/.moebius.
+        assert!(
+            refused("work_dir = \"/srv/.moebius/lanes\"\n").contains("outside the data directory")
+        );
+        assert!(refused("work_dir = \"/srv/.moebius\"\n").contains("outside the data directory"));
+    }
+
+    #[test]
+    fn sizes_are_read_with_their_units() {
+        for (text, bytes) in [
+            ("16g", 16u64 << 30),
+            ("512M", 512 << 20),
+            ("64k", 64 << 10),
+            ("1t", 1 << 40),
+            ("2gb", 2 << 30),
+            ("1024", 1024),
+        ] {
+            assert_eq!(parse_size(text), Some(bytes), "{text}");
+        }
+        for text in ["", "0", "g", "-1g", "1.5g", "lots"] {
+            assert_eq!(parse_size(text), None, "{text}");
+        }
     }
 }

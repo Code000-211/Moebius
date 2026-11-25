@@ -4619,7 +4619,10 @@ A `LaneJob` is `{"id", "repository_id", "card_id", "change_id", "lane", "head", 
 `{"name", "runner", "isolation", "warning", "runtime", "image", "gpus", "power_cap", "rocm", "driver", "devices",
 "timeout_seconds", "queued", "busy", "running", "paused"}`: `warning` is the text shown while `isolation` is not `always`
 (otherwise null), `queued` the jobs that wait, `busy` whether one runs, `running` the `LaneJob` that runs **only for someone who may see its card** (it names the card, the commit and the step; for anyone else it is null, and they see `busy` and `queued` only), and `paused` null or `{"since",
-"reason"}` while the lane has stopped itself.
+"reason"}` while the lane has stopped itself. The reason of a pause that a card's job made may quote what that job printed:
+for someone who may not see the card (a private project they are no member of) it is only `the lane stopped itself after a
+job of a project you do not see; an owner has the reason`; the card is never sent. The same holds for the answer of the
+resume below.
 
 ### `GET /v1/repositories/{id}/lane`
 

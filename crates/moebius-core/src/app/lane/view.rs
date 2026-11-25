@@ -106,7 +106,25 @@ impl App {
                 .iter()
                 .find(|j| j.state == "running" && self.sees_job(sight, j))
                 .cloned(),
-            paused: self.store.lane_pause(&lane.name)?,
+            paused: self.store.lane_pause(&lane.name)?.map(|pause| {
+                // The reason may quote a card's job (its output, its commit): whoever does not see the card is told
+                // only that the lane stopped.
+                let sees = pause.card_id.is_none_or(|card| {
+                    self.store
+                        .card(card)
+                        .ok()
+                        .flatten()
+                        .is_some_and(|card| sight.card(&card))
+                });
+                if sees {
+                    pause
+                } else {
+                    LanePause {
+                        reason: "the lane stopped itself after a job of a project you do not see; an owner has the reason".into(),
+                        ..pause
+                    }
+                }
+            }),
         })
     }
 

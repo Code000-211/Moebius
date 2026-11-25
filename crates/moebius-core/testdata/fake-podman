@@ -5,10 +5,14 @@
 # while it runs (`<this file>.running.<name>`, holding the pid) and keeps its exit code after it (`.exit.<name>`), as a
 # runtime that is not told `--rm` does. `inspect -f FORMAT NAME` answers `{{.State.Running}}` and `{{.State.ExitCode}}`
 # from those files and fails for a container that is not there. `rm -f NAME` kills the process of a running container
-# and forgets it. `ps` lists nothing. `--version` does nothing. A file `<this file>.fail` makes `run` exit 125 and make no
-# container, as a runtime does that cannot start one.
+# and forgets it. `ps -aq --filter label=moebius-lane-job=N` lists the names of the containers made with that label, running or
+# not. A `-v HOST:PATH:ro` over a path of the checkout is, while the command runs, a copy of HOST in the checkout's place,
+# which is what a command that writes there sees of a read-only mount: it can write, and nothing of it is kept. `--version` does nothing. A file `<this file>.fail` makes `run` exit 125 and make no
+# container, as a runtime does that cannot start one; a file `<this file>.fail-cleanup` does so for a `run --rm` only.
+# The directory `denying-rm` is taken out of the `PATH` of a container's command.
 import json
 import os
+import shutil
 import signal
 import subprocess
 import sys
@@ -51,28 +55,46 @@ if args[:1] == ["rm"]:
             os.kill(int(open(running).read().strip()), signal.SIGKILL)
         except (OSError, ValueError):
             pass
-    for each in (running, exited):
+    for each in (running, exited, here + ".job." + name):
         if os.path.exists(each):
             os.remove(each)
     sys.exit(0)
+if args[:1] == ["ps"]:
+    wanted = None
+    if "--filter" in args:
+        wanted = args[args.index("--filter") + 1].partition("moebius-lane-job=")[2]
+    prefix = os.path.basename(here) + ".job."
+    for entry in sorted(os.listdir(os.path.dirname(here))):
+        if entry.startswith(prefix) and open(os.path.join(os.path.dirname(here), entry)).read().strip() == wanted:
+            print(entry[len(prefix):])
+    sys.exit(0)
 if args[:1] != ["run"]:
     sys.exit(0)
-if os.path.exists(here + ".fail"):
+if os.path.exists(here + ".fail") or ("--rm" in args and os.path.exists(here + ".fail-cleanup")):
     sys.stderr.write("Error: the image could not be pulled\n")
     sys.exit(125)
 
 WITH_VALUE = {"--name", "--label", "--network", "--cap-drop", "--security-opt", "--user", "--pids-limit", "--tmpfs",
-              "-e", "--device", "--group-add", "-v", "-w", "--timeout"}
-host = None
+              "-e", "--device", "--group-add", "-v", "-w", "--timeout", "--memory", "--memory-swap", "--oom-score-adj",
+              "--ulimit", "--cpus"}
+mounts = []  # (host path, container path)
+readonly = []  # the same, for a `:ro` mount, which lies over the others
 workdir = "/work"
 name = None
+job = None
 environment = dict(os.environ)
 i = 1
 while i < len(args) and args[i].startswith("-"):
     if args[i] in WITH_VALUE:
         value = args[i + 1]
         if args[i] == "-v":
-            host = value.split(":")[0]
+            host, inside, *mode = value.split(":")
+            if mode == ["ro"]:
+                readonly.append((host, inside))
+            else:
+                mounts.append((host, inside))
+        elif args[i] == "--label" and value.startswith("moebius-lane-job="):
+            job = value.partition("=")[2]
         elif args[i] == "-w":
             workdir = value
         elif args[i] == "--name":
@@ -84,14 +106,57 @@ while i < len(args) and args[i].startswith("-"):
     else:
         i += 1
 command = args[i + 1:]  # after the image
-text = command[-1].replace("/work", host) if host else command[-1]
-cwd = workdir.replace("/work", host, 1) if host else None
+environment["PATH"] = ":".join(p for p in environment.get("PATH", "").split(":") if not p.endswith("denying-rm"))
+
+
+def outside(text):
+    # The longest container path first, so that a mount over a path of another is the one that is seen.
+    for host, inside in sorted(mounts, key=lambda m: -len(m[1])):
+        text = text.replace(inside, host)
+    return text
+
+
+
+def lay_over():
+    # A read-only mount over a path of the checkout: what the command sees there is the mount's, and what it writes there
+    # is thrown away. The path is swapped for a copy of the mount's host path for as long as the command runs.
+    swapped = []
+    for host, inside in readonly:
+        target = outside(inside)
+        if not os.path.lexists(target):
+            continue
+        aside = target + ".moebius-aside"
+        os.rename(target, aside)
+        if os.path.isdir(host):
+            shutil.copytree(host, target, symlinks=True)
+        else:
+            shutil.copy2(host, target)
+        swapped.append((target, aside))
+    return swapped
+
+
+def lift(swapped):
+    for target, aside in swapped:
+        if os.path.isdir(target) and not os.path.islink(target):
+            shutil.rmtree(target, ignore_errors=True)
+        elif os.path.lexists(target):
+            os.remove(target)
+        os.rename(aside, target)
+
+
+text = outside(command[-1])
+cwd = outside(workdir) if mounts else None
 if name:
     running, exited = files(name)
     with open(running, "w") as marker:
         marker.write(str(os.getpid()))
+    if job:
+        with open(here + ".job." + name, "w") as marker:
+            marker.write(job)
+swapped = lay_over()
 process = subprocess.Popen(["sh", "-c", text], cwd=cwd, env=environment)
 code = process.wait()
+lift(swapped)
 if name:
     if os.path.exists(running):
         os.remove(running)

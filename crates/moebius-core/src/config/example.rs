@@ -210,7 +210,8 @@ program = "claude"
 # [[lanes]]
 # name = "gpu1"
 # runner = "gpu-box"                      # a [[runners]] name; without it the lane is the server itself
-# work_dir = "/srv/lanes/gpu1"            # absolute, on the machine; without it, the runner's working_dir/lanes/<name>
+# work_dir = "/srv/lanes/gpu1"            # absolute, on the machine; without it, the runner's working_dir/lanes/<name>.
+#                                         # A lane that is the server itself must name it, outside data_dir
 # isolation = "always"                    # always (a fresh container for every command), external_only or off
 # runtime = "podman"                      # or "docker"
 # image = "rocm/dev-ubuntu-24.04:6.2"     # the container image; needed unless isolation = "off"
@@ -218,6 +219,9 @@ program = "claude"
 # groups = ["video", "render"]
 # user = "65534:65534"                    # the unprivileged user of the container
 # timeout_seconds = 7200                  # how long a job may take altogether
+# memory = "16g"                          # memory and swap of a container; its /tmp is no larger
+# cpus = "8"                              # processors of a container; without it, all
+# disk = "20g"                            # the largest file a command writes, and the free space a job needs to start
 # gpus = "2x MI300X"                      # what a report says of the machine
 # power_cap = "750 W"
 # rocm = "6.2.1"

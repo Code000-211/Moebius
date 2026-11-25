@@ -25,7 +25,8 @@ use crate::platform;
 
 /// How much of a command's output is kept: the end of it.
 pub const OUTPUT_AT_MOST: usize = 256 * 1024;
-/// How many output lines that start with a step's prefix are kept.
+/// How many output lines that start with a step's prefix are read. More is [`Ran::prefixed_cut`]: the lines that are
+/// past it are not rows, and the step fails, since which of them were the real ones is not known.
 const PREFIXED_AT_MOST: usize = 20_000;
 /// How long after its own time limit a command is given before the server kills the process it started.
 const GRACE: Duration = Duration::from_secs(30);
@@ -72,6 +73,9 @@ pub struct Ran {
     pub output: String,
     /// The lines of output that start with the prefix that was asked for.
     pub prefixed: Vec<String>,
+    /// Whether there were more such lines than [`PREFIXED_AT_MOST`]: the rest was dropped, so the lines are not to be
+    /// trusted (the code under test can print as many as it likes before the real ones).
+    pub prefixed_cut: bool,
 }
 
 impl Ran {
@@ -80,6 +84,7 @@ impl Ran {
             ended: Ended::Failed(why),
             output: String::new(),
             prefixed: Vec::new(),
+            prefixed_cut: false,
         }
     }
 }
@@ -100,24 +105,50 @@ pub fn quote(text: &str) -> String {
     format!("'{}'", text.replace('\'', "'\\''"))
 }
 
+/// What a container of one command of a job is made of.
+pub struct Isolated<'a> {
+    /// The job it is for: the container is labelled with it, so that the job's containers can be found and removed.
+    pub job: i64,
+    pub name: &'a str,
+    pub job_dir: &'a str,
+    pub side: &'a str,
+    pub environment: &'a [(String, String)],
+    /// The paths of the measuring harness that are there: each is mounted over the checkout from the job's own copy
+    /// of the merge base's, read-only, so that nothing a step runs can change what measures it.
+    pub harness: &'a [String],
+}
+
+/// A path of the harness as the checkout and the job's copy have it: no slash at either end.
+pub fn harness_path(path: &str) -> &str {
+    path.trim_matches('/')
+}
+
 /// The arguments the container program is given to run `command` of a job in a fresh, isolated container: no network,
-/// no capability, no new privilege, a read-only root, an unprivileged user, a `/tmp`, and the checkout of one side as
-/// the only place to write and the only part of the job's directory it sees (the other side is not mounted), and the
-/// devices and groups the GPUs need. The container is named and labelled so that it can be found and removed.
-pub fn container_args(
-    lane: &LaneConfig,
-    name: &str,
-    job_dir: &str,
-    side: &str,
-    environment: &[(String, String)],
-    command: &str,
-) -> Vec<String> {
+/// no capability, no new privilege, a read-only root, an unprivileged user, a `/tmp` no larger than the memory, the
+/// memory (swap included), the processors and the file size the lane allows, and the checkout of one side as the only
+/// place to write and the only part of the job's directory it sees (the other side is not mounted) with the harness over
+/// it, read-only, and the devices and groups the GPUs need. The container is named and labelled so that it can be found
+/// and removed.
+pub fn container_args(lane: &LaneConfig, container: &Isolated, command: &str) -> Vec<String> {
+    let Isolated {
+        job,
+        name,
+        job_dir,
+        side,
+        environment,
+        harness,
+    } = container;
+    let memory = lane.memory.trim().to_string();
+    let tmp = lane.memory_bytes().min(8 << 30);
+    let disk = lane.disk_bytes();
     let mut args: Vec<String> = [
         "run",
         "--name",
         name,
         "--label",
         &format!("moebius-lane={name}"),
+        "--label",
+        &format!("moebius-lane-job={job}"),
         "--network",
         "none",
         "--read-only",
@@ -129,14 +160,25 @@ pub fn container_args(
         &lane.user,
         "--pids-limit",
         "4096",
+        "--memory",
+        &memory,
+        "--memory-swap",
+        &memory,
+        "--oom-score-adj",
+        "1000",
+        "--ulimit",
+        &format!("fsize={disk}:{disk}"),
         "--tmpfs",
-        "/tmp:rw,exec,nosuid,size=8g",
+        &format!("/tmp:rw,exec,nosuid,size={tmp}"),
         "-e",
         "HOME=/tmp",
     ]
     .map(String::from)
     .to_vec();
-    for (name, value) in environment {
+    if let Some(cpus) = &lane.cpus {
+        args.extend(["--cpus".into(), cpus.trim().to_string()]);
+    }
+    for (name, value) in *environment {
         args.extend(["-e".into(), format!("{name}={value}")]);
     }
     for device in &lane.devices {
@@ -145,9 +187,16 @@ pub fn container_args(
     for group in &lane.groups {
         args.extend(["--group-add".into(), group.clone()]);
     }
+    args.extend(["-v".into(), format!("{job_dir}/{side}:/work:rw")]);
+    // After the mount of the checkout, so that they lie over it.
+    for path in *harness {
+        let path = harness_path(path);
+        args.extend([
+            "-v".into(),
+            format!("{job_dir}/harness/{path}:/work/{path}:ro"),
+        ]);
+    }
     args.extend([
-        "-v".into(),
-        format!("{job_dir}/{side}:/work:rw"),
         "-w".into(),
         "/work".into(),
         lane.image.clone().unwrap_or_default(),
@@ -189,21 +238,19 @@ pub fn direct_script(
     )
 }
 
-/// The shell script that runs `command` in a container, then asks the runtime how the container ended (so that the
-/// command's own exit code is told from the runtime's), and removes the container whatever came of it. Its last line is
-/// `<token> <running> <exit code>`, or `<token> gone` when there was no container to ask.
-#[allow(clippy::too_many_arguments)]
+/// The shell script that removes a container of the same name a server that stopped may have left, runs `command` in a
+/// container, then asks the runtime how the container ended (so that the command's own exit code is told from the
+/// runtime's), and removes the container whatever came of it. Its last line is `<token> <running> <exit code>`, or
+/// `<token> gone` when there was no container to ask.
 pub fn contained_script(
     lane: &LaneConfig,
-    name: &str,
-    job_dir: &str,
-    side: &str,
-    environment: &[(String, String)],
+    container: &Isolated,
     command: &str,
     seconds: u64,
     token: &str,
 ) -> String {
-    let mut args = container_args(lane, name, job_dir, side, environment, command);
+    let name = container.name;
+    let mut args = container_args(lane, container, command);
     // The runtime's own bound, besides the `timeout` of the client.
     if lane.runtime.rsplit('/').next() == Some("podman") {
         args.splice(1..1, ["--timeout".to_string(), seconds.to_string()]);
@@ -212,7 +259,8 @@ pub fn contained_script(
     let runtime = quote(&lane.runtime);
     let name = quote(name);
     format!(
-        "unset SSH_AUTH_SOCK SSH_AGENT_PID; timeout -k 10 {seconds} {runtime}{words} 2>&1; \
+        "unset SSH_AUTH_SOCK SSH_AGENT_PID; {runtime} rm -f {name} >/dev/null 2>&1; \
+         timeout -k 10 {seconds} {runtime}{words} 2>&1; \
          st=$({runtime} inspect -f '{{{{.State.Running}}}} {{{{.State.ExitCode}}}}' {name} 2>/dev/null) || st=gone; \
          {runtime} rm -f {name} >/dev/null 2>&1; echo \"{token} $st\""
     )
@@ -400,8 +448,8 @@ impl Machine {
         }
         let _ = child.wait();
         // A process that got out of the group may still hold the pipes: they are read for a few seconds, then let go.
-        let (output, prefixed) = out_receiver.recv_timeout(PIPES).unwrap_or_default();
-        let (said, _) = err_receiver.recv_timeout(PIPES).unwrap_or_default();
+        let (output, prefixed, prefixed_cut) = out_receiver.recv_timeout(PIPES).unwrap_or_default();
+        let (said, _, _) = err_receiver.recv_timeout(PIPES).unwrap_or_default();
         let ended = match (status, ended) {
             (Some(status), _) => match status.code() {
                 Some(255) if self.runner.is_some() => {
@@ -417,6 +465,7 @@ impl Machine {
             ended,
             output,
             prefixed,
+            prefixed_cut,
         }
     }
 
@@ -507,18 +556,22 @@ pub fn describe(ran: &Ran) -> String {
 }
 
 /// Reads a stream to its end, keeping the end of it up to [`OUTPUT_AT_MOST`] bytes and the lines that start with
-/// `prefix`.
-fn capture(mut stream: impl Read, prefix: Option<&str>) -> (String, Vec<String>) {
+/// `prefix`, up to [`PREFIXED_AT_MOST`] of them; whether there were more is the last of the three.
+fn capture(mut stream: impl Read, prefix: Option<&str>) -> (String, Vec<String>, bool) {
     let mut kept: Vec<u8> = Vec::new();
     let mut prefixed = Vec::new();
+    let mut cut = false;
     let mut line: Vec<u8> = Vec::new();
     let mut buffer = [0u8; 16 * 1024];
-    let note = |line: &mut Vec<u8>, prefixed: &mut Vec<String>| {
+    let note = |line: &mut Vec<u8>, prefixed: &mut Vec<String>, cut: &mut bool| {
         if let Some(prefix) = prefix
-            && prefixed.len() < PREFIXED_AT_MOST
             && line.starts_with(prefix.as_bytes())
         {
-            prefixed.push(String::from_utf8_lossy(line).trim_end().to_string());
+            if prefixed.len() < PREFIXED_AT_MOST {
+                prefixed.push(String::from_utf8_lossy(line).trim_end().to_string());
+            } else {
+                *cut = true;
+            }
         }
         line.clear();
     };
@@ -528,7 +581,7 @@ fn capture(mut stream: impl Read, prefix: Option<&str>) -> (String, Vec<String>)
         }
         for &byte in &buffer[..n] {
             if byte == b'\n' {
-                note(&mut line, &mut prefixed);
+                note(&mut line, &mut prefixed, &mut cut);
             } else if line.len() < 4096 {
                 line.push(byte);
             }
@@ -538,11 +591,11 @@ fn capture(mut stream: impl Read, prefix: Option<&str>) -> (String, Vec<String>)
             kept.drain(..kept.len() - OUTPUT_AT_MOST);
         }
     }
-    note(&mut line, &mut prefixed);
+    note(&mut line, &mut prefixed, &mut cut);
     if kept.len() > OUTPUT_AT_MOST {
         kept.drain(..kept.len() - OUTPUT_AT_MOST);
     }
-    (String::from_utf8_lossy(&kept).into_owned(), prefixed)
+    (String::from_utf8_lossy(&kept).into_owned(), prefixed, cut)
 }
 
 #[cfg(test)]
@@ -562,6 +615,9 @@ mod tests {
             groups: vec!["video".into()],
             user: "65534:65534".into(),
             timeout_seconds: 600,
+            memory: "16g".into(),
+            cpus: None,
+            disk: "20g".into(),
             gpus: None,
             power_cap: None,
             rocm: None,
@@ -569,19 +625,119 @@ mod tests {
         }
     }
 
+    fn isolated<'a>(side: &'a str, harness: &'a [String]) -> Isolated<'a> {
+        Isolated {
+            job: 7,
+            name: "n",
+            job_dir: "/jobs/7",
+            side,
+            environment: &[],
+            harness,
+        }
+    }
+
+    #[test]
+    fn a_container_is_limited_in_memory_processors_and_file_size() {
+        let mut limited = lane();
+        limited.memory = "4g".into();
+        limited.cpus = Some("2.5".into());
+        limited.disk = "10g".into();
+        let args = container_args(&limited, &isolated("after", &[]), "true");
+        let joined = args.join(" ");
+        let gib = 1u64 << 30;
+        for part in [
+            "--memory 4g --memory-swap 4g".to_string(),
+            "--oom-score-adj 1000".to_string(),
+            format!("--ulimit fsize={}:{}", 10 * gib, 10 * gib),
+            "--cpus 2.5".to_string(),
+            // The /tmp is in memory: no larger than the memory.
+            format!("--tmpfs /tmp:rw,exec,nosuid,size={}", 4 * gib),
+        ] {
+            assert!(joined.contains(&part), "{part} in {joined}");
+        }
+        // A large limit does not make a larger /tmp than the 8 GiB there always was, and no limit on processors is none.
+        let args = container_args(&lane(), &isolated("after", &[]), "true").join(" ");
+        assert!(args.contains(&format!("size={}", 8 * gib)), "{args}");
+        assert!(args.contains("--memory 16g --memory-swap 16g"), "{args}");
+        assert!(!args.contains("--cpus"), "{args}");
+    }
+
+    #[test]
+    fn the_harness_lies_over_the_checkout_read_only_and_after_it() {
+        let paths = ["bench/".to_string(), "/tools/kbench".to_string()];
+        let args = container_args(&lane(), &isolated("after", &paths), "true");
+        let mounts: Vec<&str> = args
+            .iter()
+            .enumerate()
+            .filter(|(at, _)| *at > 0 && args[*at - 1] == "-v")
+            .map(|(_, a)| a.as_str())
+            .collect();
+        assert_eq!(
+            mounts,
+            [
+                "/jobs/7/after:/work:rw",
+                "/jobs/7/harness/bench:/work/bench:ro",
+                "/jobs/7/harness/tools/kbench:/work/tools/kbench:ro",
+            ]
+        );
+    }
+
+    #[test]
+    fn a_container_of_the_same_name_is_removed_before_a_command_starts() {
+        let script = contained_script(&lane(), &isolated("after", &[]), "true", 90, "T");
+        let removal = script
+            .find("'rm' '-f' 'n'")
+            .or_else(|| script.find("rm -f 'n'"));
+        let run = script.find("'run'").unwrap();
+        assert!(removal.is_some_and(|at| at < run), "{script}");
+    }
+
+    #[test]
+    fn more_prefixed_lines_than_are_read_say_so() {
+        let mut text = String::from(
+            "ROW forged 1
+",
+        );
+        text.push_str(
+            &"ROW junk 1
+"
+            .repeat(PREFIXED_AT_MOST),
+        );
+        text.push_str(
+            "ROW real 2
+",
+        );
+        let (_, rows, cut) = capture(text.as_bytes(), Some("ROW "));
+        assert!(cut);
+        assert_eq!(rows.len(), PREFIXED_AT_MOST);
+        let (_, rows, cut) = capture(
+            "ROW a 1
+ROW b 2
+"
+            .as_bytes(),
+            Some("ROW "),
+        );
+        assert!(!cut);
+        assert_eq!(rows.len(), 2);
+    }
+
     #[test]
     fn a_container_has_no_network_no_privilege_and_a_read_only_root() {
         let args = container_args(
             &lane(),
-            "n1",
-            "/jobs/7",
-            "after",
-            &[("LANE_SIDE".into(), "after".into())],
+            &Isolated {
+                job: 7,
+                name: "n1",
+                job_dir: "/jobs/7",
+                side: "after",
+                environment: &[("LANE_SIDE".into(), "after".into())],
+                harness: &[],
+            },
             "./build.sh",
         );
         let joined = args.join(" ");
         for part in [
-            "run --name n1 --label moebius-lane=n1",
+            "run --name n1 --label moebius-lane=n1 --label moebius-lane-job=7",
             "--network none",
             "--read-only",
             "--cap-drop ALL",
@@ -601,7 +757,7 @@ mod tests {
     #[test]
     fn a_container_sees_the_side_it_runs_and_not_the_other() {
         for (side, other) in [("after", "before"), ("before", "after")] {
-            let args = container_args(&lane(), "n", "/jobs/7", side, &[], "true");
+            let args = container_args(&lane(), &isolated(side, &[]), "true");
             let mounts: Vec<&String> = args
                 .iter()
                 .enumerate()
@@ -616,11 +772,11 @@ mod tests {
 
     #[test]
     fn a_podman_container_is_given_the_runtimes_own_time_limit() {
-        let script = contained_script(&lane(), "n", "/j", "after", &[], "true", 90, "T");
+        let script = contained_script(&lane(), &isolated("after", &[]), "true", 90, "T");
         assert!(script.contains("'--timeout' '90'"), "{script}");
         let mut docker = lane();
         docker.runtime = "docker".into();
-        let script = contained_script(&docker, "n", "/j", "after", &[], "true", 90, "T");
+        let script = contained_script(&docker, &isolated("after", &[]), "true", 90, "T");
         assert!(!script.contains("--timeout"), "{script}");
         assert!(
             script.contains("rm -f"),
@@ -658,7 +814,7 @@ mod tests {
     #[test]
     fn the_end_of_the_output_and_the_rows_are_kept() {
         let text = format!("{}ROW a 1\nnoise\nROW b 2", "x\n".repeat(OUTPUT_AT_MOST));
-        let (kept, rows) = capture(text.as_bytes(), Some("ROW "));
+        let (kept, rows, _) = capture(text.as_bytes(), Some("ROW "));
         assert!(kept.len() <= OUTPUT_AT_MOST + 8);
         assert!(kept.ends_with("ROW b 2"));
         assert_eq!(rows, vec!["ROW a 1".to_string(), "ROW b 2".to_string()]);

@@ -61,6 +61,14 @@ network is the opposite of what the merge gate is for, so most of this record is
   command is stopped on the machine (the container removed by name, the process group killed) and confirmed before the
   lane is free, or the lane pauses; the SSH agent goes to the `ssh` client alone and nothing is forwarded; and the
   command's own exit code is its result, told from the runtime's and the shell's by a last line only the server can write.
+- **The harness that measures is the owner's, and no step of the pull request can write it.** It is taken out of the merge
+  base into a directory of the job's own that is never writable by what runs, and laid over the container's checkout
+  read-only (or, on the machine, put back and its hashes checked before every measuring run). Rows fail closed: more
+  lines, more rows or a name twice than a run may give fail the step, so that the code under review cannot crowd the
+  harness's own rows out. A container has a memory, a processor and a file-size limit and the lane's directory a minimum of
+  free space, on a disk that is not the server's own; what a container made that the machine cannot remove is removed
+  by a container, and a directory that stays pauses the lane. A head that uses up the job's total time fails; the merge
+  base doing so is the lane's.
 - **The harness that measures is the owner's, not the pull request's.** `lane.toml` can name `harness` paths (the bench
   scripts and tools). For the head they come from the merge base, a change that touches one is not measured but looked at
   by a person, and the paths count as locked paths for the merge gate. `lane.toml` is changed by a person only, as the
@@ -106,7 +114,9 @@ network is the opposite of what the merge gate is for, so most of this record is
 - The measurement of a change of the server's own is not handed to a round of the Reviewer, which only exists for a pull
   request someone else opened: the report is on the card and `moebius.lane_job()` gives a script the job, and a person
   accepts the measurement as before.
-- A job that was running when the server stopped is queued again at the next start and runs from the beginning.
+- A job that was running when the server stopped is queued again at the next start and runs from the beginning, after what
+  it left is ended: its containers (found by the label `moebius-lane-job`), the process groups of its direct commands and
+  its directory. A lane where that cannot be done pauses.
 - A lane serves one repository's pull requests as well as another's; the lock is the lane's, so a long measurement holds
   the others' jobs. A second lane on the same machine is two locks on one set of GPUs, and the owner does not make one.
 - A lane is a Unix thing: the machine runs `sh`, `git`, `timeout` and `sha256sum`. The server on Windows can run a lane

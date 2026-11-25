@@ -373,7 +373,7 @@ impl Config {
             .unwrap_or_else(|| PathBuf::from("pi-bolt"));
         let plugins = plugins(raw.plugins, base)?;
         let runners = runners(raw.runners, base)?;
-        let lanes = lanes::lanes(raw.lanes, &runners)?;
+        let lanes = lanes::lanes(raw.lanes, &runners, &data_dir)?;
         let registries = registries::registries(raw.registries, base)?;
         for (name, agent) in &raw.agents {
             if let Some(runner) = &agent.runner

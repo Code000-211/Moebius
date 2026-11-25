@@ -1,6 +1,7 @@
 //! The rows of a measurement, read from what a step wrote: lines of its output that start with the step's prefix, or a
 //! JSON file it left. What a step prints is data, since the code that printed it is the change's own: a name or a unit
-//! that is not a plain word is dropped, a value must be a finite number, and a run has at most [`ROWS_AT_MOST`] rows.
+//! that is not a plain word is dropped, a value must be a finite number, and a run has at most [`ROWS_AT_MOST`] rows: more
+//! is an error and not a cut (which rows were the real ones is not known), as is a name that is given twice.
 
 use serde_json::Value;
 
@@ -36,9 +37,9 @@ fn row(name: &str, value: f64, unit: &str) -> Option<Row> {
 }
 
 /// The rows in the lines of output that start with `prefix`: `<prefix><name> <value> [unit]` or
-/// `<prefix><name>=<value> [unit]`.
-pub fn from_lines(lines: &[String], prefix: &str) -> Vec<Row> {
-    lines
+/// `<prefix><name>=<value> [unit]`. More than [`ROWS_AT_MOST`] is an error.
+pub fn from_lines(lines: &[String], prefix: &str) -> Result<Vec<Row>, String> {
+    let rows: Vec<Row> = lines
         .iter()
         .filter_map(|line| line.strip_prefix(prefix))
         .filter_map(|rest| {
@@ -55,8 +56,26 @@ pub fn from_lines(lines: &[String], prefix: &str) -> Vec<Row> {
                 parts.next().unwrap_or(""),
             )
         })
-        .take(ROWS_AT_MOST)
-        .collect()
+        .collect();
+    too_many(rows)
+}
+
+fn too_many(rows: Vec<Row>) -> Result<Vec<Row>, String> {
+    if rows.len() > ROWS_AT_MOST {
+        return Err(format!(
+            "it gave more than {ROWS_AT_MOST} rows in one run, which is not a measurement"
+        ));
+    }
+    Ok(rows)
+}
+
+/// Whether no name is given twice: the second of a name would be the code under test's word against the harness's.
+pub fn names_are_unique(rows: &[Row]) -> Result<(), String> {
+    let mut seen = std::collections::BTreeSet::new();
+    match rows.iter().find(|row| !seen.insert(row.name.as_str())) {
+        Some(row) => Err(format!("the row {} was given twice in one run", row.name)),
+        None => Ok(()),
+    }
 }
 
 /// The rows of a JSON file: `{"rows": [{"name", "value", "unit"}]}`, or a flat object of names and numbers.
@@ -83,8 +102,7 @@ pub fn from_json(text: &str) -> Result<Vec<Row>, String> {
     } else {
         return Err("expected an object with `rows`, or an object of names and numbers".into());
     }
-    rows.truncate(ROWS_AT_MOST);
-    Ok(rows)
+    too_many(rows)
 }
 
 /// The median of `values`, which must not be empty.
@@ -114,7 +132,8 @@ mod tests {
                 "noise\nMEASURE decode_tps 41.5 tok/s\nMEASURE prefill=1200\nMEASURE bad nan\nMEASURE\nMEASURE two words 3\n",
             ),
             "MEASURE ",
-        );
+        )
+        .unwrap();
         assert_eq!(rows.len(), 2, "{rows:?}");
         assert_eq!(
             rows[0],
@@ -130,7 +149,7 @@ mod tests {
 
     #[test]
     fn a_name_that_is_not_a_plain_word_is_not_a_row() {
-        let rows = from_lines(&lines("M x<script> 1\nM ok 2 `rm`\nM fine 3"), "M ");
+        let rows = from_lines(&lines("M x<script> 1\nM ok 2 `rm`\nM fine 3"), "M ").unwrap();
         assert_eq!(rows.len(), 1, "{rows:?}");
         assert_eq!(rows[0].name, "fine");
     }
@@ -147,6 +166,25 @@ mod tests {
         assert_eq!(flat.len(), 2);
         assert!(from_json("[1]").is_err());
         assert!(from_json("nope").is_err());
+    }
+
+    #[test]
+    fn more_rows_than_a_run_may_give_are_an_error_and_not_the_first_of_them() {
+        let many = lines(&"M a 1\n".repeat(ROWS_AT_MOST + 1));
+        assert!(from_lines(&many, "M ").unwrap_err().contains("more than"));
+        assert_eq!(from_lines(&many[1..], "M ").unwrap().len(), ROWS_AT_MOST);
+        let rows: Vec<String> = (0..=ROWS_AT_MOST)
+            .map(|n| format!("{{\"name\": \"r{n}\", \"value\": 1}}"))
+            .collect();
+        let json = format!("{{\"rows\": [{}]}}", rows.join(","));
+        assert!(from_json(&json).is_err());
+    }
+
+    #[test]
+    fn a_name_given_twice_is_an_error() {
+        let rows = from_lines(&lines("M tps 99\nM tps 41"), "M ").unwrap();
+        assert!(names_are_unique(&rows).unwrap_err().contains("tps"));
+        assert!(names_are_unique(&from_lines(&lines("M a 1\nM b 1"), "M ").unwrap()).is_ok());
     }
 
     #[test]
