@@ -10,6 +10,9 @@
 //! - `GET /v1/projects/{id}/scripts`: the script of every column of the project's board, its own or the built-in one.
 //! - `GET`, `PUT` and `DELETE /v1/projects/{id}/scripts/{column}`: one column's script, read, replaced (checked as
 //!   `moebius check-script` checks it) or given up for the built-in one (see `board::scripts`).
+//! - `GET`, `PUT` and `DELETE /v1/projects/{id}/columns`: the project's `kanban.toml`, which defines its custom columns,
+//!   read with the board it makes, replaced (`{text, reason}`; refused with `422` when it is not a valid board and with
+//!   `409` naming the cards when it removes a column that cards are in) or removed (see `board::scripts`).
 //! - `PUT /v1/projects/{id}/access` `{private, members, reason}`: an owner makes a project private or public and names
 //!   its members by handle.
 //! - `POST /v1/projects/{id}/repositories` `{repository, reason}` and `DELETE
@@ -26,7 +29,7 @@ use serde::Deserialize;
 
 use super::{ApiError, ApiState, blocking};
 use crate::app::ProjectView;
-use crate::board::scripts::{self, NewScript, ScriptView};
+use crate::board::scripts::{self, ColumnsView, NewScript, ScriptView};
 use crate::decide::Actor;
 
 /// The routes of the projects.
@@ -38,6 +41,10 @@ pub(super) fn routes() -> Router<ApiState> {
         .route(
             "/v1/projects/{id}/scripts/{column}",
             get(get_script).put(put_script).delete(delete_script),
+        )
+        .route(
+            "/v1/projects/{id}/columns",
+            get(get_columns).put(put_columns).delete(delete_columns),
         )
         .route("/v1/projects/{id}/access", put(set_access))
         .route("/v1/projects/{id}/repositories", post(add_repository))
@@ -187,6 +194,33 @@ async fn delete_script(
         scripts::delete_script(app, &by, id, &column)
     })
     .await
+}
+
+async fn get_columns(
+    State(state): State<ApiState>,
+    UrlPath(id): UrlPath<i64>,
+) -> Result<Json<ColumnsView>, ApiError> {
+    blocking(&state.app, move |app| scripts::columns(app, id)).await
+}
+
+async fn put_columns(
+    State(state): State<ApiState>,
+    Extension(by): Extension<Actor>,
+    UrlPath(id): UrlPath<i64>,
+    Json(new): Json<NewScript>,
+) -> Result<Json<ColumnsView>, ApiError> {
+    blocking(&state.app, move |app| {
+        scripts::save_columns(app, &by, id, &new)
+    })
+    .await
+}
+
+async fn delete_columns(
+    State(state): State<ApiState>,
+    Extension(by): Extension<Actor>,
+    UrlPath(id): UrlPath<i64>,
+) -> Result<Json<ColumnsView>, ApiError> {
+    blocking(&state.app, move |app| scripts::delete_columns(app, &by, id)).await
 }
 
 #[cfg(test)]
@@ -469,5 +503,140 @@ mod tests {
         assert_eq!(status, Status::FORBIDDEN);
         let (_, kept) = call("GET", &addr, &owner, "/v1/projects/1", None).await;
         assert_eq!(kept["intake"], false);
+    }
+
+    const TESTING: &str = "[[column]]\nname = \"Ready for testing\"\nscript = \"testing.luau\"\nafter = \"In review\"\n";
+
+    #[tokio::test]
+    async fn the_columns_of_a_project_are_read_and_saved_and_a_board_with_cards_in_a_column_keeps_it()
+     {
+        let (dir, state, addr) = start().await;
+        let harness = crate::harness::repo::testing::use_harness(&state.app, dir.path());
+        let token = state.token.to_string();
+        let id = state.app.store.projects().unwrap()[0].id;
+        let path = format!("/v1/projects/{id}/columns");
+        let path = path.as_str();
+
+        let (status, none) = call("GET", &addr, &token, path, None).await;
+        assert_eq!(status, Status::OK, "{none}");
+        assert_eq!(none["source"], "default");
+        assert_eq!(none["path"], "projects/radiance/kanban.toml");
+        assert_eq!(none["columns"].as_array().unwrap().len(), 6);
+        // A file that is not a board is refused as a whole.
+        let (status, bad) = call(
+            "PUT",
+            &addr,
+            &token,
+            path,
+            Some(json!({"text": "[[column]]\nname = \"Doing\"\n"})),
+        )
+        .await;
+        assert_eq!(status, Status::UNPROCESSABLE_ENTITY, "{bad}");
+
+        let (status, saved) = call(
+            "PUT",
+            &addr,
+            &token,
+            path,
+            Some(json!({"text": TESTING, "reason": "a testing step"})),
+        )
+        .await;
+        assert_eq!(status, Status::OK, "{saved}");
+        assert_eq!(saved["source"], "project");
+        let columns = saved["columns"].as_array().unwrap();
+        assert_eq!(columns.len(), 7);
+        assert_eq!(
+            columns[4],
+            json!({"name": "Ready for testing", "counts_as": "In review", "custom": true, "script": "testing.luau"})
+        );
+        assert_eq!(
+            harness.project_file("radiance", "kanban.toml").unwrap(),
+            TESTING
+        );
+        let (_, project) = call("GET", &addr, &token, &format!("/v1/projects/{id}"), None).await;
+        assert_eq!(project["columns"], saved["columns"]);
+
+        // The snapshot has the board and the class of each card's column.
+        let card = state.app.store.cards(1).unwrap().remove(0);
+        state
+            .app
+            .store
+            .move_card(card.id, "Ready for testing")
+            .unwrap();
+        let (_, snapshot) = call("GET", &addr, &token, "/v1/snapshot", None).await;
+        let board = &snapshot["boards"][0];
+        assert_eq!(board["project_columns"][id.to_string()], saved["columns"]);
+        assert_eq!(board["cards"][0]["column"], "Ready for testing");
+        assert_eq!(board["cards"][0]["column_class"], "In review");
+
+        // The card is in the column: a file without it, or none, is refused and names the card.
+        let number = format!("#{}", card.number);
+        let (status, refused) = call(
+            "PUT",
+            &addr,
+            &token,
+            path,
+            Some(json!({"text": "# no columns\n"})),
+        )
+        .await;
+        assert_eq!(status, Status::CONFLICT, "{refused}");
+        let message = refused.to_string();
+        assert!(
+            message.contains("Ready for testing") && message.contains(&number),
+            "{refused}"
+        );
+        let (status, refused) = call("DELETE", &addr, &token, path, None).await;
+        assert_eq!(status, Status::CONFLICT, "{refused}");
+        assert!(refused.to_string().contains(&number), "{refused}");
+        assert_eq!(
+            harness.project_file("radiance", "kanban.toml").unwrap(),
+            TESTING
+        );
+
+        // A proposal that does the same is refused when it is merged.
+        let change = harness
+            .offer_files(
+                &state.app,
+                "moebius/proposal-1",
+                "Drop the column",
+                |work| {
+                    let dir = work.join("projects/radiance");
+                    std::fs::create_dir_all(&dir)?;
+                    std::fs::write(dir.join("kanban.toml"), "# no columns\n")?;
+                    Ok(())
+                },
+            )
+            .unwrap();
+        let (status, refused) = call(
+            "POST",
+            &addr,
+            &token,
+            &format!("/v1/changes/{}/merge", change.id),
+            Some(json!({"reason": "ok"})),
+        )
+        .await;
+        assert!(status.is_client_error(), "{status} {refused}");
+        assert!(refused.to_string().contains(&number), "{refused}");
+        assert_eq!(
+            harness.project_file("radiance", "kanban.toml").unwrap(),
+            TESTING
+        );
+
+        // With the card moved out, the same file is saved and the same merge goes through.
+        state.app.store.move_card(card.id, "In review").unwrap();
+        let (status, merged) = call(
+            "POST",
+            &addr,
+            &token,
+            &format!("/v1/changes/{}/merge", change.id),
+            Some(json!({"reason": "ok"})),
+        )
+        .await;
+        assert_eq!(status, Status::OK, "{merged}");
+        let (status, back) = call("DELETE", &addr, &token, path, None).await;
+        assert_eq!(status, Status::OK, "{back}");
+        assert_eq!(back["source"], "default");
+        let (status, _) = call("DELETE", &addr, &token, path, None).await;
+        assert_eq!(status, Status::NOT_FOUND);
     }
 }

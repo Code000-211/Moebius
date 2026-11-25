@@ -52,7 +52,7 @@ projects that share a repository can work differently.
 _Avoid_: workflow (that is a graph of nodes), board config, Settings (that is the server's and one's own, in the sidebar)
 
 **Columns**:
-The tab of a project's settings that holds the script of each column of its board, the one place where they are edited;
+The tab of a project's settings that holds the script of each column of its board, custom ones included (which it shows read-only: their definition is `kanban.toml`), the one place where scripts are edited;
 the board's column menu opens it at that column (`settings/columns/:column`).
 _Avoid_: workflow, column scripts page
 
@@ -158,6 +158,17 @@ _Avoid_: status, lane, state
 **Column scripts**:
 The scripts behind the columns of a project's board, in the language built into Moebius; they are edited in the Columns
 tab of the project's settings, and they are not a workflow.
+
+**Custom column**:
+A column a project adds to its board between Backlog and Done, defined in `projects/<project name>/kanban.toml` of the
+harness configuration repository, with a script of its own. It counts as one of the six built-in columns, its column class.
+_Avoid_: status, lane, custom workflow
+
+**Column class**:
+The built-in column a column counts as (`counts_as` in `kanban.toml`; a built-in column is its own class). Everything that
+decides from a card's column, such as whether it is done, in review or ready to merge, asks for the class and not for the
+name; it only reads, and a script is what writes. Scripts see it as `card.column_class`.
+_Avoid_: type, kind (that is a kind of issue), category
 _Avoid_: workflow, hook, plugin
 
 **Script**:

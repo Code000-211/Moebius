@@ -3,6 +3,7 @@
  * number, the title, what is said about the card, and a click opens the card window.
  */
 
+import { cardClass } from "../../api/columns";
 import { ListRow } from "../../ui/page/ListRow";
 import type { StatusState } from "../../ui/page/StatusIcon";
 import { useOpenCard } from "./CardWindowHost";
@@ -12,6 +13,7 @@ export interface CardRowData {
   number: number;
   title: string;
   column: string;
+  column_class?: string;
   done: boolean;
   /** Said after the title, such as the estimate. */
   note?: string;
@@ -19,8 +21,8 @@ export interface CardRowData {
 
 function stateOf(card: CardRowData): StatusState {
   if (card.done) return "done";
-  if (card.column === "In review") return "inReview";
-  if (card.column === "In progress") return "inProgress";
+  if (cardClass(card) === "In review") return "inReview";
+  if (cardClass(card) === "In progress") return "inProgress";
   return "notStarted";
 }
 

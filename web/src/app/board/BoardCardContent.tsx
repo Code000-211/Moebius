@@ -4,6 +4,7 @@
  */
 import { CaretDownIcon, CaretRightIcon } from "@phosphor-icons/react";
 import type { ReactNode, SyntheticEvent } from "react";
+import { isDone } from "../../api/columns";
 import type { Card } from "../../api/types/board";
 import { KanbanCardContent } from "../../ui/components/KanbanCardContent";
 import { keepKey } from "../../ui/lib/shortcuts";
@@ -83,9 +84,7 @@ export function CardContent({
           <p className="m-0 text-sm text-secondary">{stackWords(stack)}</p>
         ) : undefined
       }
-      muted={
-        card.column === "Done" || card.closed || (!!card.taken_by && !card.change?.outside_author)
-      }
+      muted={isDone(card) || card.closed || (!!card.taken_by && !card.change?.outside_author)}
       onOpen={onOpen}
       menu={menu && <CardMenu card={card} {...menu} />}
       select={select}

@@ -26,8 +26,8 @@ pub const DEFAULT_DAYS: i64 = 30;
 pub use DEFAULT_DAYS as ANALYTICS_DEFAULT_DAYS;
 /// The most cycles and the most milestones the answer lists, the latest first.
 pub const BURN_UP_LIMIT: usize = 12;
-/// The column cards finish in; the time spent in it is not counted.
-const DONE: &str = "Done";
+/// The class of the columns cards finish in; the time spent in them is not counted.
+const DONE: &str = crate::app::columns::DONE;
 
 /// What narrows the analytics.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -283,7 +283,7 @@ impl App {
         for card in &cards {
             let mut seen: HashMap<&str, i64> = HashMap::new();
             for (column, from, to) in sittings(card, now) {
-                if column != DONE && to >= start {
+                if self.column_class(card.project_id, column) != DONE && to >= start {
                     *seen.entry(column).or_default() += (to - from.max(start)).max(0);
                 }
             }

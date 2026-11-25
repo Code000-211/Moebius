@@ -172,10 +172,11 @@ impl Store {
         }
         let mut carried = Vec::new();
         if let Some(to) = carry_to {
-            let mut stmt = tx.prepare(
+            let class = super::class_sql("c.column_name", "c.project_id");
+            let mut stmt = tx.prepare(&format!(
                 "SELECT c.id FROM cycle_cards m JOIN cards c ON c.id = m.card_id \
-                 WHERE m.cycle_id = ?1 AND NOT (c.closed OR c.column_name = 'Done') ORDER BY c.id",
-            )?;
+                 WHERE m.cycle_id = ?1 AND NOT (c.closed OR {class} = 'Done') ORDER BY c.id",
+            ))?;
             let ids = stmt
                 .query_map([id], |r| r.get::<_, i64>(0))?
                 .collect::<rusqlite::Result<Vec<_>>>()?;
@@ -238,17 +239,19 @@ impl Store {
     /// Every card of the cycle, in the order of the cards.
     pub fn cycle_cards(&self, id: i64) -> Result<Vec<CycleCard>> {
         let conn = self.read();
-        let mut stmt = conn.prepare(
+        let class = super::class_sql("c.column_name", "c.project_id");
+        let to_class = super::class_sql("m2.to_column", "c.project_id");
+        let mut stmt = conn.prepare(&format!(
             "SELECT c.id, c.repository_id, c.number, c.title, c.column_name, \
-                    (c.closed OR c.column_name = 'Done') AS done, (SELECT json_group_array(label) FROM card_labels WHERE card_id = c.id), m.added_at, \
-                    CASE WHEN c.closed OR c.column_name = 'Done' THEN \
-                      COALESCE((SELECT MAX(at) FROM card_moves WHERE card_id = c.id AND to_column = 'Done'), c.moved_at) \
+                    (c.closed OR {class} = 'Done') AS done, (SELECT json_group_array(label) FROM card_labels WHERE card_id = c.id), m.added_at, \
+                    CASE WHEN c.closed OR {class} = 'Done' THEN \
+                      COALESCE((SELECT MAX(m2.at) FROM card_moves m2 WHERE m2.card_id = c.id AND {to_class} = 'Done'), c.moved_at) \
                     END, \
                     EXISTS (SELECT 1 FROM runs r WHERE r.card_id = c.id AND r.purpose = 'code'), \
                     COALESCE((SELECT SUM(u.input_tokens + u.output_tokens) FROM usage u JOIN runs r ON r.id = u.run_id \
                               WHERE r.card_id = c.id AND r.purpose <> 'trial'), 0) \
              FROM cycle_cards m JOIN cards c ON c.id = m.card_id WHERE m.cycle_id = ?1 ORDER BY c.id",
-        )?;
+        ))?;
         let rows = stmt.query_map([id], |r| {
             let labels: Vec<String> =
                 serde_json::from_str(&r.get::<_, String>(6)?).map_err(|e| {

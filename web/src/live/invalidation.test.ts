@@ -112,6 +112,13 @@ describe("invalidates", () => {
       keys.scripts,
       keys.projectSettingsAll,
     ]);
+    // Saving kanban.toml changes the columns that the board and the Columns tab draw.
+    expect(invalidates({ kind: "script_changed", data: { column: "kanban.toml" } })).toEqual([
+      keys.scripts,
+      keys.projectSettingsAll,
+      keys.snapshot,
+      keys.projects,
+    ]);
     const queryClient = client();
     queryClient.setQueryData(keys.history(7), []);
     queryClient.setQueryData(keys.cardRuns(7), []);

@@ -5,9 +5,9 @@ use std::collections::BTreeMap;
 
 use serde_json::{Value, json};
 
-use super::{KEYS, REPOSITORY, SETTINGS, files, unified};
+use super::{KEYS, REPOSITORY, SETTINGS, files_of, unified};
 use crate::app::{App, OWNER_AUTHOR, Result};
-use crate::board::{Kanban, check_script};
+use crate::board::check_script_in;
 use crate::bus::Event;
 use crate::harness::repo::OwnBranch;
 use crate::server::settings::{Changes, Live};
@@ -130,13 +130,6 @@ fn repository(
             return Err("it changes the files of more than one repository".into());
         }
         name = Some(repository);
-        if !files().iter().any(|f| f == file) {
-            return Err(format!(
-                "{file} is not a file the Retro may change; the files are {}",
-                files().join(", ")
-            ));
-        }
-        check(file, text).map_err(|why| format!("{file}: {why}"))?;
         texts.insert(file, text);
     }
     let name = name.ok_or("it changes nothing")?;
@@ -151,6 +144,21 @@ fn repository(
         .store
         .project(repository.home_project_id)
         .map_err(|e| e.to_string())?;
+    // The files and the board are those of the home project, whose custom columns have scripts of their own.
+    let allowed = files_of(app, home.as_ref());
+    let board = home
+        .as_ref()
+        .map(|home| app.project_columns(home))
+        .unwrap_or_default();
+    for (file, text) in &texts {
+        if !allowed.iter().any(|f| f == *file) {
+            return Err(format!(
+                "{file} is not a file the Retro may change; the files are {}",
+                allowed.join(", ")
+            ));
+        }
+        check(&board, file, text).map_err(|why| format!("{file}: {why}"))?;
+    }
     let mut diff = String::new();
     let mut edits = serde_json::Map::new();
     for (file, text) in texts {
@@ -191,16 +199,21 @@ pub(super) fn current(
 
 /// Whether the text of the project's `<file>` could be saved: rules as `PUT /v1/rules` takes them, a column's script as
 /// `moebius check-script` checks it.
-fn check(file: &str, text: &str) -> std::result::Result<(), String> {
+fn check(
+    board: &crate::app::columns::ProjectColumns,
+    file: &str,
+    text: &str,
+) -> std::result::Result<(), String> {
     if file == "rules.md" {
         return crate::decide::rules::check(text);
     }
-    let column = Kanban::default()
+    let column = board
         .columns
-        .into_iter()
+        .iter()
         .find(|c| c.script == file)
         .ok_or_else(|| format!("{file} is no column's script"))?;
-    check_script(
+    check_script_in(
+        board,
         &column.script,
         text,
         &column.name,
@@ -252,5 +265,39 @@ mod tests {
             strip_url_credentials(diff),
             " base_url = \"https://proxy.example/v1\"\n+timeout = 5\n url = \"http://host:8080/x\"\n"
         );
+    }
+}
+
+#[cfg(test)]
+mod custom_columns {
+    use super::*;
+    use crate::board::testing::setup;
+    use crate::harness::repo::testing::put;
+
+    #[test]
+    fn a_script_of_a_custom_column_may_be_proposed_and_is_checked_on_the_projects_board() {
+        let (_dir, app, _engine, _repo) = setup();
+        put(
+            &app,
+            "demo",
+            "kanban.toml",
+            "[[column]]\nname = \"Ready for testing\"\nscript = \"testing.luau\"\nafter = \"In review\"\n",
+        );
+        let home = app.store.project_by_name("demo").unwrap().unwrap();
+        let files = crate::improve::own::files_of(&app, Some(&home));
+        assert!(files.iter().any(|f| f == "testing.luau"), "{files:?}");
+        let board = app.project_columns(&home);
+        let moves = "function on_card(card) moebius.move('Ready for testing') end\n";
+        // A custom name is no column of the six-column board a check without the project's would use.
+        assert!(
+            check(
+                &crate::app::columns::ProjectColumns::default(),
+                "testing.luau",
+                moves
+            )
+            .is_err()
+        );
+        assert!(check(&board, "testing.luau", moves).is_ok());
+        assert!(check(&board, "review.luau", moves).is_ok());
     }
 }

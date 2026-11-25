@@ -5,6 +5,8 @@
 //!   runs it against a card in that script's column; it must not fail. A marker `<!-- script: ready.luau; test: key -->`
 //!   also runs the scenario `key` below, which checks what the script does.
 //! - ```` ```toml ```` blocks are `moebius.toml` snippets and must pass `Config::parse`, unless marked `<!-- skip -->`.
+//!   Blocks marked `<!-- kanban -->` are a project's `kanban.toml`: they must parse with `app::columns::parse`, and the
+//!   `luau` blocks of the page whose script is not one of the six built-in ones are run on the board they define.
 //!   Blocks marked `<!-- workflow -->` are whole workflow files and must pass `WorkflowDefinition::validate`.
 //!   Blocks marked `<!-- agent-file -->` are `agents/<name>.toml` files of the harness configuration repository and must
 //!   parse as the settings of an agent.
@@ -117,9 +119,10 @@ fn all_blocks(language: &str) -> Vec<Block> {
 
 // ---- The pages -----------------------------------------------------------------------------------------------
 
-const PAGES: [&str; 14] = [
+const PAGES: [&str; 15] = [
     "README.md",
     "column-scripts.md",
+    "custom-columns.md",
     "kanban.md",
     "rules.md",
     "agents.md",
@@ -182,6 +185,7 @@ fn every_toml_block_is_a_configuration_unless_it_says_skip() {
     let mut parsed = 0;
     let mut agent_files = 0;
     let mut workflows = 0;
+    let mut kanbans = 0;
     for block in all_blocks("toml") {
         match block.marker.as_deref() {
             Some("skip") => continue,
@@ -189,6 +193,12 @@ fn every_toml_block_is_a_configuration_unless_it_says_skip() {
                 toml::from_str::<AgentSettings>(&block.text)
                     .unwrap_or_else(|e| panic!("{}: {e}", block.name()));
                 agent_files += 1;
+                continue;
+            }
+            Some("kanban") => {
+                moebius_core::app::columns::parse(&block.text)
+                    .unwrap_or_else(|e| panic!("{}: {e}", block.name()));
+                kanbans += 1;
                 continue;
             }
             Some("workflow") => {
@@ -214,6 +224,7 @@ fn every_toml_block_is_a_configuration_unless_it_says_skip() {
     assert!(parsed >= 4, "only {parsed} configurations found");
     assert!(agent_files >= 2, "only {agent_files} agent files found");
     assert!(workflows >= 1, "only {workflows} workflow files found");
+    assert!(kanbans >= 1, "no kanban.toml found");
 }
 
 #[test]
@@ -511,7 +522,8 @@ struct Fixture {
 }
 
 impl Fixture {
-    fn new(script: &str, source: &str, agents: &[&str]) -> Self {
+    /// With `files` in the project's settings besides the script (a `kanban.toml` and the scripts it names).
+    fn with_files(script: &str, source: &str, agents: &[&str], files: &[(String, String)]) -> Self {
         let dir = tempfile::tempdir().unwrap();
         let origin = dir.path().join("origin");
         std::fs::create_dir_all(&origin).unwrap();
@@ -527,6 +539,9 @@ impl Fixture {
         let app = Arc::new(app);
         let settings = common::use_harness(&app, dir.path());
         common::put_project(&settings, "demo", script, source);
+        for (file, text) in files {
+            common::put_project(&settings, "demo", file, text);
+        }
         let repository = app
             .add_repository("demo", origin.to_str().unwrap())
             .unwrap()
@@ -552,9 +567,14 @@ impl Fixture {
 
     /// A new card in `column`.
     fn card(&self, column: &str, title: &str, author: &str) -> Card {
+        self.card_with_body(column, title, "", author)
+    }
+
+    /// A new card in `column` whose issue has `body`.
+    fn card_with_body(&self, column: &str, title: &str, body: &str, author: &str) -> Card {
         let card = self
             .app
-            .create_issue(self.repository, title, "", author)
+            .create_issue(self.repository, title, body, author)
             .unwrap();
         if column == "Backlog" {
             card
@@ -606,6 +626,8 @@ fn scenarios() -> Vec<(&'static str, Scenario)> {
         ("agent-by-title", agent_by_title),
         ("decide-with-a-plugin", decide_with_a_plugin),
         ("hard-attempts", hard_attempts),
+        ("wait-for-measurement", wait_for_measurement),
+        ("measured-labels", measured_labels),
     ]
 }
 
@@ -752,6 +774,57 @@ fn decide_with_a_plugin(f: &Fixture) {
     assert_eq!(judgements[0].choice, "hold");
 }
 
+/// The measurement is written in the issue's body: the card waits for it in Ready for testing and then moves on.
+fn wait_for_measurement(f: &Fixture) {
+    let waiting = f.card("Ready for testing", "Faster parser", OWNER_AUTHOR);
+    let step = f.tick(&waiting);
+    assert_eq!(f.column(&waiting), "Ready for testing");
+    assert_eq!(
+        step.waiting.as_deref(),
+        Some("waiting for a ## Measurement section in the issue")
+    );
+    // A card in a custom column counts as its class.
+    assert_eq!(
+        f.app.column_class(waiting.project_id, "Ready for testing"),
+        "In review"
+    );
+
+    let measured = f.card_with_body(
+        "Ready for testing",
+        "Faster lexer",
+        "Make it faster.\n\n## Measurement\n12% faster on the benchmark.\n",
+        OWNER_AUTHOR,
+    );
+    assert_eq!(f.tick(&measured).moved.as_deref(), Some("Being measured"));
+    assert_eq!(f.column(&measured), "Being measured");
+    assert_eq!(
+        f.app.card(measured.id).unwrap().note.as_deref(),
+        Some("the measurement is written in the issue")
+    );
+}
+
+/// A person's label decides in Being measured: a regression sends the card back to coding with a note.
+fn measured_labels(f: &Fixture) {
+    let waiting = f.card("Being measured", "Faster parser", OWNER_AUTHOR);
+    let step = f.tick(&waiting);
+    assert_eq!(f.column(&waiting), "Being measured");
+    assert_eq!(
+        step.waiting.as_deref(),
+        Some("being measured: waiting for the label measured or regressed")
+    );
+
+    f.app
+        .set_labels(waiting.id, &["regressed".to_string()])
+        .unwrap();
+    f.tick(&waiting);
+    let back = f.app.card(waiting.id).unwrap();
+    assert_eq!(back.column, "In progress");
+    assert_eq!(
+        back.note.as_deref(),
+        Some("The measurement regressed. Find out why, and fix it.")
+    );
+}
+
 /// The script file and scenario key of a `luau` block's marker.
 fn script_marker(block: &Block) -> (String, Option<String>) {
     let marker = block
@@ -771,16 +844,55 @@ fn script_marker(block: &Block) -> (String, Option<String>) {
     (script, key)
 }
 
-/// The column a script file belongs to.
-fn column_of(script: &str) -> &'static str {
+/// The column a script file belongs to: one of the six, or, on the board of the page's `kanban.toml`, the first custom
+/// column that names it.
+fn column_of(script: &str, board: Option<&moebius_core::app::columns::ProjectColumns>) -> String {
     match script {
-        "backlog.luau" => "Backlog",
-        "ready.luau" => "Not started",
-        "code.luau" => "In progress",
-        "review.luau" => "In review",
-        "merge.luau" => "Ready to merge",
-        "done.luau" => "Done",
-        other => panic!("{other} is not the name of a column script"),
+        "backlog.luau" => "Backlog".into(),
+        "ready.luau" => "Not started".into(),
+        "code.luau" => "In progress".into(),
+        "review.luau" => "In review".into(),
+        "merge.luau" => "Ready to merge".into(),
+        "done.luau" => "Done".into(),
+        other => board
+            .and_then(|board| {
+                board
+                    .columns
+                    .iter()
+                    .find(|column| column.custom && column.script == other)
+            })
+            .unwrap_or_else(|| {
+                panic!("{other} is not a column script, nor a script of the page's kanban.toml")
+            })
+            .name
+            .clone(),
+    }
+}
+
+/// The `kanban.toml` of a page (its block marked `<!-- kanban -->`), as text and as the board it defines.
+fn kanban_of(page: &str) -> Option<(String, moebius_core::app::columns::ProjectColumns)> {
+    let (_, text) = pages().into_iter().find(|(name, _)| name == page)?;
+    let block = blocks(page, &text)
+        .into_iter()
+        .find(|block| block.language == "toml" && block.marker.as_deref() == Some("kanban"))?;
+    let board = moebius_core::app::columns::parse(&block.text)
+        .unwrap_or_else(|e| panic!("{}: {e}", block.name()));
+    Some((block.text, board))
+}
+
+#[test]
+fn the_custom_columns_page_shows_the_scripts_of_the_example() {
+    for block in all_blocks("luau")
+        .into_iter()
+        .filter(|block| block.page == "custom-columns.md")
+    {
+        let (script, _) = script_marker(&block);
+        assert_eq!(
+            block.text,
+            read(&format!("examples/custom-columns/{script}")),
+            "{} is not examples/custom-columns/{script}",
+            block.name()
+        );
     }
 }
 
@@ -797,9 +909,38 @@ fn every_luau_block_is_a_script_that_runs_and_the_marked_ones_do_what_the_page_s
             _ => &["Coder"],
         };
 
+        // A page with a kanban.toml has its custom columns, and the scripts that its other blocks give for them.
+        let kanban = kanban_of(&block.page);
+        let board = kanban.as_ref().map(|(_, board)| board);
+        let column = column_of(&script, board);
+        let mut files: Vec<(String, String)> = Vec::new();
+        if let Some((text, _)) = &kanban {
+            files.push(("kanban.toml".into(), text.clone()));
+            for other in all_blocks("luau")
+                .into_iter()
+                .filter(|other| other.page == block.page)
+            {
+                let (file, _) = script_marker(&other);
+                if file != script && moebius_core::board::built_in_script(&file).is_none() {
+                    files.push((file, other.text));
+                }
+            }
+        }
+        if let Some(board) = board {
+            moebius_core::board::check_script_in(
+                board,
+                &script,
+                &block.text,
+                &column,
+                "A card",
+                OWNER_AUTHOR,
+            )
+            .unwrap_or_else(|e| panic!("{}: {e}", block.name()));
+        }
+
         // It loads, defines on_card and runs without an error against a card in its column.
-        let smoke = Fixture::new(&script, &block.text, agents);
-        let card = smoke.card(column_of(&script), "A card", OWNER_AUTHOR);
+        let smoke = Fixture::with_files(&script, &block.text, agents, &files);
+        let card = smoke.card(&column, "A card", OWNER_AUTHOR);
         smoke
             .engine
             .tick(card.id)
@@ -812,7 +953,7 @@ fn every_luau_block_is_a_script_that_runs_and_the_marked_ones_do_what_the_page_s
                 .find(|(name, _)| *name == key)
                 .unwrap_or_else(|| panic!("{}: no scenario {key:?}", block.name()))
                 .1;
-            scenario(&Fixture::new(&script, &block.text, agents));
+            scenario(&Fixture::with_files(&script, &block.text, agents, &files));
             used.insert(key);
         }
         count += 1;

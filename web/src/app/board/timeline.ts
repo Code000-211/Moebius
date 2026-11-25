@@ -5,6 +5,7 @@
  * changes that follow one another are folded into one line ("3 changes"). What waits for a person comes last, as one
  * block, from the item of the Inbox the card has.
  */
+import { classOf, type HasColumns } from "../../api/columns";
 import type { Comment, InboxItem } from "../../api/types/board";
 import type { HistoryEntry } from "../../api/types/cards";
 import { describeHistory } from "./model";
@@ -19,6 +20,10 @@ export interface TimelineEvent {
   from?: string;
   /** The column a move went to. */
   to?: string;
+  /** The built-in column the one a move left counts as; set when the project's columns are known. */
+  fromClass?: string;
+  /** The built-in column the one a move went to counts as. */
+  toClass?: string;
   /** What was said about the move. */
   note?: string;
 }
@@ -72,14 +77,18 @@ export function runLabel(run: TimelineRun): string {
 }
 
 /** The entry as a line of the timeline. */
-export function eventOf(entry: HistoryEntry): TimelineEvent {
+export function eventOf(entry: HistoryEntry, columns?: HasColumns): TimelineEvent {
   if (entry.kind === "moved") {
+    const from = text(entry.data.from);
+    const to = text(entry.data.to);
     return {
+      fromClass: classOf(columns, from),
+      toClass: classOf(columns, to),
       at: entry.at,
       text: describeHistory(entry),
       tone: "move",
-      from: text(entry.data.from),
-      to: text(entry.data.to),
+      from,
+      to,
       note: text(entry.data.note),
     };
   }
@@ -104,6 +113,8 @@ export function timelineOf(
   history: HistoryEntry[],
   comments: Comment[],
   needsYou?: InboxItem,
+  /** The columns of the card's project: a move between custom columns is read by their classes. */
+  columns?: HasColumns,
 ): TimelineItem[] {
   const ended = new Map<number, HistoryEntry>();
   for (const entry of history) {
@@ -129,7 +140,7 @@ export function timelineOf(
       merged.push({ at: entry.at, item: { type: "run", run } });
       continue;
     }
-    const event = eventOf(entry);
+    const event = eventOf(entry, columns);
     merged.push({ at: entry.at, item: { type: event.tone === "move" ? "move" : "event", event } });
   }
   for (const comment of comments)
@@ -170,7 +181,7 @@ export function runDuration(run: TimelineRun): string | null {
   return `${Math.floor(seconds / 3_600)}h ${Math.floor((seconds % 3_600) / 60)}m`;
 }
 
-/** The columns a card is sent back from when its review or its merge asks for more work. */
+/** The classes of the columns a card is sent back from when its review or its merge asks for more work. */
 const SENT_BACK_FROM = ["In review", "Ready to merge"];
 const SENT_BACK_TO = ["In progress", "Not started"];
 
@@ -179,8 +190,8 @@ export function moveLabel(event: TimelineEvent): string {
   const back =
     event.note !== undefined &&
     event.note !== "" &&
-    SENT_BACK_FROM.includes(event.from ?? "") &&
-    SENT_BACK_TO.includes(event.to ?? "");
+    SENT_BACK_FROM.includes(event.fromClass ?? event.from ?? "") &&
+    SENT_BACK_TO.includes(event.toClass ?? event.to ?? "");
   return `${back ? "Sent back" : "Moved"} to ${event.to ?? ""}`;
 }
 

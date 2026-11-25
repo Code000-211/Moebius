@@ -72,6 +72,13 @@ enum Command {
         /// The card's author; `person:<handle>` is trusted, as on a repository without a forge.
         #[arg(long, default_value = "person:owner")]
         author: String,
+        /// A `kanban.toml` whose custom columns the script may move to and the card may be in.
+        #[arg(long, conflicts_with = "project")]
+        kanban: Option<PathBuf>,
+        /// A project of the harness configuration repository (the clone the configuration names) whose
+        /// `projects/<name>/kanban.toml` is read, as `--kanban` does.
+        #[arg(long)]
+        project: Option<String>,
     },
     /// Open an SSH tunnel to the server of a host and keep it open, for the commands that follow in other terminals,
     /// and the web app in a window of its own, unless `--no-window`. Stops with Ctrl+C. When no server runs on the
@@ -170,12 +177,46 @@ fn run(cli: Cli) -> Result<(), String> {
             column,
             title,
             author,
+            kanban,
+            project,
         }) => {
             let source = std::fs::read_to_string(&file)
                 .map_err(|e| format!("cannot read {}: {e}", file.display()))?;
             let name = file.file_name().unwrap_or(file.as_os_str());
-            let did =
-                board::check_script(&name.to_string_lossy(), &source, &column, &title, &author)?;
+            let text = match (kanban, project) {
+                (Some(path), _) => Some(
+                    std::fs::read_to_string(&path)
+                        .map_err(|e| format!("cannot read {}: {e}", path.display()))?,
+                ),
+                (None, Some(project)) => {
+                    if !repo::valid_project_folder(&project) {
+                        return Err(format!("{project:?} cannot be the name of a project"));
+                    }
+                    let config = Config::load(&cli.config).map_err(|e| e.to_string())?;
+                    // A project without the file has the six built-in columns.
+                    std::fs::read_to_string(
+                        config
+                            .harness_dir()
+                            .join(repo::PROJECTS_DIR)
+                            .join(&project)
+                            .join(moebius_core::app::columns::KANBAN_FILE),
+                    )
+                    .ok()
+                }
+                (None, None) => None,
+            };
+            let columns = match text {
+                Some(text) => moebius_core::app::columns::parse(&text)?,
+                None => Default::default(),
+            };
+            let did = board::check_script_in(
+                &columns,
+                &name.to_string_lossy(),
+                &source,
+                &column,
+                &title,
+                &author,
+            )?;
             if did.is_empty() {
                 println!("The script did nothing: it did not move, wait, ask or start anything.");
             }

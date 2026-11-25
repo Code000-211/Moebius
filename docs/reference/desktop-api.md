@@ -171,6 +171,9 @@ keep their rows: the role is checked before the `410`.
 | `GET /v1/projects/{id}/scripts/{column}` | viewer | yes |
 | `PUT /v1/projects/{id}/scripts/{column}` | owner | yes |
 | `DELETE /v1/projects/{id}/scripts/{column}` | owner | yes |
+| `GET /v1/projects/{id}/columns` | viewer | yes |
+| `PUT /v1/projects/{id}/columns` | owner | yes |
+| `DELETE /v1/projects/{id}/columns` | owner | yes |
 | `PUT /v1/projects/{id}/access` | owner | no |
 | `POST /v1/projects/{id}/repositories` | owner | yes |
 | `DELETE /v1/projects/{id}/repositories/{repository}` | owner | yes |
@@ -752,10 +755,11 @@ Everything the app shows. Response:
      "cards": [{"id": 1, "repository_id": 1, "number": 1, "title": "Add a feature", "body": "", "author": "person",
                 "column": "Backlog", "created_at": 1790000000, "note": null, "retried_after": null,
                 "parent": null, "closed": false, "labels": [], "claimed_by": null,
-                "counts_as_sub_issue": true,
+                "counts_as_sub_issue": true, "column_class": "Backlog",
                 "rounds": 0, "tokens": 0, "run": null, "blocked_by": [], "refusals": 0, "change": null, "changes": []}],
      "round_limit": 5,
      "waiting": {},
+     "project_columns": {"1": [{"name": "Backlog", "counts_as": "Backlog", "custom": false, "script": "backlog.luau"}]},
      "changes": []}
   ],
   "harness_changes": [],
@@ -768,10 +772,11 @@ Everything the app shows. Response:
 
 `harness_changes` are the `Change`s of the harness configuration repository, which belongs to no board.
 `boards` has one entry per repository, with all its cards and changes; a change of a card over several repositories is on the board of the repository it is in, which does not list the card. `round_limit` is the most `code` rounds a card
-gets. Each entry of `cards` is a `Card` with what a board shows of it, so that a client needs no other read:
+gets. `project_columns` maps the id of each project that has cards on the board to its columns, left to right, as the `Column` of a `ProjectView` (see [`GET /v1/projects`](#get-v1projects)), so a client draws a board with the project's custom columns and needs no other read; a project without a `kanban.toml` has the six built-in ones. Each entry of `cards` is a `Card` with what a board shows of it, so that a client needs no other read:
 
 | Field | Meaning |
 |---|---|
+| `column_class` | The built-in column the card's `column` counts as, as `card.column_class` in [column scripts](column-scripts.md#custom-columns): the column itself for a built-in one, the `counts_as` of the project's `kanban.toml` for a custom one. A client that asks whether a card is done, in review or ready to merge uses this, never the column's name. |
 | `rounds`, `tokens` | The card's `code` runs (and rounds of attempts of which none passed) and the tokens of all its runs since it was last retried, as `card.rounds` and `card.tokens` in [column scripts](column-scripts.md). |
 | `run` | The card's latest run that is not an attempt, `{"id", "agent", "purpose", "status"}`, or null when it has none: an attempt that was not picked is shown by `attempts`, not here. A board counts the runs working on it from the cards whose `run.status` is `starting` or `running`. |
 | `blocked_by` | The numbers of the issues that block the card and are not done yet, as `card.blocked_by`, without those of cards of private projects the person does not see. |
@@ -833,7 +838,7 @@ and every card on it; a repository whose name an earlier one has in another case
 
 A `ProjectView` is `{"id": number, "name": string, "key": string, "created_at": number, "repositories": [{"id": number,
 "name": string, "home": bool}], "members": [{"id": number, "handle": string, "name": string}], "open_cards": number, "files": number or null,
-"kinds": [number], "intake": bool, "private": bool, "member": bool}`: `repositories` in the order the project names them, `home` true when this project is
+"kinds": [number], "intake": bool, "private": bool, "member": bool, "columns": [Column], "columns_problem"?: string}`: `repositories` in the order the project names them, `home` true when this project is
 the repository's home project; `members` the people a private project names, and everyone of the organisation in a
 public one, without the disabled; `open_cards` the cards on its board that are neither closed nor in `Done` (0 when
 `member` is false); `private` whether only its members see it; `member` whether the person asking sees its board (always
@@ -928,6 +933,14 @@ The run token of the Moebius agent and of a Grilling partner sees what the perso
 without such a person sees no private project. The training export leaves private projects out unless asked (see
 [the training export](training-export.md)).
 
+A `Column` is `{"name": string, "counts_as": string, "custom": bool, "script": string}`: the project's board left to
+right, the six built-in columns with the project's custom ones among them (see [custom
+columns](column-scripts.md#custom-columns)); `counts_as` is the built-in column the column counts as (its own name for
+a built-in one), `custom` whether the project's `kanban.toml` defines it, and `script` the file of its script in the
+project's settings (`ready.luau`, `testing.luau`). `columns_problem` is left out when nothing is wrong, and otherwise says
+what is: the `kanban.toml` is not valid (the columns last known are in force), or cards are in columns it no longer has
+(they run the script of their class). A project with no `kanban.toml` has the six built-in columns.
+
 ### `GET /v1/projects`
 
 Every project, in the order they were made: `[ProjectView]`.
@@ -965,7 +978,7 @@ the keys of its cards would change`).
 
 ### `GET /v1/projects/{id}/scripts`
 
-The script of every column of the project's board, left to right, each as `GET /v1/projects/{id}/scripts/{column}`
+The script of every column of the project's board, custom ones included, left to right, each as `GET /v1/projects/{id}/scripts/{column}`
 answers it: `[{"column", "path", "source", "text"}]`. Errors: `404` no such project.
 
 ### `GET /v1/projects/{id}/scripts/{column}`
@@ -973,7 +986,9 @@ answers it: `[{"column", "path", "source", "text"}]`. Errors: `404` no such proj
 The script a column runs for the cards on a project's board: the project's own `<file>.luau`, a file of
 `projects/<project name>/` in the harness configuration repository (see [column
 scripts](column-scripts.md#project-overrides)), or the built-in one. `{column}` is the column's name as the board
-shows it, in any case and URL-encoded (`In%20progress`); `Ready`, the old name of `Not started`, finds that column too.
+shows it, in any case and URL-encoded (`In%20progress`); `Ready`, the old name of `Not started`, finds that column too,
+and so does the name of a custom column of the project's `kanban.toml`. The script of a custom column whose file is not
+there yet is the built-in script of its class, with `source` `built-in`, and `path` is the file the column names.
 Response: `{"column": string, "path": string, "source": "project" or "built-in", "text": string}`. `path` is where the
 project keeps its own script for the column, from the root of the harness configuration repository
 (`projects/demo/ready.luau` for `Not started` of the project `demo`; the files are `backlog`, `ready`, `code` for `In
@@ -988,7 +1003,8 @@ committed (`Change the <Column> column's script of <project>`) on the default br
 repository's clone and pushed to its `origin`, as an edit of an agent is. The decision is recorded (kind `edit_script`,
 decider `person` or `agent:Moebius`; its context has `project`, `column`, `path`, `text`, `change` and, when given,
 `reason`) and the event `script_changed` is sent. Text that changes nothing makes no commit and no decision. Response:
-the script as `GET` answers it, now with `source` `project`. Errors: `404` no such project or column; `409` the server
+the script as `GET` answers it, now with `source` `project`. The check runs on the project's board, so a script that
+calls `moebius.move("Ready for testing")` is accepted when the project has that column. Errors: `404` no such project or column; `409` the server
 has no `[harness]`, or its push is refused or its clone cannot be brought up to date: the commit is undone and the
 message is git's, with keys redacted; `422` the check failed, and the message is the check's (it starts with the
 script's file name), or the project's name cannot be a folder (a project from before such names were refused); `500` any
@@ -1006,6 +1022,19 @@ Removes the project's own script for the column, committed and pushed the same w
 <Column> column of <project>`, kind `edit_script`), so the column runs the built-in script again. Response: the script
 as `GET` answers it, now the built-in one. Errors: `404` no such project or column, or the project has no script of its
 own for the column; `409` and `500` as for `PUT`.
+
+
+### `GET /v1/projects/{id}/columns`
+
+The project's `kanban.toml` (see [custom columns](column-scripts.md#custom-columns)): `{"path": "projects/<name>/kanban.toml", "source": "project"|"default", "text": string, "columns": [Column], "problem": string|null}`. `text` is a commented example when the project has no file (`source` is `default`); `columns` is the board the file makes and `problem` what is wrong with it, if anything.
+
+### `PUT /v1/projects/{id}/columns`
+
+Body `{"text": string, "reason"?: string}`, as the script `PUT`. Owners only. Commits the file to the harness configuration repository and answers as `GET` does. A text that is not a valid board is refused with 422 and every mistake it has; a text that removes a column while cards are in it is refused with 409 naming the cards (`kanban.toml would remove the column "X" while cards are in it (#1, #2); move them first`). Announced as `script_changed` with `column` `kanban.toml`.
+
+### `DELETE /v1/projects/{id}/columns`
+
+Owners only. Removes the project's `kanban.toml`, so its board has the six built-in columns again; refused with 409 while cards are in a custom column, and with 404 when the project has no file.
 
 ### `PUT /v1/projects/{id}/access`
 
@@ -1551,7 +1580,7 @@ may change or delete it (its owner and an owner of the organisation may), so a p
 - `ViewFilter` asks of a card: every part that is set must match, and within a list any value matches (so an empty list
   asks nothing). `projects` and `repositories` (ids), `labels` (the labels people gave the card: its priority, due date and estimate are kept as `priority:`, `due:` and
   `estimate:` labels with a value that reads, and have filters of their own, so no label filter matches them), `assignees` (handles), `priorities` (`urgent`, `high`,
-  `medium`, `low`, `none`), `cycles` and `milestones` (ids, a closed cycle included), `columns`, `authors` (all in any
+  `medium`, `low`, `none`), `cycles` and `milestones` (ids, a closed cycle included), `columns` (the name of the card's own column, in any case, so a custom column's name finds the cards in it; a column of the six finds only cards that are in that column, not the custom ones that count as it), `authors` (all in any
   case) and `text` (a word or phrase in the title or the body, in any case). The board's agent, status and due filters
   are parts too: `agents` (handles, in any case: cards an agent of that handle ran on in any run, not only the
   latest), `statuses` (what the card is doing, as the board names it: `held`, `live` (its latest run starts or runs),

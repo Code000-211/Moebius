@@ -389,7 +389,7 @@ impl App {
             return Ok(());
         }
         for card in self.store.cards(repository.id)? {
-            if card.closed || card.column == columns::DONE {
+            if card.closed || self.column_class(card.project_id, &card.column) == columns::DONE {
                 continue;
             }
             let Some(wanted) = self.is_ready(&card)? else {
@@ -413,7 +413,9 @@ impl App {
         {
             return Ok(None);
         }
-        let approved = card.confirmed || self.is_trusted(card) || card.column != columns::BACKLOG;
+        let approved = card.confirmed
+            || self.is_trusted(card)
+            || self.column_class(card.project_id, &card.column) != columns::BACKLOG;
         let blocked = !self.blocked_by(card)?.is_empty()
             || self
                 .children_of(card)?
@@ -548,7 +550,7 @@ impl App {
                     .as_deref()
                     .is_some_and(|t| !t.eq_ignore_ascii_case(&request.author));
                 if card.closed
-                    || card.column == columns::DONE
+                    || self.column_class(card.project_id, &card.column) == columns::DONE
                     || running
                     || taken_by_another
                     || !self.open_changes(&card)?.is_empty()
@@ -723,12 +725,23 @@ impl App {
             return Ok(());
         };
         self.store.resolve_inbox_for_card(card_id)?;
+        let card = self.card(card_id)?;
+        let board = self.project_columns_of(card.project_id)?;
+        // The column it was taken from may be gone from the board since (a column with no card in it can be removed):
+        // the card then goes to Not started, as one taken from a column that cannot be gone back to does.
         let back = change
             .taken_from
             .as_deref()
-            .filter(|column| *column != columns::IN_REVIEW && *column != columns::DONE)
+            .filter(|column| {
+                board.column(column).is_some_and(|c| {
+                    c.counts_as != columns::IN_REVIEW && c.counts_as != columns::DONE
+                })
+            })
             .unwrap_or(columns::NOT_STARTED);
-        self.move_card_from(card_id, columns::IN_REVIEW, back, None, None)?;
+        // It leaves the column it is in, which counts as In review but need not be called so.
+        if board.class_of(&card.column) == Some(columns::IN_REVIEW) {
+            self.move_card_from(card_id, &card.column, back, None, None)?;
+        }
         Ok(())
     }
 }

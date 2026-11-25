@@ -1,0 +1,17 @@
+# The custom columns of a project: copy this file to `projects/<project name>/kanban.toml` of the harness configuration
+# repository, and the two scripts beside it.
+#
+# Both columns come after In review and count as In review, so the built-in logic that asks "is this card in review?"
+# (round limits, the open-card counts, the board's status) treats a card in either as it treats one in In review.
+# Columns that come after the same column keep the order of this file: In review, Ready for testing, Being measured,
+# Ready to merge.
+
+[[column]]
+name = "Ready for testing"
+script = "testing.luau"
+after = "In review"
+
+[[column]]
+name = "Being measured"
+script = "measured.luau"
+after = "In review"

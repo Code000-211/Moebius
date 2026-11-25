@@ -8,14 +8,18 @@ use rusqlite::params;
 
 use super::{Result, Store, planning};
 
-/// The column whose first entry starts a card that no code run has started.
-const IN_PROGRESS: &str = "In progress";
+/// The class whose first entry starts a card that no code run has started.
+const IN_PROGRESS: &str = crate::app::columns::IN_PROGRESS;
 
 /// A move of a card between columns.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Moved {
     pub from: String,
     pub to: String,
+    /// The built-in column `from` counts as in the card's project.
+    pub from_class: String,
+    /// The built-in column `to` counts as in the card's project.
+    pub to_class: String,
     pub at: i64,
 }
 
@@ -28,15 +32,16 @@ pub struct AnalyticsCard {
     pub created_at: i64,
     /// The column the card is in now.
     pub column: String,
-    /// Whether its issue is closed or it is in `Done`.
+    /// Whether its issue is closed or it is in a column that counts as `Done`.
     pub done: bool,
     /// When it left the board by being archived.
     pub archived_at: Option<i64>,
-    /// When it was done: the last move into `Done`, else the last move; none while it is not done.
+    /// When it was done: the last move into a column that counts as `Done`, else the last move; none while it is not
+    /// done.
     pub done_at: Option<i64>,
     /// The local day of `done_at`, `YYYY-MM-DD`.
     pub done_day: Option<String>,
-    /// The earlier of its first code run and its first move into `In progress`.
+    /// The earlier of its first code run and its first move into a column that counts as `In progress`.
     pub started_at: Option<i64>,
     pub estimate: Option<u32>,
     /// The tokens of its runs, those of trials left out, and with an agent given, only that agent's.
@@ -67,17 +72,19 @@ impl Store {
         let conn = self.conn();
         let agent = filter.agent.as_deref();
         let mut cards: Vec<AnalyticsCard> = {
-            let mut stmt = conn.prepare(
+            let class = super::class_sql("c.column_name", "c.project_id");
+            let to_class = super::class_sql("m.to_column", "c.project_id");
+            let mut stmt = conn.prepare(&format!(
                 "SELECT c.id, c.project_id, c.repository_id, c.created_at, c.column_name, \
-                        (c.closed OR c.column_name = 'Done') AS done, \
-                        CASE WHEN c.closed OR c.column_name = 'Done' THEN \
-                          COALESCE((SELECT MAX(at) FROM card_moves WHERE card_id = c.id AND to_column = 'Done'), c.moved_at) \
+                        (c.closed OR {class} = 'Done') AS done, \
+                        CASE WHEN c.closed OR {class} = 'Done' THEN \
+                          COALESCE((SELECT MAX(m.at) FROM card_moves m WHERE m.card_id = c.id AND {to_class} = 'Done'), c.moved_at) \
                         END AS done_at, c.archived_at \
                  FROM cards c \
                  WHERE (?1 IS NULL OR c.repository_id = ?1) \
                    AND (?2 IS NULL OR EXISTS (SELECT 1 FROM runs r WHERE r.card_id = c.id AND r.agent = ?2)) \
                  ORDER BY c.id",
-            )?;
+            ))?;
             let rows = stmt.query_map(params![filter.repository, agent], |r| {
                 Ok(AnalyticsCard {
                     id: r.get(0)?,
@@ -99,16 +106,21 @@ impl Store {
         };
         let at: HashMap<i64, usize> = cards.iter().enumerate().map(|(i, c)| (c.id, i)).collect();
 
-        let mut stmt = conn.prepare(
-            "SELECT card_id, from_column, to_column, at FROM card_moves ORDER BY card_id, id",
-        )?;
+        let from_class = super::class_sql("m.from_column", "c.project_id");
+        let to_class = super::class_sql("m.to_column", "c.project_id");
+        let mut stmt = conn.prepare(&format!(
+            "SELECT m.card_id, m.from_column, m.to_column, {from_class}, {to_class}, m.at \
+             FROM card_moves m JOIN cards c ON c.id = m.card_id ORDER BY m.card_id, m.id",
+        ))?;
         for moved in stmt.query_map([], |r| {
             Ok((
                 r.get::<_, i64>(0)?,
                 Moved {
                     from: r.get(1)?,
                     to: r.get(2)?,
-                    at: r.get(3)?,
+                    from_class: r.get(3)?,
+                    to_class: r.get(4)?,
+                    at: r.get(5)?,
                 },
             ))
         })? {
@@ -131,7 +143,7 @@ impl Store {
             let entered = card
                 .moves
                 .iter()
-                .find(|m| m.to == IN_PROGRESS)
+                .find(|m| m.to_class == IN_PROGRESS)
                 .map(|m| m.at);
             card.started_at = match (card.started_at, entered) {
                 (Some(a), Some(b)) => Some(a.min(b)),

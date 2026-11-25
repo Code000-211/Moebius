@@ -12,7 +12,8 @@ The exact contract is in [`docs/reference/column-scripts.md`](../reference/colum
 ## The steps
 
 1. Pick the column. The scripts are `backlog.luau`, `ready.luau`, `code.luau` (the column `In progress`),
-   `review.luau`, `merge.luau` and `done.luau`. [Kanban](kanban.md) says what each does.
+   `review.luau`, `merge.luau` and `done.luau`. [Kanban](kanban.md) says what each does. A project that has columns of its
+   own (see [Custom columns](custom-columns.md)) has a script file for each of them too, named in its `kanban.toml`.
 2. Start from the default script, which is in `crates/moebius-core/kanban/<script>`. An override replaces the whole
    script and cannot call the built-in one, so what you do not copy is gone: a Not started override that forgets the
    blockers starts blocked cards. Every example below is a copy of the default with a change.
@@ -349,7 +350,7 @@ tick. Follow `GET /v1/events` (see the [desktop API](desktop-api.md)) to see `bo
 |---|---|
 | The script does not compile, has no `on_card`, raises an error or runs longer than 2 seconds. | The event `board_error` with `{card, message}` at every tick; the message starts with the script's file name. The card stays where it is, and its `waiting` in the snapshot says `script error: <message>` until the script runs cleanly again. The server does not fall back to the default script. The event is not stored: you see it only on a connected `GET /v1/events`. |
 | The override has no effect. | It is not committed to the default branch of the harness configuration repository, is in the wrong place (it must be `projects/<project name>/<script>`, the project's name as `GET /v1/projects` shows it), the server has no `[harness]`, or the harness repository was changed less than 30 seconds ago elsewhere. The built-in script runs and nothing complains. Check with `git -C <data_dir>/harness show HEAD:projects/<project name>/<script>`. |
-| `no column "<name>"` | `moebius.move` got a name that is not exactly one of the six columns, such as `In Progress`. |
+| `no column "<name>"` | `moebius.move` got a name that is not a column of the project's board (the six, or the custom ones of its `kanban.toml`; names are found in any case), such as `In Progres`. |
 | `no agent named <name>` | `moebius.start_run` named an agent that is not in `moebius.toml`. Test with `moebius.has_agent(name)` first. |
 | Runs pile up. | `moebius.start_run` starts nothing and returns `nil` while `run_limit` runs of cards are going, and the card waits with `the run limit is reached`; return when it does, as `code.luau` does. A script that calls it on every tick must still wait while the card's latest run is going. |
 | A card waits and nobody knows why. | Call `moebius.wait(reason)` on every path that leaves the card where it is. The reason appears in the snapshot's `waiting` and in `card_waiting` events. |

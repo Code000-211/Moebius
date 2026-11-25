@@ -2,26 +2,17 @@
  * The columns of a board and the cards each shows: their names, the order of the cards, the stacks under them after the
  * filters.
  */
+import { classOf, columnNames } from "../../../api/columns";
 import type { Board, Card, InboxItem } from "../../../api/types/board";
 import { type Filters, matchesCard, priorityRank } from "./filters";
 import { descendants, isClosed, rootOf, type Stack } from "./stacks";
 
-/** The columns of the default workflow, left to right. */
-export const COLUMNS = [
-  "Backlog",
-  "Not started",
-  "In progress",
-  "In review",
-  "Ready to merge",
-  "Done",
-] as const;
-
-/** How many cards Done lists, the highest numbers first, because it keeps growing. */
+/** How many cards a column that counts as Done lists, the highest numbers first, because it keeps growing. */
 export const DONE_SHOWN = 10;
 
-/** The names of the columns a board shows: the default workflow's, Backlog always so that issues have a place to wait, and any other column a card is in, last. */
+/** The names of the columns a board shows: the project's, custom ones in place (Backlog always, so that issues have a place to wait), and any other column a card is in, last. */
 export function boardColumns(board: Board): string[] {
-  const columns: string[] = [...COLUMNS];
+  const columns = columnNames(board);
   for (const card of board.cards) {
     if (!columns.includes(card.column)) columns.push(card.column);
   }
@@ -32,7 +23,12 @@ export function boardColumns(board: Board): string[] {
  * Cards in the order Display's sorting asks for: by number (the default; Done newest first), newest first, or by
  * title. The cards given are not changed.
  */
-export function orderCards(cards: readonly Card[], sort: string, column?: string): Card[] {
+export function orderCards(
+  cards: readonly Card[],
+  sort: string,
+  /** Whether the cards are in a column that counts as Done, which lists the newest first. */
+  done = false,
+): Card[] {
   const ordered = [...cards];
   if (sort === "newest") {
     return ordered.sort((a, b) => b.created_at - a.created_at || b.number - a.number);
@@ -55,7 +51,7 @@ export function orderCards(cards: readonly Card[], sort: string, column?: string
     );
   }
   ordered.sort((a, b) => a.number - b.number);
-  return column === "Done" ? ordered.reverse() : ordered;
+  return done ? ordered.reverse() : ordered;
 }
 
 export interface ColumnCards {
@@ -105,11 +101,11 @@ export function groupByColumn(
       const cards = orderCards(
         kept.filter((card) => card.column === column),
         sort,
-        column,
+        classOf(board, column) === "Done",
       );
       return {
         column,
-        cards: column === "Done" ? cards.slice(0, DONE_SHOWN) : cards,
+        cards: classOf(board, column) === "Done" ? cards.slice(0, DONE_SHOWN) : cards,
         total: cards.length,
         stacks,
       };

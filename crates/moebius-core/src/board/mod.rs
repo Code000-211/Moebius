@@ -13,6 +13,7 @@
 //! - `limits`: the run, round and token limits scripts see.
 //! - `kanban`: the columns and the default Kanban's scripts built into the server, and a repository's overrides.
 //! - `runs`: what the engine needs of a harness to start runs and chats (`Runs`), which `pibolt` implements.
+//! - `custom_columns`: tests of a project's custom columns (ADR 0030) in the engine.
 //! - `dry_run`: `check_script`, which runs a script once against a made-up card, for `moebius check-script`.
 //! - `scripts`: editing a column's script, saved as a commit in the repository.
 
@@ -20,6 +21,8 @@ mod api;
 mod attempts;
 mod cache;
 mod card;
+#[cfg(test)]
+mod custom_columns;
 mod dry_run;
 mod engine;
 mod kanban;
@@ -34,7 +37,7 @@ pub(crate) mod testing;
 
 pub use cache::{RECHECK, Stamp};
 pub use card::{Review, latest_review};
-pub use dry_run::check_script;
+pub use dry_run::{check_script, check_script_in};
 pub use engine::{BoardError, Engine, Step};
 pub use kanban::{Column, Kanban, built_in_script, column_named, project_script, resolve_column};
 pub use limits::Limits;

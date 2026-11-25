@@ -131,7 +131,33 @@ interface HistoryEntry {
 /** A title longer than any column: one word with no break, and then words. */
 export const LONG_TITLE = `${"Supercalifragilistic".repeat(8)} and then a title that goes on for a long while so that it wraps`;
 
+/**
+ * The columns of the project, as the server sends them: the six built-in ones and the two a `kanban.toml` adds after
+ * In review, which count as In review. `file` is the script of the column.
+ */
+const BUILT_IN: string[] = [
+  "Backlog",
+  "Not started",
+  "In progress",
+  "In review",
+  "Ready to merge",
+  "Done",
+];
+
+export const COLUMNS = [
+  { name: "Backlog", counts_as: "Backlog", file: "backlog" },
+  { name: "Not started", counts_as: "Not started", file: "ready" },
+  { name: "In progress", counts_as: "In progress", file: "code" },
+  { name: "In review", counts_as: "In review", file: "review" },
+  { name: "Ready for testing", counts_as: "In review", file: "testing" },
+  { name: "Being measured", counts_as: "In review", file: "measured" },
+  { name: "Ready to merge", counts_as: "Ready to merge", file: "merge" },
+  { name: "Done", counts_as: "Done", file: "done" },
+] as const;
+
 const SCRIPTS: Record<string, string> = {
+  "ready for testing": "testing",
+  "being measured": "measured",
   backlog: "backlog",
   "not started": "ready",
   "in progress": "code",
@@ -229,6 +255,11 @@ export interface BoardFake {
    * returns their numbers. The page reads the board again on the next event.
    */
   seedApprovals(count: number): number[];
+  /**
+   * Puts three cards in the project's custom columns, two in "Ready for testing" and one in "Being measured", numbered
+   * after the last, and returns their numbers. The columns themselves are always there.
+   */
+  seedCustomColumns(): number[];
   /** Adds `count` plain cards to `column`, numbered after the last, and returns their numbers in order. */
   seedCards(count: number, column: string): number[];
   /**
@@ -421,6 +452,7 @@ export function createBoardFake(send: (event: ServerEvent) => void): BoardFake {
     return {
       ...rest,
       closed: c.closed || c.column === "Done",
+      column_class: COLUMNS.find((each) => each.name === c.column)?.counts_as ?? "Not started",
       changes: [...(c.change ? [c.change] : []), ...more_changes],
     };
   };
@@ -801,6 +833,14 @@ export function createBoardFake(send: (event: ServerEvent) => void): BoardFake {
         boards: [
           {
             repository: repo,
+            project_columns: {
+              "1": COLUMNS.map(({ name, counts_as, file }) => ({
+                name,
+                counts_as,
+                custom: !BUILT_IN.includes(name),
+                script: `${file}.luau`,
+              })),
+            },
             cards: cards.map(view),
             round_limit: 5,
             waiting: {},
@@ -815,6 +855,18 @@ export function createBoardFake(send: (event: ServerEvent) => void): BoardFake {
       const target = find(id);
       if (!target) throw new Error(`no card ${id}`);
       return move(target, column);
+    },
+    seedCustomColumns() {
+      const first = Math.max(...cards.map((c) => c.id)) + 1;
+      const titles: Array<[string, string]> = [
+        ["Try the export by hand", "Ready for testing"],
+        ["Check the cache hit rate", "Ready for testing"],
+        ["Measure the cold start", "Being measured"],
+      ];
+      return titles.map(([title, column], at) => {
+        cards.push(card(first + at, { title, column }));
+        return first + at;
+      });
     },
     seedCards(count, column) {
       const first = Math.max(...cards.map((c) => c.id)) + 1;

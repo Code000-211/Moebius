@@ -7,6 +7,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useMemo } from "react";
 import { assignTo, claim, closeIssue, release, reopenIssue } from "../../api/calls/board";
 import { people as loadPeople } from "../../api/calls/people";
+import type { HasColumns } from "../../api/columns";
 import { isApiError } from "../../api/http";
 import { keys } from "../../api/keys";
 import type { Card, InboxItem } from "../../api/types/board";
@@ -20,6 +21,7 @@ import type { Decision, Notice } from "./decisions";
 export function CardFocus({
   card,
   item,
+  columns,
   decide,
   onNotice,
   onBlock,
@@ -28,6 +30,8 @@ export function CardFocus({
 }: {
   card: Card;
   item: InboxItem | undefined;
+  /** The columns of the card's project. */
+  columns?: HasColumns;
   decide: (decision: Decision) => void;
   onNotice: (notice: Notice) => void;
   onBlock: (card: Card) => void;
@@ -80,9 +84,9 @@ export function CardFocus({
     };
     return {
       label: `${cardKey(card)} ${card.title}`,
-      commands: cardCommands(card, item, actions, people),
+      commands: cardCommands(card, item, actions, people, columns),
     };
-  }, [card, item, people, decide, mutate, onBlock, onAddSubIssue, onReject]);
+  }, [card, item, columns, people, decide, mutate, onBlock, onAddSubIssue, onReject]);
 
   return <PaletteFocusFor focus={focus} />;
 }

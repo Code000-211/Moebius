@@ -23,6 +23,7 @@ export function ScriptEditor({
   column,
   path,
   own,
+  counts,
   saved,
   notice,
   setNotice,
@@ -32,6 +33,8 @@ export function ScriptEditor({
   column: string;
   path: string;
   own: boolean;
+  /** The built-in column a column of the project's own counts as; a column that is built in has none. */
+  counts?: string;
   saved: string;
   notice: ScriptNotice | null;
   setNotice: (notice: ScriptNotice | null) => void;
@@ -43,6 +46,8 @@ export function ScriptEditor({
   const [problem, setProblem] = useState<ScriptProblem | null>(null);
   const [asking, setAsking] = useState(false);
   const changed = text !== saved;
+  /** What the column falls back to when the project's own script goes. */
+  const fallback = counts === undefined ? "Use the built-in script" : `Use the script of ${counts}`;
 
   const done = (detail: { text: string; source: string }, message: string) => {
     queryClient.setQueryData(keys.script(project, column), { ...detail, column, path });
@@ -76,7 +81,12 @@ export function ScriptEditor({
     mutationFn: () => deleteScript(project, column),
     onSuccess: (detail) => {
       setAsking(false);
-      done(detail, "The column runs the built-in script again.");
+      done(
+        detail,
+        counts === undefined
+          ? "The column runs the built-in script again."
+          : `The column runs the script of ${counts} again.`,
+      );
     },
     onError: (error) => {
       setAsking(false);
@@ -87,7 +97,12 @@ export function ScriptEditor({
   return (
     <div className="flex flex-col gap-4">
       <p className="m-0 text-sm text-secondary">
-        <span className="font-mono">{path}</span> · {own ? "this project's own" : "built in"}
+        <span className="font-mono">{path}</span> ·{" "}
+        {own
+          ? "this project's own"
+          : counts === undefined
+            ? "built in"
+            : `no file in this project yet, so it runs the script of ${counts}`}
       </p>
       <Suspense fallback={<SkeletonLines lines={10} message="Opening the editor" />}>
         <CodeEditor
@@ -134,7 +149,7 @@ export function ScriptEditor({
           {own &&
             (asking ? (
               <span className="flex flex-wrap items-center gap-3 text-base text-text">
-                Use the built-in script instead?
+                {fallback} instead?
                 <Button variant="secondary" onClick={() => setAsking(false)}>
                   Keep it
                 </Button>
@@ -143,12 +158,12 @@ export function ScriptEditor({
                   disabled={useBuiltIn.isPending}
                   onClick={() => useBuiltIn.mutate()}
                 >
-                  Use the built-in script
+                  {fallback}
                 </Button>
               </span>
             ) : (
               <Button variant="secondary" onClick={() => setAsking(true)}>
-                Use the built-in script
+                {fallback}
               </Button>
             ))}
         </div>

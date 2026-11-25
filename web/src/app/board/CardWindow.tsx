@@ -12,6 +12,7 @@ import { ArrowsOutIcon } from "@phosphor-icons/react";
 import { memo, type ReactNode, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Link } from "react-router";
+import { cardClass, isDone } from "../../api/columns";
 import type { Board, Card, InboxItem } from "../../api/types/board";
 import { ChangeDelta } from "../../diff/Changes";
 import { Button } from "../../ui/components/Button";
@@ -40,9 +41,9 @@ import { NeedsYouBlock } from "./NeedsYou";
 export function iconOf(card: Card, status: CardStatus): StatusState {
   if (status === "live") return "running";
   if (status === "needs-you" || status === "stuck" || status === "held") return "needsYou";
-  if (card.closed || card.column === "Done") return "done";
-  if (card.column === "In review") return "inReview";
-  if (card.column === "In progress") return "inProgress";
+  if (card.closed || isDone(card)) return "done";
+  if (cardClass(card) === "In review") return "inReview";
+  if (cardClass(card) === "In progress") return "inProgress";
   return "notStarted";
 }
 

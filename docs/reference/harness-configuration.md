@@ -67,7 +67,7 @@ extensions/...         any files an agent's extensions name
 packages/<name>/       a vendored Pi package with its production dependencies (see Packages)
 packages.lock          what each vendored package was fetched as
 repos/<repository>/... the settings of one repository (see Repository settings)
-projects/<project>/... the settings of one project: its column scripts and its workflows (see Project settings)
+projects/<project>/... the settings of one project: its custom columns, the scripts of its columns and its workflows (see Project settings)
 templates/...          templates for issues and wiki pages (see Templates)
 ```
 
@@ -417,8 +417,14 @@ project whose board the card is on, from the clone's default branch, and a symbo
 | File | Meaning |
 |---|---|
 | `workflows/<name>.toml` | A workflow the project owns (see [workflows](workflows.md); ADR 0025). Names are unique within a project, and two projects may each have a `release`. A person saves one with [`PUT /v1/projects/{id}/workflows/{name}`](desktop-api.md#put-v1projectsidworkflowsname); a run of it belongs to one of the project's repositories. |
-| `<file>.luau` | The script of a column in place of the built-in one: `backlog`, `ready` (for `Not started`), `code`, `review`, `merge` and `done` (see [column scripts](column-scripts.md#project-overrides)). A person saves one with [`PUT /v1/projects/{id}/scripts/{column}`](desktop-api.md#put-v1projectsidscriptscolumn) or the board. |
+| `<file>.luau` | The script of a column in place of the built-in one: `backlog`, `ready` (for `Not started`), `code`, `review`, `merge` and `done` (see [column scripts](column-scripts.md#project-overrides)), or the script a custom column of `kanban.toml` names (`testing.luau`). A person saves one with [`PUT /v1/projects/{id}/scripts/{column}`](desktop-api.md#put-v1projectsidscriptscolumn) or the board. |
+| `kanban.toml` | The project's custom columns: one `[[column]]` for each, with `name` and optionally `script`, `after` and `counts_as` (see [custom columns](column-scripts.md#custom-columns); ADR 0030). Read with the project's other files. A save is refused when the file is not valid or would leave cards in a column it no longer has, wherever it comes from: a person's edit, the Moebius agent's and the merge of a proposal. There is no route of its own and no editor in the web app: it is a file of the repository, edited there, in a harness chat or by the Moebius agent, and the board shows its columns (read-only) in the Columns tab of the project's settings, with each script editable. Without it the board has the six built-in columns. |
 
+- **Custom columns and their scripts are files of the project's folder**, `kanban.toml` and the `.luau` files it names, next to the
+  six built-in scripts. A script a custom column names that is not there runs the script of the column's class, with a
+  notice on the card. Renaming a project moves them with the rest of the folder; a project's folder holds no other `.luau`
+  file the board reads. The Retro's proposals may change them like any project file (`projects/<project>/<file>.luau` and `kanban.toml`), and the merge
+  of one that leaves cards in a column the file would drop is refused.
 - **Workflows are a project's, in `workflows/` of its folder**, next to its column scripts. A project's `workflows/`
   folder is read for the schedule and for a run's file; renaming a project moves it with the rest of the folder, and a
   project cannot be deleted while it owns workflows. The server-wide folder `workflows/` at the root of the repository

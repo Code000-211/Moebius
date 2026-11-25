@@ -2,6 +2,7 @@
  * The words and links of a card: tokens, the small line under its number, the badges, the forge and pull request
  * addresses, the history and the worktree its change was made in.
  */
+import { cardClass } from "../../../api/columns";
 import type { Board, Card, Change, Repository } from "../../../api/types/board";
 import type { HistoryEntry, Run } from "../../../api/types/cards";
 import { plural } from "../../../ui/lib/format";
@@ -23,7 +24,7 @@ export function tokens(n: number): string {
  * business, where the number is read on its own row rather than hung on the card.
  */
 export function cardDetail(card: Card, roundLimit: number): string | null {
-  if (card.column === "In progress" || card.column === "In review") {
+  if (cardClass(card) === "In progress" || cardClass(card) === "In review") {
     const parts: string[] = [];
     if (card.run) parts.push(card.run.agent);
     if (card.rounds > 0) {
@@ -31,7 +32,7 @@ export function cardDetail(card: Card, roundLimit: number): string | null {
     }
     return parts.length > 0 ? parts.join(" · ") : null;
   }
-  if (card.column === "Ready to merge") {
+  if (cardClass(card) === "Ready to merge") {
     return plural(card.rounds, "round", "rounds");
   }
   return null;
@@ -226,7 +227,7 @@ export function changeWorktree(card: Card, runs: Run[]): string | null {
 export function cardIcon(card: Card, status: CardStatus): StatusState {
   if (status === "needs-you" || status === "stuck") return "needsYou";
   if (status === "live") return "running";
-  switch (card.column) {
+  switch (cardClass(card)) {
     case "Backlog":
       return "backlog";
     case "Not started":

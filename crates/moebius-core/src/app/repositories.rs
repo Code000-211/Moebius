@@ -277,11 +277,19 @@ impl App {
             )));
         }
         // The home project goes with its last repository, so what keeps a project from being deleted keeps this too.
-        if let Some(project) = self.store.project_removed_with_repository(id)? {
+        let removed_project = self.store.project_removed_with_repository(id)?;
+        if let Some(project) = removed_project {
             self.check_project_deletable(project)?;
         }
         if !self.store.delete_repository(id)? {
             return Err(AppError::NotFound(format!("repository {id}")));
+        }
+        if let Some(project) = removed_project {
+            // The columns read of the removed project's file are of no use to a project that may be made anew.
+            self.column_cache
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .remove(&project);
         }
         self.repos.remove(&repository.name)?;
         let context = BTreeMap::from([("repository".into(), repository.name.clone())]);

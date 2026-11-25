@@ -376,6 +376,10 @@ const FILES: &[(&str, &str)] = &[
         include_str!("../../../../docs/guide/command-line.md"),
     ),
     (
+        "guide/custom-columns.md",
+        include_str!("../../../../docs/guide/custom-columns.md"),
+    ),
+    (
         "guide/desktop-app.md",
         include_str!("../../../../docs/guide/desktop-app.md"),
     ),

@@ -95,6 +95,19 @@ differently. A project's id is in `"$MOEBIUS" api GET /v1/projects`.
 Build the body with `jq -n --rawfile text ready.luau '{text: $text}' > body.json` and pass `--body body.json`. The server
 checks the script again and refuses it with the check's message. How to write the script: the `moebius-workflows` skill.
 
+A project can add columns of its own among the built-in ones, each with a script of its own and the built-in column it
+counts as. They are defined in the project's `kanban.toml`:
+
+```sh
+"$MOEBIUS" api GET /v1/projects/1/columns                                # the file, with the board it makes
+"$MOEBIUS" api PUT /v1/projects/1/columns --body '{"text": "...", "reason": "..."}'
+"$MOEBIUS" check-script testing.luau --column "Ready for testing" --kanban kanban.toml   # a script of a custom column
+"$MOEBIUS" api DELETE /v1/projects/1/columns                             # back to the six built-in columns
+```
+
+The server refuses a file that is not a valid board, and any file (or removal) that takes away a column while cards are
+in it; the refusal names the cards, so move them first.
+
 ## A file of a repository
 
 A repository's own settings (`rules.md`, `review.md`, `checks`, `test-first` and `localize`) and its projects' column

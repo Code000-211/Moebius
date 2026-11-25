@@ -60,6 +60,20 @@ pub fn files() -> Vec<String> {
     files
 }
 
+/// The files the Retro may propose to change for a repository whose home project is `home`: [`files`] and the scripts
+/// of the project's custom columns (see `app::columns`).
+pub fn files_of(app: &App, home: Option<&crate::store::Project>) -> Vec<String> {
+    let mut files = files();
+    if let Some(home) = home {
+        for column in &app.project_columns(home).columns {
+            if !files.contains(&column.script) {
+                files.push(column.script.clone());
+            }
+        }
+    }
+    files
+}
+
 /// What the Retro analyst is told about proposals for Moebius's own configuration: how to state them, the values of
 /// [`KEYS`] now, and the settings files the projects of the report's cards have now.
 pub fn brief(app: &App, live: &Live, report: &Report) -> Result<String> {
@@ -81,7 +95,7 @@ pub fn brief(app: &App, live: &Live, report: &Report) -> Result<String> {
             continue;
         };
         let home = app.store.project(repository.home_project_id)?;
-        let texts: serde_json::Map<String, Value> = files()
+        let texts: serde_json::Map<String, Value> = files_of(app, home.as_ref())
             .into_iter()
             .filter_map(|file| {
                 let text = read::current(app, &repository, home.as_ref(), &file)?;

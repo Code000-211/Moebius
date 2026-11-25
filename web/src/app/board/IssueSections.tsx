@@ -7,7 +7,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { type ReactNode, type RefObject, useEffect, useState } from "react";
 import { Link } from "react-router";
-import { comment, comments, editCard, history } from "../../api/calls/board";
+import { comment, comments, editCard, history, snapshot } from "../../api/calls/board";
 import { isApiError } from "../../api/http";
 import { keys } from "../../api/keys";
 import type { Card, InboxItem } from "../../api/types/board";
@@ -243,7 +243,13 @@ export function CardThread({
   const toast = useToast();
   const list = useQuery({ queryKey: keys.comments(card.id), queryFn: () => comments(card.id) });
   const entries = useQuery({ queryKey: keys.history(card.id), queryFn: () => history(card.id) });
-  const items = timelineOf(entries.data ?? [], list.data ?? [], item);
+  // The columns of the card's project, to read a move between custom columns by their classes.
+  const columns = useQuery({
+    queryKey: keys.snapshot,
+    queryFn: () => snapshot(),
+    select: (all) => all.boards.find((b) => b.cards.some((c) => c.id === card.id))?.columns,
+  }).data;
+  const items = timelineOf(entries.data ?? [], list.data ?? [], item, columns);
   const reading = list.isPending || entries.isPending;
   const failed = list.error ?? entries.error;
   // A failed read is said once, as a toast; the thread keeps what it has.

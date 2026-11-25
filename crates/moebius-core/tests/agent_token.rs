@@ -140,6 +140,12 @@ async fn other_agents_and_revoked_tokens_are_refused() {
             "/v1/projects/1/scripts/Backlog",
             Some(json!({ "text": "" })),
         ),
+        (
+            Method::PUT,
+            "/v1/projects/1/columns",
+            Some(json!({ "text": "" })),
+        ),
+        (Method::GET, "/v1/projects/1/columns", None),
     ] {
         assert_eq!(f.send(method, path, &coder, body).await, 401, "{path}");
     }

@@ -1,5 +1,7 @@
 //! The `card` table a script is given, and what it says of the card's review and change:
 //!
+//! - `card.column`, `card.column_class`: the card's column, and the built-in column it counts as (the same for a built-in
+//!   column; a custom column of the project counts as the class its `kanban.toml` gives it).
 //! - `card.blocked_by`: the numbers of the issues blocking the card that are not done yet (an issue with no card counts
 //!   as not done); empty when nothing blocks.
 //! - `card.parent`, `card.children`, `card.labels`, `card.claimed_by`: the issue's parent (a number), its sub-issues
@@ -138,6 +140,10 @@ impl Engine {
         t.set("body", card.body.as_str())?;
         t.set("author", card.author.as_str())?;
         t.set("column", card.column.as_str())?;
+        t.set(
+            "column_class",
+            self.app.column_class(card.project_id, &card.column),
+        )?;
         t.set("note", card.note.as_deref())?;
         t.set("repositories", card.repositories.clone())?;
         t.set("changes", changes_table(&self.app, lua, card.id)?)?;

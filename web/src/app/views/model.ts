@@ -3,9 +3,11 @@
  * how a view's cards are set out in each layout (list, board, calendar by due date, timeline by cycle), and the words
  * that describe a view's filter. The server keeps the views and works out the cards for each person.
  */
+
+import { columnIndex, columnsOfCards } from "../../api/columns";
 import type { Cycle } from "../../api/types/cycles";
 import type { View, ViewCard, ViewFields, ViewFilter, ViewLayout } from "../../api/types/views";
-import { COLUMNS, type Filters } from "../board/model";
+import type { Filters } from "../board/model";
 import { boardPath } from "../pages";
 
 export const LAYOUTS: Array<[ViewLayout, string]> = [
@@ -215,12 +217,14 @@ function grouped(
   );
 }
 
-/** The board layout: a lane for each column, the usual ones first, then any other in the order met. */
+/**
+ * The board layout: a lane for each column. A view spans projects, whose custom columns differ, so the order is the
+ * built-in columns left to right with each custom column after the last built-in one of its class (the card's
+ * `column_class`; last when the server sent none), and custom columns of one class by name.
+ */
 export function byColumn(cards: readonly ViewCard[]): Group[] {
-  const rank = (column: string) => {
-    const i = (COLUMNS as readonly string[]).indexOf(column);
-    return i === -1 ? COLUMNS.length : i;
-  };
+  const columns = columnsOfCards(cards);
+  const rank = (column: string) => columnIndex(columns, column);
   return grouped(
     cards,
     (c) => c.column,

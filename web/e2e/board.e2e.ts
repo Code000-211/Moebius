@@ -1155,8 +1155,8 @@ describe("dragging cards", () => {
       await fresh();
       await openBoard();
       const before = fake().requests.length;
-      // Not started -> Done: four columns to the right.
-      await drag(card(3), 4);
+      // Not started -> Done: six columns to the right (two of them custom).
+      await drag(card(3), 6);
       await alert("Cannot move #3 to Done: Nobody decides this card now").waitFor();
       await column("Not started").getByTestId("card-3").waitFor();
       expect(fake().requests.length).toBe(before);
@@ -1178,7 +1178,7 @@ describe("dragging cards", () => {
   it.skipIf(usesRealServer)("refuses to move a card that is working, saying so", async () => {
     await fresh();
     await openBoard();
-    await drag(card(1), 3);
+    await drag(card(1), 5);
     await alert("Moebius is working on this card").waitFor();
     await column("In progress").getByTestId("card-1").waitFor();
   });
@@ -1289,7 +1289,7 @@ describe("dragging cards", () => {
       await fresh();
       await openBoard();
       const before = fake().requests.length;
-      await drag(card(5), -2);
+      await drag(card(5), -4);
       await dock().getByLabel("Why? The next round is told").waitFor();
       expect(fake().requests.length).toBe(before);
       await dock().getByLabel("Why? The next round is told").fill("Needs a test");

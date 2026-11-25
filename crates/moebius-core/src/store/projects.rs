@@ -448,8 +448,11 @@ impl Store {
 
     /// How many cards on the project's board are open: not closed and not in `Done`.
     pub fn open_cards(&self, project_id: i64) -> Result<i64> {
+        let class = super::class_sql("cards.column_name", "cards.project_id");
         Ok(self.read().query_row(
-            "SELECT COUNT(*) FROM cards WHERE project_id = ?1 AND NOT closed AND column_name <> 'Done'",
+            &format!(
+                "SELECT COUNT(*) FROM cards WHERE project_id = ?1 AND NOT closed AND {class} <> 'Done'"
+            ),
             [project_id],
             |r| r.get(0),
         )?)

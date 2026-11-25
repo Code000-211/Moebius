@@ -660,6 +660,34 @@ pub fn show_board(snapshot: &Value, filter: Option<&str>) -> Result<String, Stri
         ));
         let cards = board["cards"].as_array().map(Vec::as_slice).unwrap_or(&[]);
         let mut columns: Vec<String> = COLUMNS.iter().map(|c| c.to_string()).collect();
+        // The custom columns of the projects, each after the column before it on its project's board, with the
+        // built-in column it counts as.
+        let mut counts_as: Vec<(String, String)> = Vec::new();
+        let mut projects: Vec<(&String, &Value)> = board["project_columns"]
+            .as_object()
+            .into_iter()
+            .flatten()
+            .collect();
+        projects.sort_by_key(|(id, _)| id.parse::<i64>().unwrap_or(i64::MAX));
+        for (_, project) in projects {
+            let mut before: Option<String> = None;
+            for column in project.as_array().into_iter().flatten() {
+                let name = cell(&column["name"]);
+                if column["custom"].as_bool() == Some(true) {
+                    if !columns.contains(&name) {
+                        let at = before
+                            .as_ref()
+                            .and_then(|b| columns.iter().position(|c| c == b))
+                            .map_or(columns.len(), |at| at + 1);
+                        columns.insert(at, name.clone());
+                    }
+                    if !counts_as.iter().any(|(n, _)| *n == name) {
+                        counts_as.push((name.clone(), cell(&column["counts_as"])));
+                    }
+                }
+                before = Some(name);
+            }
+        }
         for card in cards {
             let column = cell(&card["column"]);
             if !columns.contains(&column) {
@@ -671,7 +699,12 @@ pub fn show_board(snapshot: &Value, filter: Option<&str>) -> Result<String, Stri
                 .iter()
                 .filter(|c| cell(&c["column"]) == column)
                 .collect();
-            out.push(format!("  {column} ({})", here.len()));
+            match counts_as.iter().find(|(name, _)| *name == column) {
+                Some((_, class)) => {
+                    out.push(format!("  {column} (counts as {class}) ({})", here.len()))
+                }
+                None => out.push(format!("  {column} ({})", here.len())),
+            }
             for card in here {
                 let mut line = format!(
                     "    {}  #{}  {}",
@@ -728,7 +761,12 @@ pub fn show_card(snapshot: &Value, id: i64) -> Result<String, String> {
                 cell(&board["repository"]["name"]),
                 cell(&card["repository_id"])
             ),
-            format!("column: {}", cell(&card["column"])),
+            match card["column_class"].as_str() {
+                Some(class) if class != cell(&card["column"]) => {
+                    format!("column: {} (counts as {class})", cell(&card["column"]))
+                }
+                _ => format!("column: {}", cell(&card["column"])),
+            },
             format!("author: {}", cell(&card["author"])),
             format!(
                 "rounds: {}, tokens: {}",
@@ -928,6 +966,39 @@ mod tests {
                 .starts_with("card 12 #2 Second\nrepository: demo (1)")
         );
         assert_eq!(render(&Show::Card(99), &text).unwrap_err(), "no card 99");
+    }
+
+    #[test]
+    fn a_projects_custom_columns_are_listed_where_its_board_has_them() {
+        let snapshot = json!({"boards": [{
+            "repository": {"id": 1, "name": "demo"},
+            "project_columns": {"1": [
+                {"name": "Backlog", "counts_as": "Backlog", "custom": false, "script": "backlog.luau"},
+                {"name": "Not started", "counts_as": "Not started", "custom": false, "script": "ready.luau"},
+                {"name": "In progress", "counts_as": "In progress", "custom": false, "script": "code.luau"},
+                {"name": "In review", "counts_as": "In review", "custom": false, "script": "review.luau"},
+                {"name": "Ready for testing", "counts_as": "In review", "custom": true, "script": "testing.luau"},
+                {"name": "Ready to merge", "counts_as": "Ready to merge", "custom": false, "script": "merge.luau"},
+                {"name": "Done", "counts_as": "Done", "custom": false, "script": "done.luau"},
+            ]},
+            "cards": [
+                {"id": 11, "number": 1, "title": "First", "column": "Ready for testing", "column_class": "In review"},
+                {"id": 12, "number": 2, "title": "Second", "column": "Done", "column_class": "Done"},
+            ],
+        }]});
+        let text = snapshot.to_string();
+        assert_eq!(
+            render(&Show::Board(None), &text).unwrap(),
+            "demo (repository 1)\n  Backlog (0)\n  Not started (0)\n  In progress (0)\n  In review (0)\n  \
+             Ready for testing (counts as In review) (1)\n    11  #1  First\n  Ready to merge (0)\n  Done (1)\n    12  #2  Second"
+        );
+        let card = render(&Show::Card(11), &text).unwrap();
+        assert!(
+            card.contains("column: Ready for testing (counts as In review)"),
+            "{card}"
+        );
+        let done = render(&Show::Card(12), &text).unwrap();
+        assert!(done.contains("\ncolumn: Done\n"), "{done}");
     }
 
     /// The request the command line `args` stands for, as method, path and body; `current` is what a lookup of the

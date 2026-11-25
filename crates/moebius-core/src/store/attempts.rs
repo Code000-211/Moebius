@@ -103,18 +103,20 @@ impl Store {
         )
     }
 
-    /// The attempts of every card of a repository that is not in `except_column`, oldest first: one read for a board.
+    /// The attempts of every card of a repository that is not in a column that counts as `except_class`, oldest
+    /// first: one read for a board.
     pub fn attempts_for_board(
         &self,
         repository_id: i64,
-        except_column: &str,
+        except_class: &str,
     ) -> Result<Vec<Attempt>> {
+        let class = super::class_sql("c.column_name", "c.project_id");
         self.rows(
             &format!(
                 "SELECT {COLUMNS} FROM attempts a JOIN cards c ON c.id = a.card_id
-                 WHERE c.repository_id = ?1 AND c.column_name <> ?2 ORDER BY a.run_id"
+                 WHERE c.repository_id = ?1 AND {class} <> ?2 ORDER BY a.run_id"
             ),
-            params![repository_id, except_column],
+            params![repository_id, except_class],
             attempt,
         )
     }

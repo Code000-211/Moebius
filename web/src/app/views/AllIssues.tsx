@@ -10,6 +10,7 @@ import { useState } from "react";
 import { listIssues, listKinds } from "../../api/calls/kinds";
 import { people as loadPeople } from "../../api/calls/people";
 import { listProjects } from "../../api/calls/projects";
+import { withProjectClasses } from "../../api/columns";
 import { sayError } from "../../api/errorText";
 import { keys } from "../../api/keys";
 import { FilterBar } from "../../ui/filters/FilterBar";
@@ -87,7 +88,7 @@ export function AllIssues() {
         <div ref={fill.ref} style={{ height: fill.height }}>
           <VirtualList
             label="Issues"
-            items={shown.data.map((card) => ({
+            items={withProjectClasses(shown.data, projectList).map((card) => ({
               type: "row" as const,
               key: String(card.id),
               data: card,

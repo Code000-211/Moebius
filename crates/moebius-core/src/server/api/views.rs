@@ -121,6 +121,48 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn a_view_filters_by_a_custom_column_of_the_project() {
+        let (dir, state, addr) = start().await;
+        crate::harness::repo::testing::use_harness(&state.app, dir.path());
+        crate::harness::repo::testing::put(
+            &state.app,
+            "radiance",
+            "kanban.toml",
+            "[[column]]\nname = \"Ready for testing\"\nafter = \"In review\"\n",
+        );
+        let token = state.token.to_string();
+        let card = state.app.store.cards(1).unwrap()[0].clone();
+        state
+            .app
+            .store
+            .move_card(card.id, "Ready for testing")
+            .unwrap();
+        let (status, made) = call(
+            "POST",
+            &addr,
+            &token,
+            "/v1/views",
+            Some(json!({"name": "Testing", "filter": {"columns": ["ready for testing"]}})),
+        )
+        .await;
+        assert_eq!(status, Status::OK, "{made}");
+        let id = made["id"].as_i64().unwrap();
+        let (_, shown) = call("GET", &addr, &token, &format!("/v1/views/{id}/cards"), None).await;
+        assert_eq!(shown["cards"][0]["id"], card.id);
+        let (_, other) = call(
+            "POST",
+            &addr,
+            &token,
+            "/v1/views",
+            Some(json!({"name": "Review", "filter": {"columns": ["Backlog"]}})),
+        )
+        .await;
+        let id = other["id"].as_i64().unwrap();
+        let (_, shown) = call("GET", &addr, &token, &format!("/v1/views/{id}/cards"), None).await;
+        assert_eq!(shown["cards"], json!([]));
+    }
+
+    #[tokio::test]
     async fn a_view_is_made_opened_edited_and_deleted_through_the_api() {
         let (_d, state, addr) = start().await;
         let token = state.token.to_string();

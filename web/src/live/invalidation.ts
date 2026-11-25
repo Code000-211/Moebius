@@ -107,7 +107,11 @@ export function invalidates(event: ServerEvent): QueryKey[] {
     // A draft is an inbox item, and a card is made when a request is accepted.
     stale.push(keys.requests(Number(event.data.project)), keys.snapshot);
   }
-  if (event.kind === "script_changed") stale.push(keys.scripts, keys.projectSettingsAll);
+  if (event.kind === "script_changed") {
+    stale.push(keys.scripts, keys.projectSettingsAll);
+    // The columns of a project are defined in its kanban.toml, which the board and the Columns tab draw.
+    if (event.data.column === "kanban.toml") stale.push(keys.snapshot, keys.projects);
+  }
   if (event.kind === "project_settings_changed") {
     stale.push(keys.projectSettingsAll);
     // The plugins' settings of a repository are files of its settings (`plugins/<plugin>`).

@@ -177,16 +177,27 @@ impl Engine {
 
         let (fx, names) = (
             effects.clone(),
-            self.kanban
-                .columns
-                .iter()
-                .map(|c| c.name.clone())
-                .collect::<Vec<_>>(),
+            self.app
+                .project_columns_of(card.project_id)
+                .map(|columns| {
+                    columns
+                        .columns
+                        .iter()
+                        .map(|c| c.name.clone())
+                        .collect::<Vec<_>>()
+                })
+                .unwrap_or_else(|_| self.kanban.columns.iter().map(|c| c.name.clone()).collect()),
         );
         m.set(
             "move",
             lua.create_function(move |_, (column, note): (String, Option<String>)| {
                 let column = resolve_column(&column).to_string();
+                // A column is called as the board spells it, in any case.
+                let column = names
+                    .iter()
+                    .find(|n| n.eq_ignore_ascii_case(&column))
+                    .cloned()
+                    .unwrap_or(column);
                 if !names.contains(&column) {
                     return Err(mlua::Error::runtime(format!("no column {column:?}")));
                 }

@@ -99,4 +99,28 @@ describe("the answer of a change in the snapshot", () => {
     await read.catch(() => {});
     expect(cards(client)[0]?.priority).toBe("high");
   });
+
+  it("drops the class a card had in its old column when it moves and the board knows no columns", () => {
+    const client = held(
+      board(1, [card(1, { column: "Being measured", column_class: "In review" })]),
+    );
+    putCard(client, card(1, { column: "Done" }));
+    expect(cards(client)[0]?.column_class).toBeUndefined();
+  });
+
+  it("works the class out again from the columns of the card's project when a card moves", () => {
+    const withColumns = {
+      ...board(1, [card(1, { column: "Done", column_class: "Done", project_id: 4 })]),
+      project_columns: {
+        "4": [
+          { name: "Not started", counts_as: "Not started" },
+          { name: "Being measured", counts_as: "In review" },
+          { name: "Done", counts_as: "Done" },
+        ],
+      },
+    } as unknown as Board;
+    const client = held(withColumns);
+    putCard(client, card(1, { column: "Being measured", project_id: 4 }));
+    expect(cards(client)[0]?.column_class).toBe("In review");
+  });
 });

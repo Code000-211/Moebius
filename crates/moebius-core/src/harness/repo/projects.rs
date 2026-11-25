@@ -15,6 +15,7 @@ use std::path::{Path, PathBuf};
 use super::HarnessRepo;
 use super::edits::{Edit, remove_if_there};
 use super::repositories::{DIR as REPOSITORIES_DIR, reserved_name};
+use crate::app::columns::{KANBAN_FILE, safe_script_name};
 use crate::app::{App, AppError, Result};
 use crate::board::{Kanban, built_in_script};
 use crate::decide::Actor;
@@ -36,9 +37,11 @@ const MOVE_WORKFLOWS_KIND: &str = "move_workflows";
 /// The kind of the decision recorded for moving a project's folder when it is renamed.
 const RENAME_KIND: &str = "rename_project";
 
-/// Whether `file` is one of a project's files: the script of a column of the default Kanban, such as `ready.luau`.
+/// Whether `file` is one of a project's files: the script of a column of the default Kanban, such as `ready.luau`,
+/// the project's `kanban.toml` that defines its custom columns, or a script file such a column names (a plain
+/// `.luau` file name, see `app::columns::safe_script_name`).
 pub fn is_project_file(file: &str) -> bool {
-    built_in_script(file).is_some()
+    built_in_script(file).is_some() || file == KANBAN_FILE || safe_script_name(file)
 }
 
 /// Whether the project name `name` can be a folder on every system: not empty, not starting with a dot, not ending
@@ -112,6 +115,16 @@ impl HarnessRepo {
         }
         if text.is_none() && !self.project_dir(name).join(file).is_file() {
             return Err(AppError::NotFound(format!("{file} of the project {name}")));
+        }
+        if file == KANBAN_FILE {
+            // The board must stay one: a valid file, and no card in a column it no longer has.
+            let project = app
+                .store
+                .projects()?
+                .into_iter()
+                .find(|p| p.name == name)
+                .ok_or_else(|| AppError::NotFound(format!("project {name}")))?;
+            app.check_kanban_save(&project, text)?;
         }
         let path = format!("{DIR}/{name}/{file}");
         context.insert("project".into(), name.into());
@@ -451,6 +464,49 @@ mod tests {
             Err(AppError::Conflict(_))
         ));
         assert_eq!(repo.project_file("Site", "ready.luau").unwrap(), "-- web\n");
+    }
+
+    #[test]
+    fn renaming_a_project_carries_its_columns_and_their_scripts_along() {
+        let (_dir, app, repo) = setup();
+        let board = "[[column]]\nname = \"Ready for testing\"\nscript = \"testing.luau\"\nafter = \"In review\"\n";
+        app.store.add_project("Web", "WEB").unwrap();
+        save(&app, &repo, "Web", "kanban.toml", Some(board)).unwrap();
+        save(&app, &repo, "Web", "testing.luau", Some("-- test\n")).unwrap();
+        assert!(
+            repo.move_project(&app, &Actor::first_owner(), ("Web", "Site"), || Ok(()))
+                .unwrap()
+                .is_some()
+        );
+        assert_eq!(repo.project_file("Site", "kanban.toml").unwrap(), board);
+        assert_eq!(
+            repo.project_file("Site", "testing.luau").unwrap(),
+            "-- test\n"
+        );
+        assert_eq!(repo.project_file("Web", "kanban.toml"), None);
+        assert_eq!(repo.project_file("Web", "testing.luau"), None);
+        let status = git(repo.path(), &["status", "--porcelain"]).unwrap();
+        assert!(status.is_empty(), "{status}");
+    }
+
+    #[test]
+    fn the_migration_leaves_a_repositorys_other_luau_files_and_its_kanban_file_where_they_are() {
+        let (_dir, app, repo) = setup();
+        let old = repo.repository_dir("api");
+        std::fs::create_dir_all(&old).unwrap();
+        std::fs::write(old.join("ready.luau"), "-- ready\n").unwrap();
+        std::fs::write(old.join("testing.luau"), "-- not a built-in column's\n").unwrap();
+        std::fs::write(old.join("kanban.toml"), "# not a repository's file\n").unwrap();
+        git(repo.path(), &["add", "-A"]).unwrap();
+        git(repo.path(), &["commit", "--quiet", "-m", "Old settings"]).unwrap();
+        let homes = [("api".to_string(), "API".to_string())];
+        assert_eq!(
+            repo.move_scripts_to_projects(&app, &homes).unwrap(),
+            ["repos/api/ready.luau -> projects/API/ready.luau"]
+        );
+        assert_eq!(repo.project_file("API", "testing.luau"), None);
+        assert_eq!(repo.project_file("API", "kanban.toml"), None);
+        assert!(repo.path().join("repos/api/testing.luau").exists());
     }
 
     #[test]

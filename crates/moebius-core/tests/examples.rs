@@ -89,6 +89,11 @@ impl CardRuns for IdleRuns {
 
 /// A project whose settings carry `script` as `ready.luau`, and an engine over it.
 fn engine_with_ready_script(script: &str) -> (tempfile::TempDir, Arc<App>, Engine, i64) {
+    engine_with_files(&[("ready.luau", script)])
+}
+
+/// A project whose settings carry `files`, and an engine over it.
+fn engine_with_files(files: &[(&str, &str)]) -> (tempfile::TempDir, Arc<App>, Engine, i64) {
     let dir = tempfile::tempdir().unwrap();
     let origin: PathBuf = dir.path().join("origin");
     std::fs::create_dir_all(&origin).unwrap();
@@ -100,7 +105,9 @@ fn engine_with_ready_script(script: &str) -> (tempfile::TempDir, Arc<App>, Engin
     let host = Arc::new(Host::new(Duration::from_secs(1)));
     let app = Arc::new(App::new(store, host, &dir.path().join("data")));
     let harness = common::use_harness(&app, dir.path());
-    common::put_project(&harness, "demo", "ready.luau", script);
+    for (file, text) in files {
+        common::put_project(&harness, "demo", file, text);
+    }
     let repository = app
         .add_repository("demo", origin.to_str().unwrap())
         .unwrap();
@@ -118,6 +125,101 @@ fn ready_card(app: &App, repository: i64, title: &str) -> Card {
         .create_issue(repository, title, "", OWNER_AUTHOR)
         .unwrap();
     app.move_card(card.id, "Not started", None).unwrap()
+}
+
+/// The files of `examples/custom-columns/`, as the project's settings.
+fn custom_columns_files() -> Vec<(&'static str, String)> {
+    ["kanban.toml", "testing.luau", "measured.luau"]
+        .into_iter()
+        .map(|file| (file, example(&format!("custom-columns/{file}"))))
+        .collect()
+}
+
+#[test]
+fn the_custom_columns_example_is_a_board_whose_scripts_check_and_run() {
+    let kanban = example("custom-columns/kanban.toml");
+    let board = moebius_core::app::columns::parse(&kanban).unwrap();
+    let names: Vec<&str> = board.columns.iter().map(|c| c.name.as_str()).collect();
+    assert_eq!(
+        names,
+        [
+            "Backlog",
+            "Not started",
+            "In progress",
+            "In review",
+            "Ready for testing",
+            "Being measured",
+            "Ready to merge",
+            "Done"
+        ]
+    );
+    assert_eq!(board.class_of("Ready for testing"), Some("In review"));
+    assert_eq!(board.class_of("Being measured"), Some("In review"));
+
+    // Each script passes the dry run on that board, in its own column.
+    for (script, column) in [
+        ("testing.luau", "Ready for testing"),
+        ("measured.luau", "Being measured"),
+    ] {
+        let did = moebius_core::board::check_script_in(
+            &board,
+            script,
+            &example(&format!("custom-columns/{script}")),
+            column,
+            "A card",
+            OWNER_AUTHOR,
+        )
+        .unwrap_or_else(|e| panic!("{script}: {e}"));
+        assert_eq!(did.len(), 1, "{script}: {did:?}");
+    }
+}
+
+#[test]
+fn the_custom_columns_example_waits_for_the_measurement_and_then_for_a_label() {
+    let files = custom_columns_files();
+    let files: Vec<(&str, &str)> = files.iter().map(|(f, t)| (*f, t.as_str())).collect();
+    let (_dir, app, engine, repository) = engine_with_files(&files);
+    let card = app
+        .create_issue(repository, "Faster parser", "", OWNER_AUTHOR)
+        .unwrap();
+    app.move_card(card.id, "Ready for testing", None).unwrap();
+    let column = |card: &Card| app.card(card.id).unwrap().column;
+
+    // The card counts as In review while it is in either column.
+    assert_eq!(
+        app.column_class(card.project_id, "Ready for testing"),
+        "In review"
+    );
+    assert_eq!(
+        app.column_class(card.project_id, "Being measured"),
+        "In review"
+    );
+
+    let step = engine.tick(card.id).unwrap();
+    assert_eq!(
+        step.waiting.as_deref(),
+        Some("waiting for a ## Measurement section in the issue")
+    );
+    assert_eq!(column(&card), "Ready for testing");
+
+    app.store
+        .set_card_text(
+            card.id,
+            "Faster parser",
+            "Faster.\n\n## Measurement\n12% faster.\n",
+        )
+        .unwrap();
+    engine.tick(card.id).unwrap();
+    assert_eq!(column(&card), "Being measured");
+
+    let step = engine.tick(card.id).unwrap();
+    assert_eq!(
+        step.waiting.as_deref(),
+        Some("being measured: waiting for the label measured or regressed")
+    );
+    app.set_labels(card.id, &["regressed".to_string()]).unwrap();
+    engine.tick(card.id).unwrap();
+    assert_eq!(column(&card), "In progress");
 }
 
 #[test]

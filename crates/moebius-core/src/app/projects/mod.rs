@@ -65,6 +65,12 @@ pub struct ProjectView {
     /// Whether the person asking sees its board: true for a public project, and for a private one when they are one of
     /// its members. An owner who is not sees the project's record only, to add its members.
     pub member: bool,
+    /// The project's board, left to right: the six built-in columns and the custom ones of its `kanban.toml`.
+    #[serde(default)]
+    pub columns: Vec<crate::app::columns::ColumnView>,
+    /// What is wrong with the project's `kanban.toml`, if anything: the board then runs as the notice says.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub columns_problem: Option<String>,
 }
 
 /// Refuses a name for a project: empty, longer than [`NAME_LIMIT`], starting with a dot or a space, ending with a dot
@@ -380,7 +386,10 @@ impl App {
             })
             .collect();
         let member = sight.project(project.id);
+        let board = self.project_columns(&project);
         Ok(ProjectView {
+            columns: board.views(),
+            columns_problem: board.problem.as_ref().map(|(_, p)| p.clone()),
             kinds: self.store.project_kinds(project.id)?,
             open_cards: if member {
                 self.store.open_cards(project.id)?

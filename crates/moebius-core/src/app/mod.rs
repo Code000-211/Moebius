@@ -28,6 +28,7 @@ mod changes;
 mod chat_access;
 mod chats;
 mod checks;
+pub mod columns;
 mod commands;
 mod cycles;
 mod deletions;
@@ -106,16 +107,6 @@ pub use planning::{Compared, EstimateProposal};
 pub use reproduce::{Reproduction, TestRun, parse as parse_reproduction};
 pub use runs::{FinishedCard, FinishedRun};
 pub use whereabouts::{ClientInfo, OFFICIAL_REPOSITORY, ServerInfo};
-
-/// The columns of the default workflow (spec 6).
-pub mod columns {
-    pub const BACKLOG: &str = "Backlog";
-    pub const NOT_STARTED: &str = "Not started";
-    pub const IN_PROGRESS: &str = "In progress";
-    pub const IN_REVIEW: &str = "In review";
-    pub const READY_TO_MERGE: &str = "Ready to merge";
-    pub const DONE: &str = "Done";
-}
 
 /// The runs of a card that count: a retry gives the card a fresh start, so what ran before it no longer does.
 pub fn runs_since_retry<'a>(runs: &'a [Run], card: &Card) -> impl Iterator<Item = &'a Run> {
@@ -269,6 +260,8 @@ pub struct App {
     forges: BTreeMap<&'static str, Box<dyn Forge>>,
     /// The harness configuration repository's clone, once the server has opened it.
     harness_repo: OnceLock<Arc<HarnessRepo>>,
+    /// The columns of each project, as its `kanban.toml` last read (see `columns`).
+    column_cache: Mutex<HashMap<i64, columns::Cached>>,
     /// The wiki's repository, once the server has opened it; it is replaced when a person connects one that the
     /// server could not open at start.
     wiki: RwLock<Option<Arc<crate::wiki::Wiki>>>,
@@ -352,6 +345,7 @@ impl App {
             close_retry: Duration::from_secs(600),
             forges,
             harness_repo: OnceLock::new(),
+            column_cache: Mutex::new(HashMap::new()),
             wiki: RwLock::default(),
             wiki_problem: Mutex::default(),
             runs: OnceLock::new(),

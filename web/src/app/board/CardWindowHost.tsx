@@ -72,7 +72,7 @@ export function CardWindowHost() {
             onOpenCard={onOpenCard}
             onClose={close}
           />
-          {actions.focus(card, inboxOf(inbox, card))}
+          {actions.focus(card, inboxOf(inbox, card), board)}
         </>
       )}
       {board && actions.dialogs(board)}

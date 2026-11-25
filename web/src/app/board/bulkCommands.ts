@@ -5,10 +5,12 @@
  * it reaches when that is not all of them, since a card that cannot go there is left as it is. The keys are the ones of
  * a single card (`cardKey`), so a person who knows them for one knows them for many. The page says what each does.
  */
+
+import { columnNames, type HasColumns } from "../../api/columns";
 import type { Card, InboxItem } from "../../api/types/board";
 import type { SelectionCommand } from "../../ui/page/SelectionBar";
 import { cardKey } from "../shell/palette/shortcuts";
-import { COLUMNS, dropRule, isHeld, isLive } from "./model";
+import { dropRule, isHeld, isLive } from "./model";
 
 /** What the page does for the cards a command reaches. */
 export interface BulkActions {
@@ -27,9 +29,10 @@ export function movable(
   cards: readonly Card[],
   column: string,
   itemOf: (card: Card) => InboxItem | undefined,
+  columns?: HasColumns,
 ): Card[] {
   return cards.filter((card) => {
-    const kind = dropRule(card, column, itemOf(card)).kind;
+    const kind = dropRule(card, column, itemOf(card), columns).kind;
     return kind === "approve" || kind === "retry" || kind === "merge";
   });
 }
@@ -42,6 +45,8 @@ export function bulkCommands(
   cards: readonly Card[],
   itemOf: (card: Card) => InboxItem | undefined,
   act: BulkActions,
+  /** The columns of the project, custom ones included: a move command is offered for each. */
+  columns?: HasColumns,
 ): SelectionCommand[] {
   if (cards.length === 0) return [];
   const commands: SelectionCommand[] = [];
@@ -89,8 +94,8 @@ export function bulkCommands(
       run: () => act.stop(live),
     });
   }
-  for (const column of COLUMNS) {
-    const reached = movable(cards, column, itemOf);
+  for (const column of columnNames(columns)) {
+    const reached = movable(cards, column, itemOf, columns);
     if (reached.length === 0) continue;
     const id = `move-${column}`;
     commands.push({

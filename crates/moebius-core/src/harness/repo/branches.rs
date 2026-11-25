@@ -256,6 +256,7 @@ impl HarnessRepo {
         if !by.is_person() && self.changes_packages_at(&default, &tip)? {
             return Err(AppError::Forbidden(PERSON_ONLY.into()));
         }
+        self.check_boards_at(app, &default, &tip)?;
         self.repos.merge(&self.path, &tip, message)?;
         let pushed = app.git_auth(&self.url).and_then(|header| {
             Ok(self
@@ -269,6 +270,38 @@ impl HarnessRepo {
         let head = git(&self.path, &["rev-parse", "HEAD"])?;
         self.read(app, &mut read_at, head.clone());
         Ok(head)
+    }
+
+    /// Refuses a merge of `tip` into `default` that changes a project's `kanban.toml` for one that is not a valid board
+    /// or leaves cards in a column it no longer has (see `App::check_kanban_save`).
+    fn check_boards_at(&self, app: &App, default: &str, tip: &str) -> Result<()> {
+        let changed = git(
+            &self.path,
+            &[
+                "diff",
+                "--name-only",
+                &format!("{default}...{tip}"),
+                "--",
+                "projects",
+            ],
+        )?;
+        for path in changed.lines() {
+            let Some(name) = path
+                .strip_prefix("projects/")
+                .and_then(|rest| {
+                    rest.strip_suffix(&format!("/{}", crate::app::columns::KANBAN_FILE))
+                })
+                .filter(|name| !name.contains('/'))
+            else {
+                continue;
+            };
+            let Some(project) = app.store.projects()?.into_iter().find(|p| p.name == name) else {
+                continue;
+            };
+            let text = git(&self.path, &["show", &format!("{tip}:{path}")]).ok();
+            app.check_kanban_save(&project, text.as_deref())?;
+        }
+        Ok(())
     }
 
     /// A person dismisses the proposal `branch`; nothing changes in the repository.

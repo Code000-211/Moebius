@@ -170,7 +170,7 @@ impl App {
     /// (so that taking the label off sends it back). A label naming a project the repository is not in, or none at all,
     /// leaves the card where it is and puts a note in the inbox. Called when the issue's labels changed, so a person who
     /// moved the card by hand is not undone by a poll.
-    fn place_by_label(&self, card: &Card, labels: &BTreeSet<String>) -> Result<()> {
+    pub(crate) fn place_by_label(&self, card: &Card, labels: &BTreeSet<String>) -> Result<()> {
         let repository = self.repository(card.repository_id)?;
         let named = labels.iter().find_map(|label| {
             let (prefix, name) = label.split_at_checked(PROJECT_LABEL.len())?;
@@ -188,7 +188,23 @@ impl App {
         match (target, named) {
             (Some(project), _) => {
                 if project.id != card.project_id {
+                    // The card keeps its column, unless the new project's board has none of that name: it then goes
+                    // to the built-in column of the class its column counts as, and the move is recorded.
+                    let class = self.column_class(card.project_id, &card.column);
+                    let fits = self
+                        .project_columns(&project)
+                        .column(&card.column)
+                        .is_some();
                     self.store.set_card_project(card.id, project.id)?;
+                    if !fits {
+                        self.move_card_from(
+                            card.id,
+                            &card.column,
+                            class,
+                            Some("the project's board has no such column"),
+                            None,
+                        )?;
+                    }
                     self.bus.publish(Event::CardUpdated(self.card(card.id)?));
                 }
             }
@@ -219,7 +235,7 @@ impl App {
                 // merged first: a card over several repositories with a change still open stays where it is (ADR
                 // 0019), its issue closed, and is done when its last change is merged.
                 let merging = card.repositories.len() > 1 && !self.open_changes(card)?.is_empty();
-                let in_done = card.column == columns::DONE;
+                let in_done = self.column_class(card.project_id, &card.column) == columns::DONE;
                 if !raw_closed {
                     self.store.set_issue_closed(id, true)?;
                     self.close_settled(id);
@@ -441,11 +457,12 @@ impl App {
 
     /// The numbers of the issues of the repository that are open and have a card: the ones whose blockers are read.
     pub fn open_issue_numbers(&self, repository_id: i64) -> Result<BTreeSet<i64>> {
+        let mut class_of = self.class_of();
         Ok(self
             .store
             .cards(repository_id)?
             .into_iter()
-            .filter(|card| !card.closed && card.column != columns::DONE)
+            .filter(|card| !class_of.is_done(card))
             .map(|card| card.number)
             .collect())
     }

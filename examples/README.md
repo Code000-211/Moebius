@@ -7,6 +7,10 @@ Each example is small, runs in CI and is meant to be copied. The contracts they 
   starts a card whose title contains `[large]` only when no run is going. Save it as the project's `ready.luau`
   (`projects/<project name>/ready.luau` of the harness configuration repository). Tested as a project's override by `crates/moebius-core/tests/examples.rs`. See
   [column scripts](../docs/reference/column-scripts.md).
+- [`custom-columns/`](custom-columns/README.md): a project's `kanban.toml` that adds two columns after In review, with the
+  script of each. Copy the three files to `projects/<project name>/` of the harness configuration repository. Tested by
+  the same test. See [custom columns](../docs/guide/custom-columns.md) and the
+  [reference](../docs/reference/column-scripts.md#custom-columns).
 - [`rules.md`](rules.md): three rules in prose. Point `rules_file` at it, or copy it to the project's `rules.md`
   (`repos/<repository name>/rules.md` of the harness configuration repository). Parsed by the same test. See [rules](../docs/reference/rules.md).
 - [`../crates/moebius-plugin-api/examples/allow_reads.rs`](../crates/moebius-plugin-api/examples/allow_reads.rs): a

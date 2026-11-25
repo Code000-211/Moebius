@@ -1,6 +1,7 @@
 /**
  * What a drop of a card on a column means, and why it may be refused.
  */
+import { classOf, type HasColumns } from "../../../api/columns";
 import type { Card, InboxItem } from "../../../api/types/board";
 import { APPROVE_ISSUE, CHANGE_CLOSED, READY_TO_MERGE, STUCK } from "./inbox";
 import { isHeld, isLive } from "./status";
@@ -21,24 +22,32 @@ function changeOfItem(item: InboxItem): number | null {
 }
 
 /**
- * What dropping `card` on the column `to` does. A person decides only what waits in the inbox: an issue to approve
+ * What dropping `card` on the column `to` does; a custom column counts as the built-in one it counts as. A person decides only what waits in the inbox: an issue to approve
  * goes to Not started, a change to merge goes to Done or back to In progress (rejected), and a stuck card, or one whose pull
  * request was closed, goes to In progress (retried). Any other drop is refused with the reason, since the board moves
  * every other card itself when its column's script says so.
  */
-export function dropRule(card: Card, to: string, item: InboxItem | undefined): Drop {
+export function dropRule(
+  card: Card,
+  to: string,
+  item: InboxItem | undefined,
+  /** The columns of the board, to know the class of a custom column: a drop on it means what a drop on its class means. */
+  columns?: HasColumns,
+): Drop {
   const kind = item?.kind;
+  const target = classOf(columns, to);
   if (kind === READY_TO_MERGE && item) {
     const change = changeOfItem(item);
-    if (to === "Done" || to === "In progress") {
+    if (target === "Done" || target === "In progress") {
       if (change === null) {
         return { kind: "refused", reason: "This card has no change to decide on yet." };
       }
-      return to === "Done" ? { kind: "merge", change } : { kind: "reject", change };
+      return target === "Done" ? { kind: "merge", change } : { kind: "reject", change };
     }
   }
-  if (kind === APPROVE_ISSUE && to === "Not started") return { kind: "approve" };
-  if ((kind === STUCK || kind === CHANGE_CLOSED) && to === "In progress") return { kind: "retry" };
+  if (kind === APPROVE_ISSUE && target === "Not started") return { kind: "approve" };
+  if ((kind === STUCK || kind === CHANGE_CLOSED) && target === "In progress")
+    return { kind: "retry" };
   if (card.column === to) return { kind: "none" };
   if (isLive(card)) {
     return {

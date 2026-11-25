@@ -9,7 +9,6 @@
 export type { ColumnCards } from "./columns";
 export {
   boardColumns,
-  COLUMNS,
   DONE_SHOWN,
   groupByColumn,
   orderCards,

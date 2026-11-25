@@ -32,3 +32,4 @@ One record per decision, numbered in the order they were taken. Where the spec a
 - [0027](0027-working-with-people-on-other-servers-through-the-forge.md) working with people on other servers through the forge
 - [0028](0028-helpers-take-issues-with-commands-in-comments.md) helpers take issues with commands in comments
 - [0029](0029-the-reviewer-reads-a-pull-request-when-its-author-says-done.md) the Reviewer reads a pull request when its author says it is done
+- [0030](0030-custom-board-columns-per-project.md) custom board columns per project

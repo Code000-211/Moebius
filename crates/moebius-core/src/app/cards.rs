@@ -292,7 +292,7 @@ impl App {
     /// A person approves an outside issue: the decision is recorded and the card moves to ready.
     pub fn approve_issue(&self, by: &Actor, card_id: i64, reason: &str) -> Result<Card> {
         let card = self.card(card_id)?;
-        if card.column != columns::BACKLOG {
+        if self.column_class(card.project_id, &card.column) != columns::BACKLOG {
             return Err(AppError::Invalid(format!(
                 "card {card_id} is not in the backlog"
             )));
@@ -472,7 +472,9 @@ impl App {
         let mut blocked_by = Vec::new();
         for number in self.store.dependencies(card.id)? {
             let resolved = match self.store.card_by_number(card.repository_id, number)? {
-                Some(blocker) => blocker.column == columns::DONE,
+                Some(blocker) => {
+                    self.column_class(blocker.project_id, &blocker.column) == columns::DONE
+                }
                 // An issue with no card is done when the forge was seen to say it is closed.
                 None => {
                     self.store

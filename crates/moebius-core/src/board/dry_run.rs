@@ -9,7 +9,7 @@ use std::rc::Rc;
 use mlua::{Lua, Table};
 
 use super::sandbox::run_sandboxed;
-use super::{Kanban, Limits, resolve_column};
+use super::{Limits, resolve_column};
 use crate::app::is_person;
 
 /// Runs the column script `source`, called `name`, once in the same sandbox as the engine, on a made-up card in
@@ -24,13 +24,32 @@ pub fn check_script(
     title: &str,
     author: &str,
 ) -> Result<Vec<String>, String> {
+    check_script_in(
+        &crate::app::columns::ProjectColumns::default(),
+        name,
+        source,
+        column,
+        title,
+        author,
+    )
+}
+
+/// [`check_script`] on the board of a project, whose custom columns `moebius.move` accepts and a card can be in.
+pub fn check_script_in(
+    board: &crate::app::columns::ProjectColumns,
+    name: &str,
+    source: &str,
+    column: &str,
+    title: &str,
+    author: &str,
+) -> Result<Vec<String>, String> {
     let limits = Limits::default();
-    let columns: Vec<String> = Kanban::default()
-        .columns
-        .into_iter()
-        .map(|c| c.name)
-        .collect();
-    let column = resolve_column(column);
+    let columns: Vec<String> = board.columns.iter().map(|c| c.name.clone()).collect();
+    let column = board
+        .column(column)
+        .map(|c| c.name.as_str())
+        .unwrap_or_else(|| resolve_column(column));
+    let class = board.class_of(column).unwrap_or(column);
     if !columns.contains(&column.to_string()) {
         return Err(format!(
             "no column {column:?}; the columns are {}",
@@ -43,14 +62,19 @@ pub fn check_script(
         source,
         &limits,
         |lua, _| recording_api(lua, &limits, &columns, did.clone()),
-        |lua| made_up_card(lua, column, title, author),
+        |lua| made_up_card(lua, (column, class), title, author),
     )
     .map_err(|e| e.to_string())?;
     Ok(did.take())
 }
 
 /// The card of a dry run: one that has just been created, with nothing done for it yet.
-fn made_up_card(lua: &Lua, column: &str, title: &str, author: &str) -> mlua::Result<Table> {
+fn made_up_card(
+    lua: &Lua,
+    (column, class): (&str, &str),
+    title: &str,
+    author: &str,
+) -> mlua::Result<Table> {
     let t = lua.create_table()?;
     t.set("id", 1)?;
     t.set("number", 1)?;
@@ -58,6 +82,7 @@ fn made_up_card(lua: &Lua, column: &str, title: &str, author: &str) -> mlua::Res
     t.set("body", "")?;
     t.set("author", author)?;
     t.set("column", column)?;
+    t.set("column_class", class)?;
     t.set("trusted", is_person(author))?;
     t.set("confirmed", false)?;
     t.set("moved_at", crate::store::now())?;
@@ -158,6 +183,12 @@ fn recording_api(
         "move",
         lua.create_function(move |_, (column, note): (String, Option<String>)| {
             let column = resolve_column(&column).to_string();
+            // A column is called as the board spells it, in any case, as the engine takes it.
+            let column = names
+                .iter()
+                .find(|n| n.eq_ignore_ascii_case(&column))
+                .cloned()
+                .unwrap_or(column);
             if !names.contains(&column) {
                 return Err(mlua::Error::runtime(format!("no column {column:?}")));
             }
@@ -517,8 +548,8 @@ mod tests {
             ("function on_card(card) error('boom') end", "boom"),
             ("x = 1", "does not define a function on_card"),
             (
-                "function on_card(card) moebius.move('In Progress') end",
-                "no column \"In Progress\"",
+                "function on_card(card) moebius.move('Doing') end",
+                "no column \"Doing\"",
             ),
             (
                 "function on_card(card) moebius.start_run(1) end",
@@ -533,8 +564,8 @@ mod tests {
             let error = dry(source, "Not started", OWNER_AUTHOR).unwrap_err();
             assert!(error.contains(expected), "{source}: {error}");
         }
-        let error = dry("function on_card(card) end", "In Progress", OWNER_AUTHOR).unwrap_err();
-        assert!(error.contains("no column \"In Progress\""), "{error}");
+        let error = dry("function on_card(card) end", "Doing", OWNER_AUTHOR).unwrap_err();
+        assert!(error.contains("no column \"Doing\""), "{error}");
         assert!(error.contains("In progress"), "{error}");
     }
 
@@ -565,7 +596,8 @@ mod tests {
         let dry = recording_api(&lua, &engine.limits(), &columns, Rc::default()).unwrap();
         assert_eq!(names(&dry), names(&real));
         let real = engine.card_table(&lua, &card).unwrap();
-        let dry = made_up_card(&lua, "Backlog", "Fix the parser", OWNER_AUTHOR).unwrap();
+        let dry =
+            made_up_card(&lua, ("Backlog", "Backlog"), "Fix the parser", OWNER_AUTHOR).unwrap();
         assert_eq!(names(&dry), names(&real));
     }
 }

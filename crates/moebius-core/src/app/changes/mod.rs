@@ -102,7 +102,13 @@ impl App {
             return Ok(None);
         }
         let card = match change.card_id.map(|id| self.card(id)).transpose()? {
-            Some(card) if change.state == "open" && card.column == columns::READY_TO_MERGE => card,
+            Some(card)
+                if change.state == "open"
+                    && self.column_class(card.project_id, &card.column)
+                        == columns::READY_TO_MERGE =>
+            {
+                card
+            }
             _ => {
                 return Err(AppError::Invalid(format!(
                     "change {change_id} is not waiting to be merged"

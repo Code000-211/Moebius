@@ -108,7 +108,7 @@ export function useBulk({
         void send(
           cards,
           (c) => {
-            const drop = dropRule(c, column, board ? inboxOf(inbox, c) : undefined);
+            const drop = dropRule(c, column, board ? inboxOf(inbox, c) : undefined, board);
             if (drop.kind === "approve") return approve(c.id);
             if (drop.kind === "retry") return retry(c.id);
             if (drop.kind === "merge") return merge(drop.change);
@@ -120,7 +120,8 @@ export function useBulk({
     [send, onBlock, board, inbox],
   );
   const commands = useMemo(
-    () => bulkCommands(chosen, (card) => (board ? inboxOf(inbox, card) : undefined), actions),
+    () =>
+      bulkCommands(chosen, (card) => (board ? inboxOf(inbox, card) : undefined), actions, board),
     [chosen, board, inbox, actions],
   );
   const anyChosen = chosen.length > 0;
