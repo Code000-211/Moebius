@@ -1,4 +1,4 @@
-//! The daily digest (ADR 0031): once a day, from `digest_at` on, one inbox item tells the owner what happened since the
+//! The daily digest (ADR 0032): once a day, from `digest_at` on, one inbox item tells the owner what happened since the
 //! last one, repository by repository: what merged and who wrote it, which merges were refused, what was reverted,
 //! which review rounds ran and how they ended, who took or released an issue, what the stale handling did, what was
 //! spent against the budget, what is frozen or held, and what waits for a person, grouped by reason with links.
@@ -26,6 +26,8 @@ const LIST_LIMIT: usize = 8;
 /// A line about an issue or a pull request.
 #[derive(Debug, Clone, Default, Serialize)]
 struct Line {
+    /// The card the line is about, so that a person who may not see it is not told of it.
+    card: Option<i64>,
     number: Option<i64>,
     title: String,
     who: Option<String>,
@@ -151,7 +153,9 @@ impl App {
                     .sum()
             })
             .unwrap_or(0);
-        let title = format!("Daily digest {day}: {merged} merged, {needs} need you");
+        // No figures in the title: what a person sees of the digest depends on the projects they see.
+        let _ = (merged, needs);
+        let title = format!("Daily digest {day}");
         let mut data = data;
         data["text"] = Value::String(text);
         let item = self
@@ -247,6 +251,7 @@ impl App {
                     && !card.closed
                 {
                     section.frozen.push(Line {
+                        card: Some(card.id),
                         number: Some(card.number),
                         title: card.title.clone(),
                         who: Some(held.by.clone()),
@@ -283,6 +288,7 @@ impl App {
                 .unwrap_or_default()
         };
         let mut line = Line {
+            card: a.data["card"].as_i64(),
             number: a.number,
             title: a.data["title"]
                 .as_str()
@@ -304,10 +310,19 @@ impl App {
             "revert" => section.reverts.push(line),
             "take" => section.taken.push(line),
             "release" => section.released.push(line),
-            "auto_release" | "stale_reminder" | "stale_closed" => {
+            "auto_release" | "stale_reminder" | "stale_closed" | "stale_failed"
+            | "backlog_clash" => {
                 line.detail = match a.kind.as_str() {
                     "auto_release" => format!("released: {}", a.detail),
                     "stale_reminder" => format!("reminded: {}", a.detail),
+                    "stale_failed" => format!(
+                        "the forge refused to {}: {}",
+                        a.data["action"].as_str().unwrap_or("act"),
+                        a.detail
+                    ),
+                    "backlog_clash" => {
+                        format!("not touched, not made by the backlog sync: {}", a.detail)
+                    }
                     _ => format!("closed: {}", a.detail),
                 };
                 section.upkeep.push(line);
@@ -350,7 +365,7 @@ impl App {
 }
 
 /// The digest as a few lines of Markdown, for a notification or an agent that reads it.
-fn digest_text(data: &Value) -> String {
+pub fn digest_text(data: &Value) -> String {
     let mut out = Vec::new();
     let list = |value: &Value, key: &str| value[key].as_array().cloned().unwrap_or_default();
     let name = |l: &Value| {

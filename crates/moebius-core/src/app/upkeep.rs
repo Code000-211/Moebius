@@ -1,4 +1,4 @@
-//! Stale handling (ADR 0031): what keeps an owner from tending issues nobody works on and pull requests nobody pushes
+//! Stale handling (ADR 0032): what keeps an owner from tending issues nobody works on and pull requests nobody pushes
 //! to. Once a day, before the digest, each repository on a forge is looked at with its own settings (`Upkeep`):
 //!
 //! - an issue a helper took (or was assigned) and that has no followed pull request after `release_after_days` is
@@ -25,20 +25,6 @@ pub struct Upkept {
     pub released: usize,
     pub reminded: usize,
     pub closed: usize,
-}
-
-/// Whether the latest word on a followed pull request is a review that asked for changes: the forge's own latest
-/// review, or the Reviewer's latest round with a verdict.
-fn changes_were_asked(app: &App, change: &Change) -> Result<bool> {
-    if change.review.as_deref() == Some("changes_requested") {
-        return Ok(true);
-    }
-    let rounds = app.store.external_reviews(change.id)?;
-    Ok(rounds
-        .iter()
-        .rev()
-        .find_map(|r| r.verdict.as_deref())
-        .is_some_and(|verdict| verdict == "changes"))
 }
 
 impl App {
@@ -132,8 +118,53 @@ impl App {
         Ok(true)
     }
 
-    /// Reminds, or closes, the followed pull request `change` when its last review asked for changes and nobody pushed.
-    /// Says `Some(true)` for one it closed, `Some(false)` for one it reminded, none for one it left.
+    /// When the latest review that asked for changes was written, when it was written for the head the pull request has
+    /// now: a push after it means the author has answered and the reviewer is the one who is waited for. The forge's own
+    /// latest review says so where the forge gives the commit of a review (GitHub does); otherwise the Reviewer's latest
+    /// round with a verdict does. A time of 0 is a review whose time the forge did not say.
+    fn changes_asked_at(
+        &self,
+        repository: &Repository,
+        change: &Change,
+        number: i64,
+    ) -> Result<Option<i64>> {
+        let head = change.head.as_deref();
+        if let Ok(Some(mark)) = self.forge(repository)?.latest_review(repository, number) {
+            let of_the_head = match (&mark.head, head) {
+                (Some(reviewed), Some(now)) => reviewed == now,
+                _ => true,
+            };
+            return Ok((mark.state == "changes_requested" && of_the_head).then_some(mark.at));
+        }
+        Ok(self
+            .store
+            .external_reviews(change.id)?
+            .into_iter()
+            .rev()
+            .find(|r| r.verdict.is_some())
+            .filter(|r| r.verdict.as_deref() == Some("changes") && Some(r.head.as_str()) == head)
+            .map(|r| r.at))
+    }
+
+    /// Whether the stale handling already tried `action` on the pull request `number` at this head and the forge
+    /// refused: the refusal is told once, in the digest, and the action is not tried again for that head.
+    fn refused_before(
+        &self,
+        repository: &Repository,
+        number: i64,
+        action: &str,
+        head: &Option<String>,
+    ) -> Result<bool> {
+        Ok(self
+            .store
+            .activity_about("stale_failed", repository.id, number)?
+            .iter()
+            .any(|a| a.data["action"] == action && a.data["head"] == json!(head)))
+    }
+
+    /// Reminds, or closes, the followed pull request `change` when its last review asked for changes, of the head it has
+    /// now, and nobody pushed or reviewed for the days a repository sets. Says `Some(true)` for one it closed,
+    /// `Some(false)` for one it reminded, none for one it left.
     fn stale_request(
         &self,
         repository: &Repository,
@@ -148,20 +179,49 @@ impl App {
             return Ok(None);
         };
         let card = self.card(card_id)?;
-        if self.upkeep_exempt(&card)?.is_some() || !changes_were_asked(self, change)? {
+        if self.upkeep_exempt(&card)?.is_some() {
             return Ok(None);
         }
-        let idle = (now() - change.published_at.unwrap_or_else(now)) / DAY;
+        let Some(asked) = self.changes_asked_at(repository, change, number)? else {
+            return Ok(None);
+        };
+        // The author's turn began with the later of the review and the last push.
+        let since = asked.max(change.published_at.unwrap_or(0));
+        let idle = (now() - since) / DAY;
         let forge = self.forge(repository)?;
         let data = json!({ "card": card.id, "title": card.title, "change": change.id, "head": change.head });
+        let failed = |action: &str, why: &dyn std::fmt::Display| {
+            self.store.note_activity(
+                "stale_failed",
+                Some(repository.id),
+                Some(number),
+                Some(author),
+                &why.to_string(),
+                &json!({ "card": card.id, "title": card.title, "head": change.head, "action": action }),
+            )
+        };
         if upkeep.close_after_days > 0 && idle >= upkeep.close_after_days {
+            if self.refused_before(repository, number, "close", &change.head)? {
+                return Ok(None);
+            }
+            // Closed first: a close the forge refuses is told once, not commented on every day.
+            if let Err(e) = forge.close_request(repository, number) {
+                failed("close", &e)?;
+                return Ok(None);
+            }
             let text = format!(
-                "Closing this pull request politely: a review asked for changes {idle} days ago and nothing was \
-                 pushed since. Thank you for the work, @{author}. The issue is free again, and you are welcome to \
+                "Closing this pull request politely: a review asked for changes and nothing was pushed for {idle} \
+                 days since. Thank you for the work, @{author}. The issue is free again, and you are welcome to \
                  open a new pull request."
             );
-            forge.comment_request(repository, number, &text)?;
-            forge.close_request(repository, number)?;
+            if let Err(e) = forge.comment_request(repository, number, &text) {
+                self.bus.publish(Event::ForgeError {
+                    repository: repository.name.clone(),
+                    message: format!(
+                        "stale handling: the comment on closed pull request #{number}: {e}"
+                    ),
+                });
+            }
             self.followed_closed(change)?;
             let card = self.card(card_id)?;
             self.unassign_taken(repository, &card, author)?;
@@ -183,7 +243,7 @@ impl App {
             .activity_about("stale_reminder", repository.id, number)?
             .iter()
             .any(|a| a.data["head"] == json!(change.head));
-        if reminded {
+        if reminded || self.refused_before(repository, number, "remind", &change.head)? {
             return Ok(None);
         }
         let close = match upkeep.close_after_days {
@@ -194,7 +254,10 @@ impl App {
             "A reminder for @{author}: the last review asked for changes and nothing was pushed for {idle} days. \
              Push your changes to have it reviewed again.{close}"
         );
-        forge.comment_request(repository, number, &text)?;
+        if let Err(e) = forge.comment_request(repository, number, &text) {
+            failed("remind", &e)?;
+            return Ok(None);
+        }
         self.store.note_activity(
             "stale_reminder",
             Some(repository.id),

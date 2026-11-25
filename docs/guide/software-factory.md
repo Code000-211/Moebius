@@ -5,7 +5,7 @@
 You own a repository that agents and helpers work on, and you want to look at Moebius once a day: one inbox item that
 says what happened, issues nobody works on given back, pull requests nobody pushes to answered, and a backlog file that
 turns itself into issues a few at a time. The reasons are in [ADR
-0031](../adr/0031-the-factory-keeps-the-owners-work-small.md), the exact contracts in [the
+0032](../adr/0032-the-factory-keeps-the-owners-work-small.md), the exact contracts in [the
 reference](../reference/factory.md).
 
 ## The daily digest
@@ -76,8 +76,11 @@ issues and the next night makes 15 more. Lower it, or close items in the file, t
   not from a branch or an unpushed commit.
 - **An item is skipped.** Its line does not match the pattern: the ID must look like `K-47` (letters, a dash, digits),
   right after the `#` marks. Change the pattern to your own IDs, keeping the group `id`.
-- **An issue is made twice.** It was not: an issue is found again by `<ID>:` at the start of its title, so an issue whose
-  title a person changed is made anew. Keep the ID first.
+- **An issue was left alone.** The sync changes only the issues it made (and adopts, once, those a person of this server
+  opened by hand). One somebody else opened with `<ID>:` in its title is a clash: the sync reports it, the digest tells it
+  once, and the sync makes its own issue for the item.
+- **My text in an issue was kept.** Only the part between `<!-- backlog:<ID> -->` and `<!-- /backlog -->` is replaced; a
+  blocker, the parent line and anything you wrote outside the markers stay.
 - **Nothing is closed.** The marker is looked for in the item's text only, in any case, and `closed/<ID>.md` is looked for
   next to the backlog file. A closed issue is never reopened by a sync.
 - **A helper was released while working.** The stale handling counts a followed pull request as work. A helper who

@@ -1,5 +1,5 @@
 /**
- * The "Stale handling" box of a repository on a forge (ADR 0031): after how many days the server releases an issue a
+ * The "Stale handling" box of a repository on a forge (ADR 0032): after how many days the server releases an issue a
  * helper took and never opened a pull request for, reminds the author of a followed pull request whose last review asked
  * for changes and that nobody pushed to, and closes it. Each is a number of days, 0 turns it off. A card that is held,
  * and every card while all agents are paused, is left alone; each action the server takes is in the daily digest.

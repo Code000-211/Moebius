@@ -1,5 +1,5 @@
 /**
- * The daily digest (ADR 0031) an inbox item of the kind `daily_digest` holds, drawn in the window the Inbox opens for it:
+ * The daily digest (ADR 0032) an inbox item of the kind `daily_digest` holds, drawn in the window the Inbox opens for it:
  * per repository what merged and who wrote it (marked when a measurement came with it), the merges that were refused,
  * reverts, review rounds, who took or released an issue, what the stale handling did and what is held, then the tokens
  * against the day's budget, and what needs a person grouped by reason, each with the card it is about. A list the server

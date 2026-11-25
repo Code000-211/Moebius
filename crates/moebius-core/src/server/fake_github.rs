@@ -73,6 +73,8 @@ pub(super) struct FakeGitHub {
     /// Whether it answers a review, or a merge, with a server error, as a forge does for a moment.
     pub(super) fail_reviews: std::sync::atomic::AtomicBool,
     pub(super) fail_merges: std::sync::atomic::AtomicBool,
+    /// Whether it answers a change of an issue's state (closing a pull request, say) with a server error.
+    pub(super) fail_state_writes: std::sync::atomic::AtomicBool,
     /// How many reviews it was asked to write, those it failed included.
     pub(super) review_attempts: std::sync::atomic::AtomicUsize,
 }
@@ -183,6 +185,7 @@ pub(super) async fn fake_github() -> (String, Arc<FakeGitHub>) {
         writers: Mutex::new(Vec::new()),
         assignable: std::sync::atomic::AtomicBool::new(true),
         label_writes: Mutex::new(Vec::new()),
+        fail_state_writes: std::sync::atomic::AtomicBool::new(false),
         created: Mutex::new(Vec::new()),
         state_reasons: Mutex::new(Vec::new()),
         listed_pulls: Mutex::new(Vec::new()),
@@ -307,6 +310,9 @@ pub(super) async fn fake_github() -> (String, Arc<FakeGitHub>) {
                 |State(fake): State<Arc<FakeGitHub>>,
                  UrlPath(number): UrlPath<u64>,
                  axum::Json(body): axum::Json<Value>| async move {
+                    if fake.fail_state_writes.load(std::sync::atomic::Ordering::SeqCst) {
+                        return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+                    }
                     if let Some(state) = body["state"].as_str() {
                         let state = state.to_string();
                         fake.edit_issue(number, |issue| issue["state"] = json!(state));
@@ -318,7 +324,7 @@ pub(super) async fn fake_github() -> (String, Arc<FakeGitHub>) {
                             .unwrap()
                             .push((number, reason.to_string()));
                     }
-                    axum::Json(issue(number, "closed", "leon", ""))
+                    axum::Json(issue(number, "closed", "leon", "")).into_response()
                 },
             ),
         )

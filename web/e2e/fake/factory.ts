@@ -1,5 +1,5 @@
 /**
- * The part of the fake server for the software factory (ADR 0031): a repository's stale settings
+ * The part of the fake server for the software factory (ADR 0032): a repository's stale settings
  * (`GET` and `PUT /v1/repositories/{id}/upkeep`), a project's backlog and its sync (`/v1/projects/{id}/backlog`), with
  * the JSON the real server sends. The digest item itself is the board fake's (`seedDigest`), since the Inbox reads it
  * from the snapshot.

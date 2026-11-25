@@ -4563,7 +4563,7 @@ Errors: `403` for an agent's run token; `404` no such research; `409` as above.
 
 ## The software factory
 
-What keeps the owner's work small ([ADR 0031](../adr/0031-the-factory-keeps-the-owners-work-small.md); the contracts are
+What keeps the owner's work small ([ADR 0032](../adr/0032-the-factory-keeps-the-owners-work-small.md); the contracts are
 on [the factory](factory.md), the steps in [the guide](../guide/software-factory.md)).
 
 ### `GET /v1/repositories/{id}/upkeep`
@@ -4601,14 +4601,14 @@ none. Answers `{}`. Recorded as a `remove_backlog` decision.
 
 Member. Request: `{"dry_run": bool}`, optional. Makes, updates and closes the issues of the backlog's items as
 [the factory](factory.md#the-backlog) says and answers the report: `{"project", "repository", "path", "dry_run",
-"items", "created": [{"id", "number", "title"}], "updated": [...], "labelled": [...], "closed": [...], "deferred":
+"items", "created": [{"id", "number", "title"}], "updated": [...], "labelled": [...], "clashes": [...], "closed": [...], "deferred":
 [id], "unchanged", "warnings": [string]}`. `404` for a project with no backlog and for a file that is not on the
 repository's default branch.
 
 ### `POST /v1/digest`
 
 Owner. Request: `{"force": bool}`, optional. Makes today's digest now, after the stale handling, when the day has none,
-and answers its inbox item (kind `daily_digest`); answers `null` when the day had one already. With `force` the day's
+and answers its inbox item as the person asking may read it (kind `daily_digest`; see [who reads what](factory.md#the-digest)); answers `null` when the day had one already. With `force` the day's
 claim is dropped first, so a second item is made.
 
 ### `POST /v1/digest/{id}/dismiss`

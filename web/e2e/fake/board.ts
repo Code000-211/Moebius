@@ -278,7 +278,7 @@ export interface BoardFake {
    */
   seedCommands(): { takenWith: number; asked: number };
   /**
-   * Puts the owner's daily digest (ADR 0031) in the inbox: what merged, was refused, reviewed, taken and handled as stale
+   * Puts the owner's daily digest (ADR 0032) in the inbox: what merged, was refused, reviewed, taken and handled as stale
    * in the demo repository, the tokens against the budget, and what needs a person. Returns the item's id.
    */
   seedDigest(): number;
@@ -1024,7 +1024,7 @@ export function createBoardFake(send: (event: ServerEvent) => void): BoardFake {
         id,
         kind: "daily_digest",
         card_id: null,
-        title: "Daily digest 2026-11-25: 3 merged, 2 need you",
+        title: "Daily digest 2026-11-25",
         data: {
           day: "2026-11-25",
           since: NOW - 86_400,

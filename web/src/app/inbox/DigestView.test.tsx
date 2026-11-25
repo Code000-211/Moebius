@@ -65,7 +65,7 @@ const item: InboxItem = {
   id: 31,
   kind: "daily_digest",
   card_id: null,
-  title: "Daily digest 2026-11-25: 2 merged, 1 need you",
+  title: "Daily digest 2026-11-25",
   data: digest as unknown as Record<string, unknown>,
   resolved_at: null,
   at: 100,

@@ -1,7 +1,7 @@
 # The factory
 
 The exact contracts of the parts that keep the owner's work small ([ADR
-0031](../adr/0031-the-factory-keeps-the-owners-work-small.md)): the daily digest, the stale handling of issues and
+0032](../adr/0032-the-factory-keeps-the-owners-work-small.md)): the daily digest, the stale handling of issues and
 pull requests, and the backlog sync. How to set them up is in [the guide](../guide/software-factory.md); the routes are
 in the [desktop API](desktop-api.md#the-software-factory) and the commands in the [command line](cli.md). The code is
 `app/digest.rs`, `app/upkeep.rs`, `app/backlog.rs` and `store/factory.rs` of `moebius-core`.
@@ -18,6 +18,8 @@ request it is about, `who` (a login or `moebius`), a `detail` (redacted like eve
 | `take`, `release` | the assignees of an issue changed, for a login that came or went, whoever did it | the issue | the login | `card` |
 | `auto_release` | the stale handling released an issue | the issue | the login released | `card`, `title` |
 | `stale_reminder`, `stale_closed` | the stale handling reminded or closed a followed pull request | the pull request | its author | `card`, `title`, `change`, `head` |
+| `stale_failed` | the forge refused a reminder or a close; it is told once for the head and not tried again for it | the pull request | its author | `card`, `title`, `head`, `action` (`remind` or `close`); `detail` is why |
+| `backlog_clash` | a sync found an issue somebody else opened under an item's ID | the issue | its author | `card`, `title`, `item` |
 | `backlog_sync` | a sync that wrote | | | `project`, `path` |
 
 A part that builds on the factory writes a line with `Store::note_activity(kind, repository, number, who, detail,
@@ -39,8 +41,8 @@ and the day has no digest, the day is claimed in `digests` and the digest is mad
 that what it did is in the digest. A claim that is made is never made again, so a day has one digest whatever happens
 to the server; `POST /v1/digest` with `force` is the one way to a second.
 
-The inbox item has the kind `daily_digest` and no card. Its `title` is `Daily digest <day>: <n> merged, <m> need you`,
-and its `data`:
+The inbox item has the kind `daily_digest` and no card. Its `title` is `Daily digest <day>`, with no figures, and its
+`data`:
 
 | Key | Type | Meaning |
 |---|---|---|
@@ -50,6 +52,12 @@ and its `data`:
 | `tokens` | object | `spent` (tokens used in the window), `day_budget` (`budgets.day_tokens`, or null), `today` (tokens used today). |
 | `needs_a_person` | array | The open inbox items but digests, grouped: `{kind, reason, items: [{id, title, card_id, number, repository}]}`. `reason` is the words for the kind, such as `A merge stopped`; `card_id`, `number` and `repository` are null for an item with no card. |
 | `text` | string | The same in a few lines of Markdown. |
+
+**Who reads what.** One digest is made for the organisation, and each person is told only what they see: the snapshot
+and `POST /v1/digest` leave out the sections of repositories whose projects are all private to people the reader is not
+in, the lines about cards of a private project they are not a member of, and the items of `needs_a_person` they do not
+see, and tell the `text` again from what is left. An owner who is no member of a private project reads none of it. A
+line is about a card by `card`, which every list's line has when it has one.
 
 A section is `{id, name, merged, refused, reverts, review_runs, rounds, taken, released, upkeep, frozen, more}`. Each
 list is of lines `{number, title, who, detail, measured}`; a list longer than 8 is cut and `more` says how many were left out, by list
@@ -72,14 +80,18 @@ settings (`GET` and `PUT /v1/repositories/{id}/upkeep`):
 
 - **Taken.** The time runs from when the poll first saw an assignee on the issue (`assigned_since`), so an issue that was
   taken before the upgrade starts its time at the first look.
-- **Last review asked for changes.** The pull request's latest review on the forge is `changes_requested`, or the
-  Reviewer's latest round with a verdict is `changes`.
-- **No push.** `published_at` of the change: when its head last moved.
+- **Last review asked for changes.** The pull request's latest approving, changing or dismissing review on the forge is
+  `changes_requested` **and was written for the head the pull request has now** (GitHub says the commit of a review); a
+  push after it means the author has answered and the reviewer is waited for, so nothing is done. Where the forge does not
+  say (GitLab, Forgejo), the Reviewer's latest round with a verdict counts instead, when it is `changes` and of the head.
+- **No push.** The days run from the later of that review and `published_at` of the change, when its head last moved: a
+  pull request pushed 40 days ago and reviewed yesterday is the author's for a day.
 - **Release.** The login is taken off the issue on the forge and the card, and the issue gets a comment that says who
   took it, how long ago, and that it is free again. It can be taken again.
-- **Close.** The pull request gets a polite comment and is closed on the forge (`GitHub` and `Forgejo` through the issue,
-  `GitLab` as a merge request), the card goes back where it was taken from, the author is released and the line is
-  `stale_closed`.
+- **Close.** The pull request is closed on the forge (`GitHub` and `Forgejo` through the issue, `GitLab` as a merge
+  request) and then gets a polite comment; the card goes back where it was taken from, the author is released and the line
+  is `stale_closed`. A close or a reminder the forge refuses is a `stale_failed` line, told once in the digest and not
+  tried again for that head, so nothing is commented on every day.
 - **Never on frozen or held cards.** A card with a hold (`held`) is left alone, and so is everything while **Pause all**
   is on. Both are checked at the moment of each action.
 - A forge that refuses is a `forge_error` event; the item is tried again the next day.
@@ -108,8 +120,20 @@ difficulty. `Lane required` gives the lane label, except `Lane required: no` (or
 when it holds the closed marker, or when the file `closed/<ID>.md` exists next to the backlog file (in the example,
 `notes/backlog/closed/K-47.md`).
 
-**The issue.** Its title is `<ID>: <title>`. Its body quotes the item in full, each line after `> `, then a line that
-says the file and the item it is kept in step with by the sync.
+**The issue.** Its title is `<ID>: <title>`. Its body holds, between the markers `<!-- backlog:<ID> -->` and `<!-- /backlog
+-->`, the item quoted in full, each line after `> `, then a line that says the file and the item it is kept in step
+with by the sync. Only that part is the sync's: a later sync replaces it and nothing else, so a `Blocked by #n` or
+`Part of #n` line and whatever a person wrote outside the markers stay.
+
+**Which issues are the sync's.** Only those it made, which the store records (`backlog_cards`); an issue is not found by
+its title. One that was made before the sync kept track is adopted once when a person of this server or the Moebius agent
+opened it. An issue somebody else opened under an item's ID is never edited, labelled or closed: the sync makes its own
+issue for the item, lists the other in `clashes` of the report, and the digest tells it once (`backlog_clash`).
+
+**One sync at a time.** Syncs of a project are serialised: a second, from the route, the nightly workflow or the agent,
+waits for the first. The sync writes down that it is about to make an issue (`backlog_intents`) before it asks the forge,
+so an issue the forge made that the server died before recording is found by its exact title at the next sync and
+adopted, not made twice.
 
 **A sync** (`POST /v1/projects/{id}/backlog/sync`, `{"dry_run": bool}`; the answer is the report below):
 
@@ -130,7 +154,7 @@ A second sync with nothing changed makes, changes and closes nothing. The report
 ```json
 { "project": "Moebius", "repository": "moebius", "path": "notes/backlog/optimisation-backlog.md", "dry_run": false,
   "items": 3, "created": [{"id": "K-47", "number": 12, "title": "K-47: Cache the plan"}], "updated": [],
-  "labelled": [], "closed": [], "deferred": ["M-01"], "unchanged": 1, "warnings": [] }
+  "labelled": [], "clashes": [], "closed": [], "deferred": ["M-01"], "unchanged": 1, "warnings": [] }
 ```
 
 With `dry_run` nothing is written and `created` entries have `number` 0.

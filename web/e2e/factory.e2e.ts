@@ -1,5 +1,5 @@
 /**
- * The software factory in a real browser (ADR 0031), against the fake server: the owner's daily digest is an item of the
+ * The software factory in a real browser (ADR 0032), against the fake server: the owner's daily digest is an item of the
  * Inbox that tells what happened per repository and what needs a person, and is dismissed when read; a repository's
  * "Stale handling" box saves its days; a project's Backlog (in its Repositories settings) saves where the file is and
  * previews and runs a sync. Set MOEBIUS_SHOT_DIR to also write the pictures of the digest and of the two settings
@@ -60,9 +60,7 @@ describe.skipIf(usesRealServer)("the software factory", () => {
   it("shows the digest in the Inbox with what happened and what needs a person, and dismisses it", async () => {
     await open("/inbox");
     await digestRow().waitFor();
-    expect(await digestRow().textContent()).toContain(
-      "Daily digest 2026-11-25: 3 merged, 2 need you",
-    );
+    expect(await digestRow().textContent()).toContain("Daily digest 2026-11-25");
     expect(await digestRow().textContent()).not.toContain("chat");
     await digestRow().click();
     const shown = page.getByTestId("digest");
@@ -87,7 +85,12 @@ describe.skipIf(usesRealServer)("the software factory", () => {
     const id = await open("/inbox");
     await digestRow().click();
     await page.getByTestId("digest").waitFor();
-    await page.getByRole("button", { name: "Dismiss" }).click();
+    // The window scrolls: the last block and the button under it can be brought into the view of a 900 px page.
+    const dismiss = page.getByRole("button", { name: "Dismiss" });
+    await dismiss.scrollIntoViewIfNeeded();
+    const box = await dismiss.boundingBox();
+    expect(box && box.y >= 0 && box.y + box.height <= 900).toBe(true);
+    await dismiss.click();
     await page.waitForFunction(
       () =>
         document.querySelectorAll('[data-testid="inbox-item"][data-kind="daily_digest"]').length ===

@@ -1,4 +1,4 @@
-//! The software factory's routes (ADR 0031): the stale settings of a repository, the backlog of a project and its sync,
+//! The software factory's routes (ADR 0032): the stale settings of a repository, the backlog of a project and its sync,
 //! and the daily digest.
 //!
 //! - `GET /v1/repositories/{id}/upkeep` and `PUT` `{release_after_days, stale_after_days, close_after_days, reason}`:
@@ -177,6 +177,7 @@ pub(super) struct DigestRequest {
 
 async fn make_digest(
     State(state): State<ApiState>,
+    Extension(by): Extension<Actor>,
     body: Option<axum::Json<DigestRequest>>,
 ) -> Result<axum::Json<Option<InboxItem>>, ApiError> {
     let force = body.is_some_and(|b| b.0.force);
@@ -186,7 +187,11 @@ async fn make_digest(
         if force {
             app.store.forget_digest(&day)?;
         }
-        app.make_digest(&day, day_tokens)
+        // What the person asking may read of it: an owner who is no member of a private project reads none of it.
+        let sight = app.sight(&by)?;
+        app.make_digest(&day, day_tokens)?
+            .map(|item| super::privacy::seen_digest(app, &sight, item))
+            .transpose()
     })
     .await
 }

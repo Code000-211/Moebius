@@ -62,7 +62,7 @@ pub use backlog::{
     parse_items,
 };
 pub use commands::{Command, DONE_ASKED, command_in};
-pub use digest::DIGEST_ITEM;
+pub use digest::{DIGEST_ITEM, digest_text};
 pub use reviews::{REVIEW_NOT_POSSIBLE, ROUND_LIMIT, ROUNDS_SPENT};
 pub use taking::{
     OpenRequest, WorkingWithOthers, closing_references, followed_branch, forge_title,
@@ -266,6 +266,8 @@ pub struct App {
     workflow_cancels: Mutex<HashMap<i64, Arc<AtomicBool>>>,
     /// How long a forge that refused to close an issue, or a label, is left alone.
     close_retry: Duration,
+    /// One lock for each project whose backlog is being synced: a second sync waits for the first (see `backlog`).
+    backlog_syncs: Mutex<HashMap<i64, Arc<Mutex<()>>>>,
     forges: BTreeMap<&'static str, Box<dyn Forge>>,
     /// The harness configuration repository's clone, once the server has opened it.
     harness_repo: OnceLock<Arc<HarnessRepo>>,
@@ -352,6 +354,7 @@ impl App {
             label_refused: Mutex::default(),
             workflow_cancels: Mutex::default(),
             close_retry: Duration::from_secs(600),
+            backlog_syncs: Mutex::default(),
             forges,
             harness_repo: OnceLock::new(),
             column_cache: Mutex::new(HashMap::new()),

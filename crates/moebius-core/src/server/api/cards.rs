@@ -433,6 +433,7 @@ fn build_snapshot(app: &App, by: &Actor, round_limit: u32) -> crate::app::Result
         let mut inbox = Vec::new();
         for item in app.store.inbox()? {
             if super::privacy::sees_inbox_item(app, &sight, &item)? {
+                let item = super::privacy::seen_digest(app, &sight, item)?;
                 inbox.push(app.unquoted_item(&sight, item)?);
             }
         }

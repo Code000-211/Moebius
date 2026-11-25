@@ -29,7 +29,9 @@ typing the issues by hand and an agent that makes them all at once, so that the 
   that were refused or failed, with their reasons; reverts; the review rounds that ran and how they ended; who took or
   released an issue; what the stale handling did; the tokens spent against the day's budget; what is held or frozen;
   and everything that waits for a person, grouped by what it waits for, each with its card so that the page links it.
-  It is kept short: a list longer than eight lines says how many more there were.
+  It is kept short: a list longer than eight lines says how many more there were. One digest is made for the
+  organisation and **cut to what the reader sees** when it is read: a person who is no member of a private project reads
+  none of its titles, logins or links.
 - **A log, written where it happens.** `factory_log` takes a line when a change is set to `merged`, when a merge stops,
   when the assignees of an issue change (so a `/take`, an assignment on the forge and a release by the owner are all
   seen the same way), and for what the stale handling and the backlog sync do. A part that builds on the factory (a
@@ -41,7 +43,8 @@ typing the issues by hand and an agent that makes them all at once, so that the 
   (`release_after_days` 14, `stale_after_days` 14, `close_after_days` 30; 0 turns one off):
   an issue a helper took, by `/take` or an assignment, that has no followed pull request after `release_after_days` is
   released, with a reply on the issue; a followed pull request whose last review asked for changes and that saw no push
-  for `stale_after_days` gets one reminder comment for that head; after `close_after_days` it is closed with a polite
+  for `stale_after_days` (counted from the later of the review and the push, and only when the review is of the head the
+  pull request has now) gets one reminder comment for that head; after `close_after_days` it is closed with a polite
   comment and its issue released. The first time an assignee is seen starts their time (`assigned_since`), so
   installing this releases nobody at once. A person of this server who is assigned is not "taken": only logins that
   are no one of this server's people count. **Nothing is done for a card that is held, nor while Pause all is on**, and
@@ -49,9 +52,11 @@ typing the issues by hand and an agent that makes them all at once, so that the 
 - **Backlog sync is a tool.** A project says where its backlog is (`backlogs`: repository, path, a pattern for an item,
   a closed marker, a cap and the label names) and a sync, run by a person, by the Moebius agent as `"$MOEBIUS" backlog
   sync` or by a scheduled workflow, makes one issue for each item without one, titled `<ID>: <title>` with the item
-  quoted in full. It finds an issue again by the ID in its title (the cards, closed ones included), so it is
-  idempotent; it rewrites the title and body of an open issue whose item changed, and closes the issue of a closed
-  item as *not planned*. A cap (default 15) limits the issues one sync makes, so that the ready set stays small; the
+  quoted in full between markers. It only ever changes issues it made (recorded in the store, not found by title; one
+  somebody else opened under an ID is a reported clash), so it is idempotent; syncs of a project are serialised and an
+  intent is written before the forge is asked; it rewrites the title and the marked part of the body of an open issue
+  whose item changed, keeping blockers, the parent and a person's text, and closes the issue of a closed item as *not
+  planned*. A cap (default 15) limits the issues one sync makes, so that the ready set stays small; the
   rest waits for the next sync. A difficulty (`easy`, `medium`, `hard`) or "lane required" in an item becomes the labels
   `difficulty:<level>` and `lane-required`, whose names the project may change. Nothing is hard-coded to one
   repository or file layout: the pattern is a regular expression with the groups `id` and `title`.

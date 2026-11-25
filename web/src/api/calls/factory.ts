@@ -1,4 +1,4 @@
-/** The calls of the software factory (ADR 0031): a repository's stale settings, a project's backlog and its sync, and the digest. */
+/** The calls of the software factory (ADR 0032): a repository's stale settings, a project's backlog and its sync, and the digest. */
 import { del, get, post, put } from "../http";
 import type { Backlog, BacklogEdit, SyncReport, Upkeep } from "../types/factory";
 

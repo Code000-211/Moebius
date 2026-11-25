@@ -1,4 +1,4 @@
-//! Backlog sync (ADR 0031): a project keeps a backlog as a file in one of its repositories, and a sync makes the issues
+//! Backlog sync (ADR 0032): a project keeps a backlog as a file in one of its repositories, and a sync makes the issues
 //! of its items. The sync is a tool, used by a person, the Moebius agent (`"$MOEBIUS" backlog sync`) or a scheduled
 //! workflow, and it is the same for any project that names a file and a pattern for its items.
 //!
@@ -90,6 +90,9 @@ pub struct SyncReport {
     pub updated: Vec<Synced>,
     /// Issues given labels their item asks for.
     pub labelled: Vec<Synced>,
+    /// Issues somebody else opened whose title starts with an item's ID: they are not the sync's, and it leaves them
+    /// alone.
+    pub clashes: Vec<Synced>,
     /// Issues closed as not planned because their item is closed.
     pub closed: Vec<Synced>,
     /// The IDs of items that have no issue yet and wait for the next sync because the cap was reached.
@@ -197,7 +200,17 @@ pub fn issue_title(item: &Item) -> String {
     format!("{}: {}", item.id, item.title)
 }
 
-/// The body of the issue of `item` kept in `path` of `repository`: the item quoted in full, then where it comes from.
+/// The start of the part of an issue's body the sync owns.
+fn opens(id: &str) -> String {
+    format!("<!-- backlog:{id} -->")
+}
+
+/// The end of the part of an issue's body the sync owns.
+const CLOSES: &str = "<!-- /backlog -->";
+
+/// The part of the body of the issue of `item` kept in `path` of `repository` that the sync owns: the item quoted in
+/// full, then where it comes from, between markers. Whatever else the issue's body holds (a blocker, the parent, what a
+/// person wrote) is not the sync's.
 pub fn issue_body(item: &Item, repository: &str, path: &str) -> String {
     let quoted: Vec<String> = item
         .text
@@ -211,11 +224,29 @@ pub fn issue_body(item: &Item, repository: &str, path: &str) -> String {
         })
         .collect();
     format!(
-        "{}\n\n---\nKept in step with `{path}` in {repository} (item {}) by the backlog sync. Edit the item there; \
-         this text is replaced when it changes.",
+        "{}\n{}\n\n---\nKept in step with `{path}` in {repository} (item {}) by the backlog sync. Edit the item there; \
+         this part is replaced when it changes.\n{CLOSES}",
+        opens(&item.id),
         quoted.join("\n"),
         item.id
     )
+}
+
+/// `existing` with the part the sync owns replaced by `block`; the rest of it stays as it is. An issue that has no such
+/// part yet (one that was adopted) gets it in front of what it has.
+pub fn with_block(existing: &str, id: &str, block: &str) -> String {
+    let open = opens(id);
+    if let Some(start) = existing.find(&open)
+        && let Some(end) = existing[start..].find(CLOSES)
+    {
+        let end = start + end + CLOSES.len();
+        return format!("{}{block}{}", &existing[..start], &existing[end..]);
+    }
+    if existing.trim().is_empty() {
+        block.to_string()
+    } else {
+        format!("{block}\n\n{existing}")
+    }
 }
 
 impl Backlog {
@@ -400,6 +431,16 @@ impl App {
     /// one item is a warning, and the others go on.
     pub fn sync_backlog(&self, by: &Actor, project_id: i64, dry_run: bool) -> Result<SyncReport> {
         let project = self.project(project_id)?;
+        // One sync of a project at a time, whoever asks (the route, the nightly workflow, the agent): a second waits for
+        // the first, and then finds the issues the first made.
+        let lock = self
+            .backlog_syncs
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .entry(project_id)
+            .or_default()
+            .clone();
+        let _one_at_a_time = lock.lock().unwrap_or_else(|e| e.into_inner());
         let backlog = self.store.backlog(project_id)?.ok_or_else(|| {
             AppError::NotFound(format!("a backlog of the project {}", project.name))
         })?;
@@ -486,6 +527,73 @@ impl App {
         Ok(report)
     }
 
+    /// The card of `item` that the sync owns: the one it made, or, for an issue that was made before the sync kept
+    /// track, one a person or the Moebius agent of this server opened (it is adopted), or the one a crash left half made.
+    /// An issue somebody else opened under the item's ID is not the sync's and is reported as a clash.
+    fn owned_card(
+        &self,
+        backlog: &Backlog,
+        item: &Item,
+        title: &str,
+        report: &mut SyncReport,
+    ) -> Result<Option<i64>> {
+        if let Some(card) = self.store.backlog_card(backlog.project_id, &item.id)? {
+            return Ok(Some(card));
+        }
+        let repository = self.repository(backlog.repository_id)?;
+        let logins: BTreeSet<String> = self
+            .store
+            .logins_on(&repository.forge)?
+            .into_iter()
+            .map(|(_, login)| login.to_lowercase())
+            .collect();
+        let intent = self.store.backlog_intent(backlog.project_id, &item.id)?;
+        for id in self
+            .store
+            .cards_of_backlog_item(backlog.repository_id, &item.id)?
+        {
+            if self.store.is_backlog_card(id)? {
+                continue;
+            }
+            let card = self.card(id)?;
+            // The issue the forge made before a crash kept the sync from recording it, found by its exact title.
+            let left_half_made = intent
+                .as_ref()
+                .is_some_and(|(t, at)| *t == card.title && card.created_at >= *at - 5);
+            let ours = left_half_made
+                || super::is_person(&card.author)
+                || card.author.starts_with("agent:")
+                || logins.contains(&card.author.to_lowercase());
+            if ours {
+                self.store
+                    .set_backlog_card(card.id, backlog.project_id, &item.id)?;
+                self.store
+                    .clear_backlog_intent(backlog.project_id, &item.id)?;
+                return Ok(Some(card.id));
+            }
+            report.clashes.push(Synced {
+                id: item.id.clone(),
+                number: card.number,
+                title: card.title.clone(),
+            });
+            if self
+                .store
+                .activity_about("backlog_clash", repository.id, card.number)?
+                .is_empty()
+            {
+                self.store.note_activity(
+                    "backlog_clash",
+                    Some(repository.id),
+                    Some(card.number),
+                    Some(&card.author),
+                    &format!("{title} was opened by @{}", card.author),
+                    &json!({ "card": card.id, "title": card.title, "item": item.id }),
+                )?;
+            }
+        }
+        Ok(None)
+    }
+
     #[allow(clippy::too_many_arguments)]
     fn sync_item(
         &self,
@@ -498,17 +606,14 @@ impl App {
         report: &mut SyncReport,
     ) -> Result<()> {
         let title = issue_title(item);
-        let body = issue_body(item, repository, &backlog.path);
+        let block = issue_body(item, repository, &backlog.path);
         let labels = backlog.labels_of(item);
         let synced = |number: i64| Synced {
             id: item.id.clone(),
             number,
             title: title.clone(),
         };
-        let existing = self
-            .store
-            .cards_of_backlog_item(backlog.repository_id, &item.id)?;
-        let Some(card_id) = existing.first().copied() else {
+        let Some(card_id) = self.owned_card(backlog, item, &title, report)? else {
             if item.closed {
                 // Nothing to close and nothing worth making.
                 report.unchanged += 1;
@@ -523,15 +628,23 @@ impl App {
                 report.created.push(synced(0));
                 return Ok(());
             }
+            // Written down before the forge is asked, so that an issue it makes that this server never records is found
+            // again by the next sync and not made twice.
+            self.store
+                .set_backlog_intent(backlog.project_id, &item.id, &title)?;
             let (card, warnings) = self.create_tracked_issue(
                 by,
                 backlog.repository_id,
                 &title,
-                &body,
+                &block,
                 None,
                 &labels,
                 &[],
             )?;
+            self.store
+                .set_backlog_card(card.id, backlog.project_id, &item.id)?;
+            self.store
+                .clear_backlog_intent(backlog.project_id, &item.id)?;
             report
                 .warnings
                 .extend(warnings.into_iter().map(|w| format!("{}: {w}", item.id)));
@@ -556,6 +669,8 @@ impl App {
             return Ok(());
         }
         let mut changed = false;
+        // Only the part between the markers is the sync's: blockers, the parent and what a person wrote stay.
+        let body = with_block(&card.body, &item.id, &block);
         if card.title != title || normal(&card.body) != normal(&body) {
             if !dry_run {
                 self.edit_card(
@@ -643,10 +758,36 @@ mod tests {
     }
 
     #[test]
+    fn only_the_part_between_the_markers_is_replaced() {
+        let item = &items(FILE)[0];
+        let block = issue_body(item, "acme/widgets", "b.md");
+        let existing = format!("Intro by a person.\n\n{block}\n\nBlocked by #3\nPart of #9");
+        let other = Item {
+            text: "## K-47: Cache the plan\nNew text.".into(),
+            ..item.clone()
+        };
+        let new = issue_body(&other, "acme/widgets", "b.md");
+        let body = with_block(&existing, "K-47", &new);
+        assert!(body.starts_with("Intro by a person.\n\n<!-- backlog:K-47 -->"));
+        assert!(body.contains("> New text."));
+        assert!(!body.contains("Body."));
+        assert!(body.ends_with("<!-- /backlog -->\n\nBlocked by #3\nPart of #9"));
+        // An issue without the part gets it in front, and what it had stays.
+        assert_eq!(
+            with_block("By hand.", "K-47", &block),
+            format!("{block}\n\nBy hand.")
+        );
+        assert_eq!(with_block("", "K-47", &block), block);
+    }
+
+    #[test]
     fn the_issue_quotes_the_item_in_full() {
         let item = &items(FILE)[0];
         let body = issue_body(item, "acme/widgets", "notes/backlog.md");
-        assert!(body.starts_with("> ## K-47: Cache the plan\n> Difficulty: hard\n>\n> Body."));
+        assert!(body.starts_with(
+            "<!-- backlog:K-47 -->\n> ## K-47: Cache the plan\n> Difficulty: hard\n>\n> Body."
+        ));
+        assert!(body.ends_with("<!-- /backlog -->"));
         assert!(body.contains("`notes/backlog.md` in acme/widgets (item K-47)"));
         assert_eq!(issue_title(item), "K-47: Cache the plan");
     }

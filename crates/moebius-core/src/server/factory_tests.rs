@@ -1,4 +1,4 @@
-//! The software factory (ADR 0031), against the fake GitHub: the daily digest and its clock, the stale handling of
+//! The software factory (ADR 0032), against the fake GitHub: the daily digest and its clock, the stale handling of
 //! issues taken and pull requests followed, and the backlog sync.
 
 use std::sync::Arc;
@@ -156,10 +156,7 @@ async fn the_digest_tells_what_happened_per_repository() {
         .unwrap()
         .unwrap();
     assert_eq!(item.kind, DIGEST_ITEM);
-    assert_eq!(
-        item.title,
-        format!("Daily digest {}: 1 merged, 1 need you", f.today())
-    );
+    assert_eq!(item.title, format!("Daily digest {}", f.today()));
     let widgets = section(&item, "widgets");
     assert_eq!(widgets["merged"][0]["who"], "moebius");
     assert_eq!(widgets["merged"][0]["measured"], true);
@@ -225,7 +222,7 @@ async fn a_quiet_day_still_has_a_digest() {
         .unwrap()
         .unwrap();
     assert_eq!(item.data["repositories"], json!([]));
-    assert!(item.title.ends_with("0 merged, 0 need you"));
+    assert_eq!(item.title, format!("Daily digest {}", f.today()));
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -320,18 +317,32 @@ async fn nothing_is_released_for_a_followed_pull_request_a_held_card_or_while_al
     );
 }
 
-/// The followed pull request of alice, which a review asked to change and nobody pushed to for `days`.
-async fn stale_request(f: &Fixture, days: i64) -> crate::store::Change {
+/// Has the fake say that pull request 7 was reviewed `days` ago, for the commit `head`, with `state`.
+fn reviewed(f: &Fixture, state: &str, head: &str, days: i64) {
+    let at = time::OffsetDateTime::from_unix_timestamp(now() - days * DAY)
+        .unwrap()
+        .format(&time::format_description::well_known::Rfc3339)
+        .unwrap();
+    f.fake.pulls.lock().unwrap().reviews =
+        vec![json!({ "state": state, "commit_id": head, "submitted_at": at })];
+}
+
+/// The followed pull request of alice at the head `deadbeef`, pushed `pushed` days ago, whose latest review asked for
+/// changes `reviewed_days` days ago, of the head it has.
+async fn stale_request_with(f: &Fixture, pushed: i64, reviewed_days: i64) -> crate::store::Change {
     let card = following(f).await;
     let store = &f.server.app.store;
     let change = store.open_change(card.id).unwrap().unwrap();
     store
-        .set_change_status(change.id, None, "deadbeef", None, Some("changes_requested"))
+        .set_change_head(change.id, "deadbeef", now() - pushed * DAY)
         .unwrap();
-    store
-        .set_change_head(change.id, "deadbeef", now() - days * DAY)
-        .unwrap();
+    reviewed(f, "CHANGES_REQUESTED", "deadbeef", reviewed_days);
     store.change(change.id).unwrap().unwrap()
+}
+
+/// The same, reviewed when it was pushed.
+async fn stale_request(f: &Fixture, days: i64) -> crate::store::Change {
+    stale_request_with(f, days, days).await
 }
 
 fn posted_on(f: &Fixture, number: u64) -> Vec<String> {
@@ -376,6 +387,7 @@ async fn a_followed_pull_request_with_no_push_after_changes_were_asked_is_remind
 
 /// Ages the push of the followed request again.
 fn stale_request_aged(f: &Fixture, days: i64) -> crate::store::Change {
+    reviewed(f, "CHANGES_REQUESTED", "deadbeef", days);
     let store = &f.server.app.store;
     let card = f.card(1).unwrap();
     let change = store.open_change(card.id).unwrap().unwrap();
@@ -436,15 +448,11 @@ async fn a_pull_request_that_was_not_asked_to_change_or_is_held_is_left_alone() 
     let change = stale_request(&f, 40).await;
     let store = &f.server.app.store;
     // Approved, not changes requested.
-    store
-        .set_change_status(change.id, None, "deadbeef", None, Some("approved"))
-        .unwrap();
+    reviewed(&f, "APPROVED", "deadbeef", 40);
     let done = blocking(&f, |app| app.run_upkeep()).await.unwrap();
     assert_eq!((done.reminded, done.closed), (0, 0));
     // Changes requested but the card is held.
-    store
-        .set_change_status(change.id, None, "deadbeef", None, Some("changes_requested"))
-        .unwrap();
+    reviewed(&f, "CHANGES_REQUESTED", "deadbeef", 40);
     store
         .hold_card(
             change.card_id.unwrap(),
@@ -527,10 +535,13 @@ async fn a_sync_makes_an_issue_for_each_item_and_a_second_makes_none() {
     // The body quotes the item in full.
     let body = f.fake.created.lock().unwrap()[0].2.clone();
     assert!(
-        body.starts_with("> ## K-47: Cache the plan\n> Difficulty: hard\n>\n> Cache it."),
+        body.starts_with(
+            "<!-- backlog:K-47 -->\n> ## K-47: Cache the plan\n> Difficulty: hard\n>\n> Cache it."
+        ),
         "{body}"
     );
     assert!(body.contains("notes/backlog/optimisation-backlog.md"));
+    assert!(body.ends_with("<!-- /backlog -->"), "{body}");
     // Run again, also after the poll read the issues back: nothing is made twice.
     f.server.poll_github().await;
     let again = sync(&f, project, false).await;
@@ -716,4 +727,193 @@ async fn a_backlog_needs_a_repository_of_the_project_and_a_pattern_with_an_id() 
     })
     .await;
     assert!(sync.is_err(), "no backlog is set");
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_push_after_the_review_is_the_reviewers_to_answer_not_the_authors() {
+    let f = Fixture::new().await;
+    // Changes were asked of an earlier head; the author pushed since and waits. GitHub still says changes requested.
+    stale_request(&f, 40).await;
+    reviewed(&f, "CHANGES_REQUESTED", "an-older-head", 40);
+    let done = blocking(&f, |app| app.run_upkeep()).await.unwrap();
+    assert_eq!((done.reminded, done.closed), (0, 0));
+    assert!(posted_on(&f, 7).is_empty());
+    assert!(f.fake.state_writes.lock().unwrap().is_empty());
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn the_days_run_from_the_later_of_the_review_and_the_push() {
+    let f = Fixture::new().await;
+    // Pushed 40 days ago and reviewed yesterday, of that head: the author has had a day, not forty.
+    let change = stale_request_with(&f, 40, 1).await;
+    let done = blocking(&f, |app| app.run_upkeep()).await.unwrap();
+    assert_eq!((done.reminded, done.closed), (0, 0));
+    assert_eq!(f.change(change.id).state, "open");
+    // Reviewed 15 days ago, pushed 40: reminded, not closed.
+    reviewed(&f, "CHANGES_REQUESTED", "deadbeef", 15);
+    let done = blocking(&f, |app| app.run_upkeep()).await.unwrap();
+    assert_eq!((done.reminded, done.closed), (1, 0));
+    assert_eq!(f.change(change.id).state, "open");
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_close_the_forge_refuses_is_not_commented_on_or_tried_again_and_is_told_once_in_the_digest()
+ {
+    let f = Fixture::new().await;
+    let change = stale_request(&f, 31).await;
+    f.fake
+        .fail_state_writes
+        .store(true, std::sync::atomic::Ordering::SeqCst);
+    for _ in 0..3 {
+        let done = blocking(&f, |app| app.run_upkeep()).await.unwrap();
+        assert_eq!((done.reminded, done.closed), (0, 0));
+    }
+    assert!(
+        posted_on(&f, 7).is_empty(),
+        "no comment for a close that did not happen"
+    );
+    assert_eq!(f.change(change.id).state, "open");
+    let tries = f
+        .server
+        .app
+        .store
+        .activity_about("stale_failed", f.repository.id, 7)
+        .unwrap();
+    assert_eq!(tries.len(), 1);
+    let day = f.today();
+    let item = blocking(&f, move |app| app.make_digest(&day, None))
+        .await
+        .unwrap()
+        .unwrap();
+    let upkeep = section(&item, "widgets")["upkeep"]
+        .as_array()
+        .unwrap()
+        .clone();
+    assert!(
+        upkeep.iter().any(|l| l["detail"]
+            .as_str()
+            .unwrap()
+            .starts_with("the forge refused to close")),
+        "{upkeep:?}"
+    );
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn an_issue_a_stranger_opened_under_an_items_id_is_never_touched() {
+    let f = Fixture::new().await;
+    // A stranger opens "K-47: ..." before the sync ever ran, and another "P-16: ..." that someone closed.
+    let mut hijack = open_issue(5, "Their text.");
+    hijack["title"] = json!("K-47: Not yours");
+    hijack["user"] = json!({ "login": "stranger" });
+    f.fake.set_issues("\"v1\"", vec![hijack]);
+    f.server.poll_github().await;
+    let theirs = f.card(5).unwrap();
+    let project = with_backlog(&f, 15).await;
+    // The item closes in the file too: a closed item must not close their issue.
+    let marked = BACKLOG.replace(
+        "## K-47: Cache the plan",
+        "## K-47: Cache the plan [closed]",
+    );
+    f.push_files(&[("notes/backlog/optimisation-backlog.md", Some(&marked))]);
+    let report = sync(&f, project, false).await;
+    assert_eq!(report.clashes.len(), 1, "{report:?}");
+    assert_eq!(report.clashes[0].number, 5);
+    assert!(
+        report.closed.is_empty() && report.updated.is_empty(),
+        "{report:?}"
+    );
+    let after = f.card(5).unwrap();
+    assert_eq!(
+        (after.title.as_str(), after.body.as_str()),
+        ("K-47: Not yours", "Their text.")
+    );
+    assert!(!after.closed && after.labels == theirs.labels);
+    assert!(f.fake.state_writes.lock().unwrap().is_empty());
+    assert!(f.fake.state_reasons.lock().unwrap().is_empty());
+    // The other two items were made; the clash is in the digest, once.
+    assert_eq!(titles(&f), ["P-16: Shorter prompts", "M-01: Measure more"]);
+    sync(&f, project, false).await;
+    let day = f.today();
+    let item = blocking(&f, move |app| app.make_digest(&day, None))
+        .await
+        .unwrap()
+        .unwrap();
+    let clashes: Vec<_> = section(&item, "widgets")["upkeep"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|l| l["detail"].as_str().unwrap().starts_with("not touched"))
+        .collect();
+    assert_eq!(clashes.len(), 1);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn two_syncs_at_once_make_each_issue_once() {
+    let f = Fixture::new().await;
+    let project = with_backlog(&f, 15).await;
+    let (a, b) = tokio::join!(sync(&f, project, false), sync(&f, project, false));
+    assert_eq!(f.fake.created.lock().unwrap().len(), 3, "{a:?} {b:?}");
+    assert_eq!(a.created.len() + b.created.len(), 3);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn an_issue_the_forge_made_before_a_crash_is_found_again_and_not_made_twice() {
+    let f = Fixture::new().await;
+    let project = with_backlog(&f, 15).await;
+    // The sync wrote its intent and asked the forge, which made the issue; the server died before it recorded it. The
+    // poll then reads the issue in as a card.
+    f.server
+        .app
+        .store
+        .set_backlog_intent(project, "K-47", "K-47: Cache the plan")
+        .unwrap();
+    let mut left = open_issue(5, "Half made.");
+    left["title"] = json!("K-47: Cache the plan");
+    f.fake.set_issues("\"v1\"", vec![left]);
+    f.server.poll_github().await;
+    let report = sync(&f, project, false).await;
+    assert_eq!(
+        titles(&f),
+        ["P-16: Shorter prompts", "M-01: Measure more"],
+        "{report:?}"
+    );
+    assert!(report.clashes.is_empty());
+    assert_eq!(
+        report.updated.len(),
+        1,
+        "its body is the sync's from now on"
+    );
+    assert_eq!(
+        f.server.app.store.backlog_card(project, "K-47").unwrap(),
+        Some(f.card(5).unwrap().id)
+    );
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_body_update_keeps_the_blockers_the_parent_and_what_a_person_wrote() {
+    let f = Fixture::new().await;
+    let project = with_backlog(&f, 15).await;
+    sync(&f, project, false).await;
+    let card = f.card(100).unwrap();
+    let kept = format!(
+        "A note by a person.\n\n{}\n\nBlocked by #101\nPart of #102",
+        card.body
+    );
+    f.server
+        .app
+        .store
+        .set_card_text(card.id, &card.title, &kept)
+        .unwrap();
+    let changed = BACKLOG.replace("Cache it.", "Cache it twice.");
+    f.push_files(&[("notes/backlog/optimisation-backlog.md", Some(&changed))]);
+    let report = sync(&f, project, false).await;
+    assert_eq!(report.updated.len(), 1, "{report:?}");
+    let body = f.card(100).unwrap().body;
+    assert!(body.starts_with("A note by a person."), "{body}");
+    assert!(
+        body.contains("Cache it twice.") && !body.contains("> Cache it.\n"),
+        "{body}"
+    );
+    assert!(body.contains("Blocked by #101\nPart of #102"), "{body}");
+    assert_eq!(body.matches("<!-- backlog:K-47 -->").count(), 1);
 }

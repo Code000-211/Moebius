@@ -123,3 +123,76 @@ async fn a_card_does_not_list_the_numbers_of_hidden_cards_that_block_it() {
     let (_, answer) = send(&addr, &private.lea, "GET", "/v1/snapshot").await;
     assert_eq!(blocked_by(&answer), [secret.number, visible.number]);
 }
+
+#[tokio::test]
+async fn the_digest_tells_nobody_what_a_private_project_holds_unless_they_are_its_member() {
+    let (_dir, state, addr) = start().await;
+    let private = private(&state);
+    let store = &state.app.store;
+    let secret = store.card(private.card).unwrap().unwrap();
+    let open = open_card(&state, &private);
+    // Both cards were taken and have a hold; something about each waits for a person.
+    for card in [&secret, &open] {
+        store
+            .note_activity(
+                "take",
+                Some(private.repository),
+                Some(card.number),
+                Some("mallory"),
+                "",
+                &json!({ "card": card.id, "title": card.title }),
+            )
+            .unwrap();
+        store
+            .add_inbox_item("merge_stopped", Some(card.id), &card.title, &json!({}))
+            .unwrap();
+    }
+    let day = store.today().unwrap();
+    let app = state.app.clone();
+    tokio::task::spawn_blocking(move || app.make_digest(&day, None))
+        .await
+        .unwrap()
+        .unwrap()
+        .unwrap();
+    let read = |token: String| {
+        let addr = addr.clone();
+        async move {
+            let (_, snapshot) = send(&addr, &token, "GET", "/v1/snapshot").await;
+            snapshot["inbox"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|item| item["kind"] == "daily_digest")
+                .cloned()
+                .expect("the digest is in the inbox")
+        }
+    };
+    // A member of the project reads everything of it.
+    let lea = read(private.lea.clone()).await.to_string();
+    assert!(
+        lea.contains(&secret.title) && lea.contains("mallory"),
+        "{lea}"
+    );
+    // Neither a member who is not in it nor an owner who is not in it reads a title, a login or a link of it.
+    for token in [&private.ben, &private.olga] {
+        let item = read(token.clone()).await;
+        let text = item.to_string();
+        assert!(!text.contains(&secret.title), "{text}");
+        assert!(
+            !text.contains(&format!("\"card_id\":{}", secret.id)),
+            "{text}"
+        );
+        assert!(
+            item["data"]["text"]
+                .as_str()
+                .is_some_and(|t| !t.contains(&secret.title)),
+            "{text}"
+        );
+        // What the open project holds is still there for them.
+        assert!(text.contains(&open.title), "{text}");
+        assert_eq!(
+            item["title"],
+            format!("Daily digest {}", store.today().unwrap())
+        );
+    }
+}

@@ -25,7 +25,7 @@ export const TAKEOVER = "takeover";
 export const WIKI_PROPOSAL = "wiki_proposal";
 export const GRILLING_ISSUES = "grilling_issues";
 export const GRILLING_REPORT = "grilling_report";
-/** The owner's digest of what happened since the last one (ADR 0031): no card, dismissed when read. */
+/** The owner's digest of what happened since the last one (ADR 0032): no card, dismissed when read. */
 export const DAILY_DIGEST = "daily_digest";
 
 /** The branch of a change that offers the work of a chat is `moebius/chat-<id>`. */

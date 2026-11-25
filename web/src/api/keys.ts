@@ -21,7 +21,7 @@ export const keys = {
     ["analytics", days, repository, agent] as const,
   settings: ["settings"] as const,
   webhooks: ["webhooks"] as const,
-  /** A repository's stale settings and a project's backlog (ADR 0031). */
+  /** A repository's stale settings and a project's backlog (ADR 0032). */
   upkeep: (repository: number) => ["upkeep", repository] as const,
   backlog: (project: number) => ["backlog", project] as const,
   /** What a repository's files page has read: directories, one file, the paths for "Go to file", a search. */

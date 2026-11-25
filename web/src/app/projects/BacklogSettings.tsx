@@ -1,5 +1,5 @@
 /**
- * The "Backlog" section of a project's Repositories settings (ADR 0031): which file of which repository holds the
+ * The "Backlog" section of a project's Repositories settings (ADR 0032): which file of which repository holds the
  * project's backlog, how an item is found in it, how many issues one sync makes at most, and the names of the labels a
  * stated difficulty and "lane required" give. "Preview" says what a sync would do and "Sync now" does it, each with
  * the report under the buttons. A nightly sync is a workflow (see the guide). An owner edits; anyone else reads.

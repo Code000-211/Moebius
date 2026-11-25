@@ -183,6 +183,12 @@ struct CheckRuns {
 pub struct Review {
     /// Upper case, such as `APPROVED`, `CHANGES_REQUESTED` or `COMMENTED`.
     pub state: String,
+    /// The commit the review was written for.
+    #[serde(default)]
+    pub commit_id: Option<String>,
+    /// When it was submitted, in RFC 3339.
+    #[serde(default)]
+    pub submitted_at: Option<String>,
 }
 
 #[derive(Deserialize)]

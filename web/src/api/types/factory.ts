@@ -1,4 +1,4 @@
-/** The software factory (ADR 0031): a repository's stale settings, a project's backlog, and the daily digest an inbox item holds. */
+/** The software factory (ADR 0032): a repository's stale settings, a project's backlog, and the daily digest an inbox item holds. */
 
 /** `GET /v1/repositories/{id}/upkeep`: days, 0 is off. */
 export interface Upkeep {

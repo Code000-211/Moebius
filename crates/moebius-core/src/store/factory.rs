@@ -1,4 +1,4 @@
-//! The software factory (ADR 0031): what the store keeps so that the owner of a busy repository has little to do. A
+//! The software factory (ADR 0032): what the store keeps so that the owner of a busy repository has little to do. A
 //! log of what happened that the daily digest reports (`factory_log`), the days a digest was made (`digests`, so that
 //! one day has one), when each card's issue was taken (`assigned_since`, which the stale handling reads), the stale
 //! settings of each repository (`upkeep_settings`) and the backlog file of each project (`backlogs`).
@@ -39,6 +39,19 @@ CREATE TABLE upkeep_settings (
     release_after_days INTEGER NOT NULL DEFAULT 14,
     stale_after_days INTEGER NOT NULL DEFAULT 14,
     close_after_days INTEGER NOT NULL DEFAULT 30
+);
+CREATE TABLE backlog_cards (
+    card_id INTEGER PRIMARY KEY,
+    project_id INTEGER NOT NULL,
+    item_id TEXT NOT NULL
+);
+CREATE INDEX backlog_cards_by_item ON backlog_cards (project_id, item_id);
+CREATE TABLE backlog_intents (
+    project_id INTEGER NOT NULL,
+    item_id TEXT NOT NULL,
+    title TEXT NOT NULL,
+    at INTEGER NOT NULL,
+    PRIMARY KEY (project_id, item_id)
 );
 CREATE TABLE backlogs (
     project_id INTEGER PRIMARY KEY,
@@ -422,6 +435,67 @@ impl Store {
     pub fn remove_backlog(&self, project_id: i64) -> Result<()> {
         self.conn()
             .execute("DELETE FROM backlogs WHERE project_id = ?1", [project_id])?;
+        Ok(())
+    }
+
+    /// The card the sync of `project_id` made for the backlog item `item`, if it did.
+    pub fn backlog_card(&self, project_id: i64, item: &str) -> Result<Option<i64>> {
+        Ok(self
+            .read()
+            .query_row(
+                "SELECT card_id FROM backlog_cards WHERE project_id = ?1 AND item_id = ?2 ORDER BY card_id LIMIT 1",
+                params![project_id, item],
+                |r| r.get(0),
+            )
+            .optional()?)
+    }
+
+    /// Whether the card is one a backlog sync made, or adopted.
+    pub fn is_backlog_card(&self, card_id: i64) -> Result<bool> {
+        Ok(self.read().query_row(
+            "SELECT EXISTS (SELECT 1 FROM backlog_cards WHERE card_id = ?1)",
+            [card_id],
+            |r| r.get(0),
+        )?)
+    }
+
+    /// Records that the card is the issue of the backlog item `item` of the project: the sync only ever changes these.
+    pub fn set_backlog_card(&self, card_id: i64, project_id: i64, item: &str) -> Result<()> {
+        self.conn().execute(
+            "INSERT OR REPLACE INTO backlog_cards (card_id, project_id, item_id) VALUES (?1, ?2, ?3)",
+            params![card_id, project_id, item],
+        )?;
+        Ok(())
+    }
+
+    /// Writes down that the sync is about to make the issue of `item` with `title`, so that an issue the forge made
+    /// that the store never heard of (a crash between the two) is found again and not made twice.
+    pub fn set_backlog_intent(&self, project_id: i64, item: &str, title: &str) -> Result<()> {
+        self.conn().execute(
+            "INSERT OR REPLACE INTO backlog_intents (project_id, item_id, title, at) VALUES (?1, ?2, ?3, ?4)",
+            params![project_id, item, title, now()],
+        )?;
+        Ok(())
+    }
+
+    /// The title and time of an issue the sync meant to make for `item` and has not recorded, if there is one.
+    pub fn backlog_intent(&self, project_id: i64, item: &str) -> Result<Option<(String, i64)>> {
+        Ok(self
+            .read()
+            .query_row(
+                "SELECT title, at FROM backlog_intents WHERE project_id = ?1 AND item_id = ?2",
+                params![project_id, item],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .optional()?)
+    }
+
+    /// Forgets the intent: the issue is recorded.
+    pub fn clear_backlog_intent(&self, project_id: i64, item: &str) -> Result<()> {
+        self.conn().execute(
+            "DELETE FROM backlog_intents WHERE project_id = ?1 AND item_id = ?2",
+            params![project_id, item],
+        )?;
         Ok(())
     }
 
