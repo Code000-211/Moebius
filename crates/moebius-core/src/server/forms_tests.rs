@@ -870,3 +870,107 @@ async fn a_synced_copy_follows_the_projects_template() {
         "{pull}"
     );
 }
+
+// ---------------------------------------------------------------------------------------------------------------
+// What the author of a pull request says is a claim, never a decision
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_pull_request_that_says_not_needed_does_not_satisfy_the_gate() {
+    let (f, card) = reported().await;
+    let engine = f.reviewing_engine();
+    f.published(&engine, &card).await;
+    // The body says `not needed`, and the body was read as such.
+    let change = f.own_change(&card);
+    let kept: crate::app::forms::pull::Pull =
+        serde_json::from_str(change.pull_fields.as_deref().unwrap()).unwrap();
+    assert_eq!(kept.measurement.unwrap().state, "not needed");
+    // The repository requires a measurement: the claim is not one.
+    f.server
+        .app
+        .edit_working_with_others(
+            &owner(),
+            f.repository.id,
+            &crate::app::WorkingWithOthers {
+                factory: crate::app::factory::FactoryEdit {
+                    require_measurement: Some(true),
+                    ..Default::default()
+                },
+                ..Default::default()
+            },
+            "test",
+        )
+        .unwrap();
+    let repository = f.server.app.repository(f.repository.id).unwrap();
+    let script = Actor::Script {
+        column: "merge".into(),
+    };
+    for by in [&script, &owner()] {
+        let said = f
+            .server
+            .app
+            .gate_says(by, &change, &repository, None)
+            .unwrap();
+        assert!(said.unwrap_err().contains("requires a measurement"));
+    }
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn an_own_pull_request_is_left_alone_by_the_unbound_handling_and_the_issue_keeps_one_status_label()
+ {
+    let (f, card) = reported().await;
+    f.server
+        .app
+        .edit_flow(
+            &owner(),
+            f.repository.id,
+            &crate::app::FlowEdit {
+                status_labels: Some(true),
+                ..Default::default()
+            },
+            "test",
+        )
+        .unwrap();
+    let engine = f.reviewing_engine();
+    f.published(&engine, &card).await;
+    // The forge lists Moebius's own open pull request, whose body names no issue by a closing keyword the poll reads.
+    *f.fake.listed_pulls.lock().unwrap() = vec![json!({
+        "number": 7, "title": "Issue 1", "body": "nothing here", "user": { "login": "octo-user" },
+        "head": { "sha": "deadbeef" }, "base": { "ref": "main" }
+    })];
+    f.server.poll_github().await;
+    f.server.poll_github().await;
+    let on_pull: Vec<String> = f
+        .on_pull()
+        .into_iter()
+        .filter(|t| !t.starts_with("## Review"))
+        .collect();
+    assert!(
+        on_pull.is_empty(),
+        "nothing is asked of its own pull request: {on_pull:?}"
+    );
+    assert!(
+        f.fake
+            .label_adds
+            .lock()
+            .unwrap()
+            .iter()
+            .all(|(n, _)| *n != 7)
+    );
+    assert!(
+        f.fake
+            .state_writes
+            .lock()
+            .unwrap()
+            .iter()
+            .all(|(n, _)| *n != 7),
+        "none is closed"
+    );
+    let writes = f.fake.label_writes.lock().unwrap().clone();
+    let last = writes
+        .iter()
+        .rev()
+        .find(|(n, _)| *n == 1)
+        .expect("the issue got its label");
+    let status: Vec<&String> = last.1.iter().filter(|l| l.starts_with("status:")).collect();
+    assert_eq!(status.len(), 1, "{last:?}");
+}
