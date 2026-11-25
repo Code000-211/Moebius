@@ -28,6 +28,10 @@ use crate::store::LaneJob;
 /// counted by [`crate::store::Store::lane_infrastructure_streak`].
 pub const TIME_MARK: &str = "total time";
 
+/// What it says when the disk of the lane fell under its reserve while the merge base ran, after the head had run in the
+/// same job: not counted either.
+pub const DISK_MARK: &str = "disk of the lane";
+
 /// How a job ended, before it is written down.
 pub(super) enum Outcome {
     Cancelled,
@@ -44,9 +48,10 @@ enum Stop {
     Cancelled,
     /// The lane is to blame.
     Errored(String),
-    /// The job's total time ran out while the merge base had used more of it than the head: the lane's, but not a
-    /// failure that counts towards pausing it when the change is someone else's.
-    OutOfTime(String),
+    /// The lane's, but not a failure that counts towards pausing it when the change is someone else's: the job's total time
+    /// ran out while the merge base had used more of it than the head, or the disk of the lane ran low while the merge
+    /// base ran after the head had. The second is what `failed_step` is marked with.
+    Exempt(String, &'static str),
     /// A step of the change's head failed: the change is to blame.
     Failed {
         step: String,
@@ -187,11 +192,11 @@ impl App {
                 }
             }
             // Not counted towards pausing the lane when it is someone else's change that used up the time.
-            Err(Stop::OutOfTime(summary)) => {
+            Err(Stop::Exempt(summary, mark)) => {
                 report["error"] = json!(summary);
                 Outcome::Ended {
                     state: "errored",
-                    failed_step: job.external.then(|| TIME_MARK.to_string()),
+                    failed_step: job.external.then(|| mark.to_string()),
                     summary,
                     report,
                 }
@@ -678,10 +683,13 @@ impl Job<'_> {
     fn out_of_time(&self, step: &Step, output: &str) -> Stop {
         let limit = self.lane.timeout_seconds;
         if self.spent_before.get() > self.spent_after.get() {
-            return Stop::OutOfTime(format!(
-                "the job ran out of its total time of {limit} seconds at the step {}",
-                step.name
-            ));
+            return Stop::Exempt(
+                format!(
+                    "the job ran out of its total time of {limit} seconds at the step {}",
+                    step.name
+                ),
+                TIME_MARK,
+            );
         }
         Stop::Failed {
             step: Self::labelled(step, "after"),
@@ -833,6 +841,17 @@ impl Job<'_> {
                 self.lane.disk
             ),
             // The disk of the lane fell under its reserve: on the merge base that may be anyone's doing, so it is the lane's.
+            // ... and when a command of the head has run in this job already, whoever's it was is not told by the count of
+            // errors either, or a head could make the lane pause by what it left on the disk.
+            Finish::DiskLaneFull if side == "before" && self.spent_after.get() > Duration::ZERO => {
+                return Err(Stop::Exempt(
+                    format!(
+                        "the disk of the lane fell under its reserve while the merge base ran the step {}, after the head had run in this job",
+                        step.name
+                    ),
+                    DISK_MARK,
+                ));
+            }
             Finish::DiskLaneFull => {
                 "the disk of the lane fell under its reserve of 5% of the blocks or inodes while it ran".to_string()
             }

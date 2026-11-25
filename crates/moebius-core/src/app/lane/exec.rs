@@ -279,13 +279,34 @@ fn marker(job_dir: &str, which: &str) -> String {
 }
 
 /// The script that ends with the token line `disk` or `disklane` when a watcher stopped the command, else goes on.
-fn disk_verdict(job_dir: &str, token: &str, remove: &str) -> String {
+/// When the disk of the lane tripped it, the job's directory is measured once more, here and now by the rules of
+/// the watcher: a head that wrote what filled the disk and ended before the loop that measures the directory ran
+/// is the one to blame (`disk`), not the lane (`disklane`).
+fn disk_verdict(watch: &Watch, job_dir: &str, token: &str, remove: &str) -> String {
     format!(
         "kill $w $w2 2>/dev/null; \
          if [ -e {job} ]; then {remove}echo \"{token} disk\"; exit 0; fi; \
-         if [ -e {lane} ]; then {remove}echo \"{token} disklane\"; exit 0; fi; ",
+         if [ -e {lane} ]; then {measure} if [ $over -eq 1 ]; then {remove}echo \"{token} disk\"; exit 0; fi; \
+           {remove}echo \"{token} disklane\"; exit 0; fi; ",
         job = marker(job_dir, "job"),
         lane = marker(job_dir, "lane"),
+        measure = measure(watch, job_dir),
+    )
+}
+
+/// The commands that set `over` to 1 when the directory of the job is over the limit, or cannot be measured: `du` takes
+/// too long or says nothing, or says `Permission denied` (a directory the machine cannot read; `du` exits 1 as well when a
+/// file vanishes during the scan, which a build does all the time and which is not it). Run with the messages of the C
+/// locale, which a runner's account may have translated.
+fn measure(watch: &Watch, job_dir: &str) -> String {
+    format!(
+        "out=$(LC_ALL=C timeout 20 du -skx {job} 2>{errors}); rc=$?; used=${{out%%[!0-9]*}}; over=0; \
+         if [ $rc -eq 124 ] || [ $rc -eq 137 ] || [ -z \"$used\" ]; then over=1; \
+         elif grep -q 'Permission denied' {errors}; then over=1; \
+         elif [ \"$used\" -gt {limit} ]; then over=1; fi; ",
+        errors = quote(&format!("{job_dir}/du-errors")),
+        job = quote(job_dir),
+        limit = watch.disk_kib,
     )
 }
 
@@ -294,10 +315,7 @@ fn watcher(watch: &Watch, job_dir: &str, kill: &str) -> String {
     format!(
         "rm -f {marker_job} {marker_lane}; \
          ( while :; do sleep 2; \
-           out=$(timeout 20 du -skx {job} 2>{errors}); rc=$?; used=${{out%%[!0-9]*}}; over=0; \
-           if [ $rc -eq 124 ] || [ $rc -eq 137 ] || [ -z \"$used\" ]; then over=1; \
-           elif grep -q -e 'Permission denied' -e 'cannot read directory' {errors}; then over=1; \
-           elif [ \"$used\" -gt {limit} ]; then over=1; fi; \
+           {measure} \
            if [ $over -eq 1 ]; then : > {marker_job}; {kill}; exit 0; fi; done ) >/dev/null 2>&1 & w=$!; \
          ( while :; do sleep 2; \
            set -- $(df -Pk {work} 2>/dev/null | awk 'NR==2 {{print $2, $4}}'); tk=$1; ak=$2; \
@@ -306,10 +324,8 @@ fn watcher(watch: &Watch, job_dir: &str, kill: &str) -> String {
              : > {marker_lane}; {kill}; exit 0; fi; done ) >/dev/null 2>&1 & w2=$!; ",
         marker_job = marker(job_dir, "job"),
         marker_lane = marker(job_dir, "lane"),
-        errors = quote(&format!("{job_dir}/du-errors")),
-        job = quote(job_dir),
+        measure = measure(watch, job_dir),
         work = quote(watch.work_dir),
-        limit = watch.disk_kib,
     )
 }
 
@@ -337,7 +353,7 @@ pub fn direct_script(
                     quote(pid_file)
                 ),
             ),
-            disk_verdict(job_dir, token, ""),
+            disk_verdict(watch, job_dir, token, ""),
         ),
         None => (String::new(), String::new()),
     };
@@ -389,6 +405,7 @@ pub fn contained_script(
                 &format!("{runtime} rm -f {name} >/dev/null 2>&1"),
             ),
             disk_verdict(
+                watch,
                 container.job_dir,
                 token,
                 &format!("{runtime} rm -f {name} >/dev/null 2>&1; "),
@@ -859,8 +876,10 @@ mod tests {
             disk_kib: 100,
         };
         let script = watcher(&watch, "/w/jobs/1", "kill-it");
-        assert!(script.contains("timeout 20 du -skx"), "{script}");
-        assert!(script.contains("Permission denied"), "{script}");
+        // The messages of `du` are the C locale's, whatever the account's is.
+        assert!(script.contains("LC_ALL=C timeout 20 du -skx"), "{script}");
+        assert!(script.contains("grep -q 'Permission denied'"), "{script}");
+        assert!(!script.contains("cannot read directory"), "{script}");
         assert!(
             script.contains("disk-job") && script.contains("disk-lane"),
             "{script}"

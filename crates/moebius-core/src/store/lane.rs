@@ -336,7 +336,8 @@ impl Store {
 
     /// How many jobs of the lane in a row ended with an infrastructure error, counting back from the newest that ended
     /// and not past the lane's last resume; a job that was cancelled is no job of the count, nor is one of someone else's
-    /// change that ran out of the total time (its `failed_step` is `total time`).
+    /// change that ran out of the total time or whose disk ran low after the head had run (its `failed_step` is `total time`
+    /// or `disk of the lane`).
     pub fn lane_infrastructure_streak(&self, lane: &str) -> Result<i64> {
         let floor: i64 = self
             .read()
@@ -351,7 +352,7 @@ impl Store {
         let mut stmt = conn.prepare(
             "SELECT state FROM lane_jobs WHERE lane = ?1 AND id > ?2 \
              AND state IN ('measured', 'passed', 'failed', 'errored') \
-             AND NOT (state = 'errored' AND COALESCE(failed_step, '') = 'total time') ORDER BY ended_at DESC, id DESC",
+             AND NOT (state = 'errored' AND COALESCE(failed_step, '') IN ('total time', 'disk of the lane')) ORDER BY ended_at DESC, id DESC",
         )?;
         let states = stmt.query_map(params![lane, floor], |r| r.get::<_, String>(0))?;
         let mut streak = 0;

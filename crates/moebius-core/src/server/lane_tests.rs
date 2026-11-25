@@ -2613,3 +2613,98 @@ async fn the_disk_of_the_lane_running_low_while_the_merge_base_runs_is_the_lanes
     assert_eq!(job.state, "errored", "{job:?}");
     assert!(job.summary.contains("reserve"), "{}", job.summary);
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_directory_that_vanished_during_the_scan_is_no_unreadable_directory() {
+    let lane = Lane::new(Isolation::Off, &one_step("sleep 5")).await;
+    shim(
+        &lane,
+        "du",
+        "#!/bin/sh\necho \"10\t$3\"\necho \"du: cannot read directory 'x/tmp': No such file or directory\" >&2\nexit 1\n",
+    );
+    lane.code_approved().await;
+    lane.pass().await;
+    assert_eq!(lane.the_job().state, "passed", "{:?}", lane.the_job());
+}
+
+/// A `df` that says the disk is all but full once the flag file is there, and is the real one before.
+fn low_df(lane: &Lane) -> String {
+    let real = String::from_utf8(
+        std::process::Command::new("sh")
+            .args(["-c", "command -v df"])
+            .output()
+            .unwrap()
+            .stdout,
+    )
+    .unwrap();
+    format!(
+        "#!/bin/sh\nif [ -e {flag} ]; then echo 'Filesystem 1K-blocks Used Available Use% Mounted on'; echo 'x 1000 999 1 99% /'; else exec {real} \"$@\"; fi\n",
+        flag = lane.f._dir.path().join("df-low").display(),
+        real = real.trim(),
+    )
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_head_that_filled_the_disk_and_ended_is_blamed_when_the_disk_loop_stops_the_next_command()
+{
+    let steps = "[[step]]\nname = \"fill\"\ncommand = 'head -c 10 /dev/zero > big'\n\
+[[step]]\nname = \"check\"\non = \"both\"\ncommand = 'touch @DIR@/df-low; sleep 30'\n";
+    let lane = Lane::new(Isolation::Off, steps).await;
+    let df = low_df(&lane);
+    shim(&lane, "df", &df);
+    // The loop of the directory is slow and says the directory of the job is huge: the disk's loop is first.
+    let shim_dir = lane.f._dir.path().join("shim-du");
+    std::fs::create_dir_all(&shim_dir).unwrap();
+    std::fs::write(
+        shim_dir.join("du"),
+        "#!/bin/sh\nsleep 3\necho \"99999999\t$3\"\n",
+    )
+    .unwrap();
+    std::fs::set_permissions(
+        shim_dir.join("du"),
+        std::os::unix::fs::PermissionsExt::from_mode(0o755),
+    )
+    .unwrap();
+    let path = std::env::var("PATH").unwrap_or_default();
+    lane.app().lanes.set_test_environment(vec![(
+        "PATH".into(),
+        format!(
+            "{}:{}:{path}",
+            shim_dir.display(),
+            lane.f._dir.path().join("shim-df").display()
+        ),
+    )]);
+    lane.code_approved().await;
+    lane.pass().await;
+    // The disk's loop stopped the command, then the directory was measured again, and was over: the head's.
+    let job = lane.the_job();
+    assert_eq!(job.state, "failed", "{job:?}");
+    assert!(
+        job.summary.contains("left the job's disk full"),
+        "{}",
+        job.summary
+    );
+    assert_eq!(
+        lane.app().store.lane_infrastructure_streak("gpu1").unwrap(),
+        0
+    );
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_disk_that_ran_low_for_the_merge_base_after_the_head_ran_is_not_counted_towards_a_pause()
+{
+    let steps = "[[step]]\nname = \"fill\"\ncommand = 'head -c 10 /dev/zero > big'\n\
+[[step]]\nname = \"check\"\non = \"both\"\ncommand = 'touch @DIR@/df-low; sleep 30'\n";
+    let lane = Lane::new(Isolation::Off, steps).await;
+    let df = low_df(&lane);
+    shim(&lane, "df", &df);
+    lane.code_approved().await;
+    lane.pass().await;
+    let job = lane.the_job();
+    assert_eq!(job.state, "errored", "{job:?}");
+    assert_eq!(job.failed_step.as_deref(), Some("disk of the lane"));
+    assert_eq!(
+        lane.app().store.lane_infrastructure_streak("gpu1").unwrap(),
+        0
+    );
+}
