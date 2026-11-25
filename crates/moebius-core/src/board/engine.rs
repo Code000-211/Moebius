@@ -224,8 +224,10 @@ impl Engine {
                 });
             }
             self.app.set_waiting(card_id, None);
+            // What moved is what the close did: a card already in a column that counts as Done stays where it is.
+            let now = self.app.card(card_id)?.column;
             return Ok(Step {
-                moved: (card.column != columns::DONE).then(|| columns::DONE.into()),
+                moved: (now != card.column).then_some(now),
                 waiting: None,
                 started_run: effects.started_run,
             });

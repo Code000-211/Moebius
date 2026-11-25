@@ -725,16 +725,23 @@ impl App {
             return Ok(());
         };
         self.store.resolve_inbox_for_card(card_id)?;
-        let project = self.card(card_id)?.project_id;
+        let card = self.card(card_id)?;
+        let board = self.project_columns_of(card.project_id)?;
+        // The column it was taken from may be gone from the board since (a column with no card in it can be removed):
+        // the card then goes to Not started, as one taken from a column that cannot be gone back to does.
         let back = change
             .taken_from
             .as_deref()
             .filter(|column| {
-                let class = self.column_class(project, column);
-                class != columns::IN_REVIEW && class != columns::DONE
+                board.column(column).is_some_and(|c| {
+                    c.counts_as != columns::IN_REVIEW && c.counts_as != columns::DONE
+                })
             })
             .unwrap_or(columns::NOT_STARTED);
-        self.move_card_from(card_id, columns::IN_REVIEW, back, None, None)?;
+        // It leaves the column it is in, which counts as In review but need not be called so.
+        if board.class_of(&card.column) == Some(columns::IN_REVIEW) {
+            self.move_card_from(card_id, &card.column, back, None, None)?;
+        }
         Ok(())
     }
 }

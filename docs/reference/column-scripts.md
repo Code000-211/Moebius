@@ -755,3 +755,11 @@ its own agent (another model, or a model class), where the Reviewer would otherw
 
 [`examples/scripts/ready-large-cards-alone.luau`](../../examples/scripts/ready-large-cards-alone.luau) is a `ready.luau`
 override. It is tested in `crates/moebius-core/tests/examples.rs`.
+
+### Cards that change project or column set
+
+- A card put on another project's board by a `project:<name>` label keeps its column if that board has a column of the
+  same name; otherwise it moves to the built-in column of its class and the move is recorded.
+- A closed pull request of someone else sends the card back to the column it was taken from if the board still has
+  it, and to Not started if not.
+- A script that closes the issue of a card already in a column that counts as Done leaves the card there.

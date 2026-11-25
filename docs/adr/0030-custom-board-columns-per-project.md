@@ -70,3 +70,11 @@ loops, the open-card count of a project. A column the code has never heard of wo
 - The table is a copy of the file. It is rewritten whenever the file is read, so it is never older than the last read,
   and it keeps the class of an orphan for as long as cards are in it.
 - The columns cannot be edited in the web app yet. Reading them, and editing their scripts, can.
+- A card that changes project (a `project:<name>` label) keeps its column when the new board has one of that name, and
+  otherwise goes to the built-in column of its class, with the move recorded. A followed pull request that is closed
+  sends the card back to the column it was taken from when the board still has it, and to Not started when it does not
+  (a column with no card in it can be removed, so `taken_from` is not a reason to refuse the save).
+- A project whose file lost a column that cards are in is looked at again after a few seconds, not at every write, and
+  the notice is logged once for each change of what is wrong.
+- The Retro may propose changes to the scripts of a project's custom columns and its proposals are checked on that
+  project's board.

@@ -197,3 +197,112 @@ fn a_card_leaving_a_custom_ready_to_merge_column_no_longer_waits_in_the_inbox() 
         );
     }
 }
+
+const SHIPPED: &str =
+    "[[column]]\nname = \"Shipped\"\nafter = \"Ready to merge\"\ncounts_as = \"Done\"\n";
+
+#[test]
+fn closing_a_card_in_a_custom_done_column_leaves_it_there_and_reports_no_move() {
+    let (_dir, app, engine, repo) = setup();
+    put(&app, "demo", "kanban.toml", SHIPPED);
+    put(
+        &app,
+        "demo",
+        "done.luau",
+        "function on_card(card) moebius.close_issue('shipped') end\n",
+    );
+    let card = card_in(&app, repo, "Shipped");
+    let step = engine.settle(card.id).unwrap();
+    assert_eq!(step.moved, None);
+    assert_eq!(app.card(card.id).unwrap().column, "Shipped");
+}
+
+#[test]
+fn a_label_that_puts_a_card_on_a_board_without_its_column_moves_it_to_its_class() {
+    let (_dir, app, _engine, repo) = setup();
+    put(&app, "demo", "kanban.toml", &format!("{TESTING}{SHIPPED}"));
+    let ops = app.add_project("ops", "OPS").unwrap();
+    app.store.link_repository(ops.id, repo).unwrap();
+    let card = card_in(&app, repo, "Shipped");
+    let labels = std::collections::BTreeSet::from(["project:ops".to_string()]);
+    app.place_by_label(&card, &labels).unwrap();
+    let after = app.card(card.id).unwrap();
+    assert_eq!(after.project_id, ops.id);
+    assert_eq!(after.column, "Done");
+    assert_eq!(app.column_class(after.project_id, &after.column), "Done");
+    assert_eq!(
+        app.store
+            .moves_for_card(card.id)
+            .unwrap()
+            .last()
+            .unwrap()
+            .to,
+        "Done"
+    );
+    // A column the other board has too stays.
+    put(&app, "ops", "kanban.toml", TESTING);
+    let card = card_in(&app, repo, "Ready for testing");
+    app.store.set_card_project(card.id, 1).unwrap();
+    let card = app.card(card.id).unwrap();
+    let labels = std::collections::BTreeSet::from(["project:ops".to_string()]);
+    app.place_by_label(&card, &labels).unwrap();
+    assert_eq!(app.card(card.id).unwrap().column, "Ready for testing");
+}
+
+#[test]
+fn a_closed_followed_request_sends_the_card_from_its_custom_review_column_to_one_that_still_exists()
+{
+    let (_dir, app, _engine, repo) = setup();
+    let parked = "[[column]]\nname = \"Parked\"\nafter = \"Backlog\"\n";
+    put(&app, "demo", "kanban.toml", &format!("{TESTING}{parked}"));
+    let card = card_in(&app, repo, "Ready for testing");
+    let change = app
+        .store
+        .add_change(repo, Some(card.id), "outside", Some(5), "abc")
+        .unwrap();
+    app.store
+        .set_change_outside(change.id, "lea", "Parked")
+        .unwrap();
+    // The column it was taken from has no card, so the board may lose it.
+    put(&app, "demo", "kanban.toml", TESTING);
+    let change = app.store.change(change.id).unwrap().unwrap();
+    app.followed_closed(&change).unwrap();
+    assert_eq!(app.card(card.id).unwrap().column, "Not started");
+
+    // Taken from a column that is still there: back to it.
+    put(&app, "demo", "kanban.toml", &format!("{TESTING}{parked}"));
+    let card = card_in(&app, repo, "Ready for testing");
+    let change = app
+        .store
+        .add_change(repo, Some(card.id), "outside2", Some(6), "def")
+        .unwrap();
+    app.store
+        .set_change_outside(change.id, "lea", "Parked")
+        .unwrap();
+    let change = app.store.change(change.id).unwrap().unwrap();
+    app.followed_closed(&change).unwrap();
+    assert_eq!(app.card(card.id).unwrap().column, "Parked");
+}
+
+#[test]
+fn the_columns_of_a_project_with_orphans_are_not_rebuilt_at_every_store_write() {
+    let (_dir, app, _engine, repo) = setup();
+    let parked = "[[column]]\nname = \"Parked\"\nafter = \"Backlog\"\n";
+    put(&app, "demo", "kanban.toml", parked);
+    let card = card_in(&app, repo, "Parked");
+    app.project_columns_of(card.project_id).unwrap();
+    // The file loses the column while the card is in it (a hand edit that did not go through the check).
+    let project = app.project(card.project_id).unwrap();
+    let path = app
+        .harness_repo()
+        .unwrap()
+        .project_dir(&project.name)
+        .join("kanban.toml");
+    std::fs::write(path, "").unwrap();
+    app.project_columns(&project);
+    let first = app.project_columns_of(card.project_id).unwrap();
+    assert_eq!(first.orphans.len(), 1);
+    app.create_issue(repo, "Another", "", OWNER_AUTHOR).unwrap();
+    let second = app.project_columns_of(card.project_id).unwrap();
+    assert!(std::sync::Arc::ptr_eq(&first, &second));
+}

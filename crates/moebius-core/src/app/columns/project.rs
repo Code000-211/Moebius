@@ -7,6 +7,11 @@
 //! had, with a notice (`ProjectColumns::problem`), rather than failing at every tick.
 
 use std::sync::Arc;
+use std::time::{Duration, Instant};
+
+/// How long the cards in the columns a file lost are taken to be where they were: a card moved out of such a column is
+/// noticed after this long, and a file that changes is read at once.
+const ORPHANS_KEPT: Duration = Duration::from_secs(5);
 
 use super::{BACKLOG, ColumnInfo, KANBAN_FILE, ProblemKind, ProjectColumns, built_in, parse};
 use crate::app::{App, AppError, Result};
@@ -18,8 +23,8 @@ pub(crate) struct Cached {
     /// The columns of the last file that was valid (the six built-in ones before there is one).
     good: Arc<ProjectColumns>,
     columns: Arc<ProjectColumns>,
-    /// The store's write count when the orphans were last looked for.
-    writes: u64,
+    /// When the orphans were last looked for.
+    looked: Instant,
 }
 
 impl App {
@@ -41,11 +46,10 @@ impl App {
         project: &Project,
         text: Option<String>,
     ) -> Arc<ProjectColumns> {
-        let writes = self.store.writes();
         let mut cache = self.column_cache.lock().unwrap_or_else(|e| e.into_inner());
         if let Some(found) = cache.get(&project.id)
             && found.text == text
-            && (found.columns.orphans.is_empty() || found.writes == writes)
+            && (found.columns.orphans.is_empty() || found.looked.elapsed() < ORPHANS_KEPT)
         {
             return found.columns.clone();
         }
@@ -113,8 +117,14 @@ impl App {
             )),
             None => None,
         };
-        if let Some((_, problem)) = &columns.problem {
-            eprintln!("moebius: {problem}");
+        // Said once for each change of what is wrong, not at every look.
+        let said = cache
+            .get(&project.id)
+            .and_then(|c| c.columns.problem.clone());
+        if columns.problem.is_some() && columns.problem != said {
+            if let Some((_, problem)) = &columns.problem {
+                eprintln!("moebius: {problem}");
+            }
         }
         let columns = Arc::new(columns);
         cache.insert(
@@ -123,7 +133,7 @@ impl App {
                 text,
                 good,
                 columns: columns.clone(),
-                writes: self.store.writes(),
+                looked: Instant::now(),
             },
         );
         columns
