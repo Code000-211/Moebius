@@ -44,6 +44,12 @@ and the day has no digest, the day is claimed in `digests` and the digest is mad
 that what it did is in the digest. A claim that is made is never made again, so a day has one digest whatever happens
 to the server; `POST /v1/digest` with `force` is the one way to a second.
 
+**The first day has none, and an empty period is not written.** A server's first start is kept (`digest_epoch`, when its
+store was made): no digest tells of a time before it, so a server that starts after `digest_at` makes none that day, and
+the first digest starts at the first start. A period with nothing in it (no repository with anything to say, nothing
+that needs a person, no tokens) is claimed for its day but writes no item, so the owner is not told that nothing
+happened.
+
 The inbox item has the kind `daily_digest` and no card. Its `title` is `Daily digest <day>`, with no figures, and its
 `data`:
 

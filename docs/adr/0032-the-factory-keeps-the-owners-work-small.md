@@ -24,7 +24,9 @@ typing the issues by hand and an agent that makes them all at once, so that the 
 - **One digest a day, one inbox item.** From `digest_at` (default 07:00, the server's local time) the clock makes the
   digest of the day if the day has none. The day is claimed in the store before anything is done (`digests`), so a day
   has one however often the clock looks and whether or not the server restarts. A server that was down at `digest_at`
-  makes it when it is up the same day; a day it missed is not made up, because the next digest reports from the last
+  makes it when it is up the same day; a day it missed is not made up. A server's first day has none and the first digest starts at the first start, so a
+  fresh server does not report what it never saw, and a period with nothing in it writes no item. The next digest
+  reports from the last
   one on. It is told by repository: what merged, with its author and whether a measurement came with it; the merges
   that were refused or failed, with their reasons; reverts; the review rounds that ran and how they ended; who took or
   released an issue; what the stale handling did; the tokens spent against the day's budget; what is held or frozen;

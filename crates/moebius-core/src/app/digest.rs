@@ -113,7 +113,9 @@ impl App {
     pub fn on_digest_schedule(&self, digest_at: TimeOfDay, day_tokens: Option<i64>) -> Result<()> {
         let day = self.store.today()?;
         let now = TimeOfDay(self.store.minutes_into_the_day()?);
-        if now.0 < digest_at.0 || self.store.digest_of(&day)?.is_some() {
+        // The first day has no digest: nothing before the server's first start is told, so a server that starts after
+        // `digest_at` makes none that day, and a period with nothing in it is not written at all (see `make_digest`).
+        if now.0 < digest_at.0 || self.store.digest_of(&day)?.is_some() || self.store.first_day()? {
             return Ok(());
         }
         self.make_digest(&day, day_tokens).map(drop)
@@ -122,7 +124,12 @@ impl App {
     /// Makes the digest of `day` if it has none: the stale handling first, so that what it did is in it, then the
     /// inbox item. Says which item, or none when the day had a digest already.
     pub fn make_digest(&self, day: &str, day_tokens: Option<i64>) -> Result<Option<InboxItem>> {
-        let since = self.store.last_digest_at()?.unwrap_or(now() - 86_400);
+        // Never from before the first start.
+        let since = self
+            .store
+            .last_digest_at()?
+            .unwrap_or(now() - 86_400)
+            .max(self.store.digest_epoch()?);
         if !self.store.claim_digest(day, since)? {
             return Ok(None);
         }
@@ -155,6 +162,14 @@ impl App {
             .unwrap_or(0);
         // No figures in the title: what a person sees of the digest depends on the projects they see.
         let _ = (merged, needs);
+        // A period with nothing in it is not written: the owner is not told that nothing happened.
+        if data["repositories"].as_array().is_none_or(Vec::is_empty)
+            && data["needs_a_person"].as_array().is_none_or(Vec::is_empty)
+            && data["tokens"]["spent"].as_i64().unwrap_or(0) == 0
+        {
+            self.store.set_digest_item(day, 0, until, upto)?;
+            return Ok(None);
+        }
         let title = format!("Daily digest {day}");
         let mut data = data;
         data["text"] = Value::String(text);

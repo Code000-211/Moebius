@@ -31,6 +31,13 @@ CREATE TABLE digests (
     log_id INTEGER NOT NULL DEFAULT 0,
     revert_id INTEGER NOT NULL DEFAULT 0
 );
+CREATE TABLE digest_epoch (
+    at INTEGER NOT NULL,
+    log_id INTEGER NOT NULL,
+    revert_id INTEGER NOT NULL
+);
+INSERT INTO digest_epoch (at, log_id, revert_id)
+    VALUES (CAST(strftime('%s', 'now') AS INTEGER), 0, COALESCE((SELECT MAX(id) FROM reverts), 0));
 CREATE TABLE assigned_since (
     card_id INTEGER PRIMARY KEY,
     since INTEGER NOT NULL
@@ -295,7 +302,7 @@ impl Store {
     pub fn digested_reverts(&self) -> Result<i64> {
         Ok(self
             .read()
-            .query_row("SELECT COALESCE(MAX(revert_id), 0) FROM digests", [], |r| {
+            .query_row("SELECT MAX(COALESCE((SELECT MAX(revert_id) FROM digests), 0), (SELECT revert_id FROM digest_epoch))", [], |r| {
                 r.get(0)
             })?)
     }
@@ -319,11 +326,37 @@ impl Store {
 
     /// The newest log line the digests have reported, 0 when none was made.
     pub fn digested_activity(&self) -> Result<i64> {
+        Ok(self.read().query_row(
+            "SELECT MAX(COALESCE((SELECT MAX(log_id) FROM digests), 0), (SELECT log_id FROM digest_epoch))",
+            [],
+            |r| r.get(0),
+        )?)
+    }
+
+    /// When the server's store was made, in seconds since the epoch: the first start. No digest tells of a time before
+    /// it.
+    pub fn digest_epoch(&self) -> Result<i64> {
         Ok(self
             .read()
-            .query_row("SELECT COALESCE(MAX(log_id), 0) FROM digests", [], |r| {
-                r.get(0)
-            })?)
+            .query_row("SELECT at FROM digest_epoch", [], |r| r.get(0))?)
+    }
+
+    /// Moves the first start, which a test or a restored server uses to say when the factory began.
+    pub fn set_digest_epoch(&self, at: i64) -> Result<()> {
+        self.conn()
+            .execute("UPDATE digest_epoch SET at = ?1", [at])?;
+        Ok(())
+    }
+
+    /// Whether the server's first start was today and no digest was made yet: the first day has no digest, since
+    /// nothing before the first start is told.
+    pub fn first_day(&self) -> Result<bool> {
+        Ok(self.read().query_row(
+            "SELECT date((SELECT at FROM digest_epoch), 'unixepoch', 'localtime') = date('now', 'localtime') \
+             AND NOT EXISTS (SELECT 1 FROM digests)",
+            [],
+            |r| r.get(0),
+        )?)
     }
 
     /// The digest of `day`, if one was made.

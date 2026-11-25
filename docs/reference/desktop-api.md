@@ -4640,7 +4640,7 @@ repository's default branch.
 ### `POST /v1/digest`
 
 Owner. Request: `{"force": bool}`, optional. Makes today's digest now, after the stale handling, when the day has none,
-and answers its inbox item as the person asking may read it (kind `daily_digest`; see [who reads what](factory.md#the-digest)); answers `null` when the day had one already. With `force` the day's
+and answers its inbox item as the person asking may read it (kind `daily_digest`; see [who reads what](factory.md#the-digest)); answers `null` when the day had one already or the period had nothing to tell or the period had nothing to tell. With `force` the day's
 claim is dropped first, so a second item is made.
 
 ### `POST /v1/digest/{id}/dismiss`

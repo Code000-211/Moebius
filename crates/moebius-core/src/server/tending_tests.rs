@@ -179,6 +179,12 @@ async fn a_day_has_one_digest_and_the_next_tells_only_what_came_after() {
     let f = Fixture::new().await;
     f.two_issues().await;
     f.writes(1, "alice", "/take").await;
+    // Not the server's first day: the clock may make one.
+    f.server
+        .app
+        .store
+        .set_digest_epoch(now() - 3 * DAY)
+        .unwrap();
     // Before `digest_at` nothing is made; from it on, one, however often the clock looks.
     blocking(&f, |app| app.on_digest_schedule(TimeOfDay(24 * 60), None))
         .await
@@ -214,15 +220,43 @@ async fn a_day_has_one_digest_and_the_next_tells_only_what_came_after() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn a_quiet_day_still_has_a_digest() {
+async fn a_quiet_period_writes_no_digest() {
     let f = Fixture::new().await;
     let day = f.today();
-    let item = blocking(&f, move |app| app.make_digest(&day, None))
+    let made = blocking(&f, move |app| app.make_digest(&day, None))
         .await
-        .unwrap()
         .unwrap();
-    assert_eq!(item.data["repositories"], json!([]));
-    assert_eq!(item.title, format!("Daily digest {}", f.today()));
+    assert!(made.is_none());
+    assert!(digest_of(&f).is_empty());
+    // The day is still the digest's: the clock does not look again, and what happens later is the next day's.
+    assert!(f.server.app.store.digest_of(&f.today()).unwrap().is_some());
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn the_first_day_of_a_server_has_no_digest_whatever_the_time_of_day() {
+    let f = Fixture::new().await;
+    f.two_issues().await;
+    f.writes(1, "alice", "/take").await;
+    // The server started today, after `digest_at` or not: nothing before its first start is told.
+    for _ in 0..2 {
+        blocking(&f, |app| app.on_digest_schedule(TimeOfDay(0), Some(1000)))
+            .await
+            .unwrap();
+    }
+    assert!(digest_of(&f).is_empty());
+    assert!(f.server.app.store.digest_of(&f.today()).unwrap().is_none());
+    // A later day, with something to tell, has one; it starts at the first start and no earlier.
+    f.server
+        .app
+        .store
+        .set_digest_epoch(now() - 2 * DAY)
+        .unwrap();
+    blocking(&f, |app| app.on_digest_schedule(TimeOfDay(0), Some(1000)))
+        .await
+        .unwrap();
+    assert_eq!(digest_of(&f).len(), 1);
+    // Nothing is told from before the first start either: tokens are counted from it.
+    assert!(f.server.app.store.digest_epoch().unwrap() >= now() - 2 * DAY - 5);
 }
 
 #[tokio::test(flavor = "multi_thread")]

@@ -19,6 +19,8 @@ everything open in the Inbox, grouped by reason, each with a link to its card. D
 
 - Change the time in Settings (`digest_at`), or `"$MOEBIUS" settings set digest_at 06:30`. It takes effect at once.
 - A server that is down at that time makes the digest when it is up again the same day; a day it missed is not made up.
+- The first day of a server has no digest (nothing before its first start is told), and a period with nothing to tell
+  writes none.
 - `"$MOEBIUS" digest` makes today's digest now if it has none; `--force` makes it again.
 
 ## Stale issues and pull requests
