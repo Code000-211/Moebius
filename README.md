@@ -251,7 +251,7 @@ Or just ask the Moebius agent: it knows the guide and the reference, and builds 
 | [`docs/spec.md`](docs/spec.md), [`docs/adr/`](docs/adr/) | What the first version does, and why it is shaped this way. |
 | [`docs/architecture.md`](docs/architecture.md) | How a card moves and which module does what. |
 | [`docs/reference/`](docs/reference/) | [Column scripts](docs/reference/column-scripts.md), [rules](docs/reference/rules.md), [configuration](docs/reference/configuration.md), [command line](docs/reference/cli.md), [desktop API](docs/reference/desktop-api.md), [router](docs/reference/router.md), [plugin API](docs/reference/plugin-api.md), [bridge protocol](docs/reference/bridge-protocol.md), [harness configuration](docs/reference/harness-configuration.md), [training export](docs/reference/training-export.md), [decision model](docs/reference/decision-model.md), [workflows](docs/reference/workflows.md), [packages](docs/reference/packages.md). |
-| [`docs/releases/`](docs/releases/) | What each release holds, such as [0.18.4](docs/releases/v0.18.4.md). |
+| [`docs/releases/`](docs/releases/) | What each release holds, such as [0.19.0](docs/releases/v0.19.0.md). |
 | [`docs/guide/`](docs/guide/README.md) | How to build on Moebius, one task per page. |
 | [`docs/design-web.md`](docs/design-web.md) | The standard the web app is built to. |
 | [`examples/`](examples/README.md) | Examples that run in CI. |
