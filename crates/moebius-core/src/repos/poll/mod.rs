@@ -146,7 +146,12 @@ async fn poll_repository<F: Polled>(
     poll_requests(app, client, &repository, name).await?;
     poll_outside_requests(app, client, &repository, name).await?;
     let app = app.clone();
-    blocking(move || app.mark_ready_issues(&repository)).await
+    blocking(move || {
+        app.mark_ready_issues(&repository)?;
+        // The factory's label, reverts and budget are read once the issues are (see `app::factory::freeze`).
+        app.factory_poll(&repository)
+    })
+    .await
 }
 
 /// Reads the open pull or merge requests of `repository` that someone else opened for an issue, and follows them (see

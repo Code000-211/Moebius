@@ -8,7 +8,8 @@
 //! ```
 //! ````
 //!
-//! `verdict` is `approve` or `changes`; `summary` is the review's body; each comment names a file as the pull request
+//! `verdict` is `approve`, `approve_code` (the code is right, but the measurement the repository's rules ask for is
+//! missing) or `changes`; `summary` is the review's body; each comment names a file as the pull request
 //! has it and a line of the file after the change. Anything that does not read as that is no verdict: work that was
 //! not reviewed is not approved.
 
@@ -19,7 +20,7 @@ use crate::store::ReviewComment;
 /// What the Reviewer said, read from the end of its answer.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Structured {
-    /// `approve` or `changes`.
+    /// `approve`, `approve_code` or `changes`.
     pub verdict: &'static str,
     pub summary: String,
     pub comments: Vec<ReviewComment>,
@@ -69,14 +70,15 @@ fn last_object(text: &str) -> Option<String> {
         .map(|i| lines[i..].join("\n"))
 }
 
-/// The structured review at the end of `answer`: none when there is no JSON object, it is not a verdict of `approve`
-/// or `changes`, a verdict of `changes` says nothing (no summary and no comment), or a comment is not on a file and
+/// The structured review at the end of `answer`: none when there is no JSON object, it is not a verdict of `approve`,
+/// `approve_code` or `changes`, a verdict of `changes` says nothing (no summary and no comment), or a comment is not on a file and
 /// a line of it. Comments with an empty body are dropped, and so are the ones past the first 50.
 pub fn read(answer: Option<&str>) -> Option<Structured> {
     let object = last_object(answer?)?;
     let said: Said = serde_json::from_str(object.trim()).ok()?;
     let verdict = match said.verdict.trim().to_ascii_lowercase().as_str() {
         "approve" => "approve",
+        "approve_code" => "approve_code",
         "changes" => "changes",
         _ => return None,
     };
@@ -127,6 +129,24 @@ mod tests {
                 .verdict,
             "approve"
         );
+    }
+
+    #[test]
+    fn approve_code_is_a_verdict_of_its_own_and_other_words_are_none() {
+        let answer = "```json\n{\"verdict\": \"approve_code\", \"summary\": \"Right; no measurement.\"}\n```";
+        let read = read(Some(answer)).unwrap();
+        assert_eq!(read.verdict, "approve_code");
+        assert_eq!(read.summary, "Right; no measurement.");
+        // The spelling is exact: neither another word nor a run-together of the two is a verdict.
+        for bad in [
+            "approve-code",
+            "approvecode",
+            "approve code",
+            "approve_codes",
+        ] {
+            let answer = format!("```json\n{{\"verdict\": \"{bad}\", \"summary\": \"x\"}}\n```");
+            assert!(super::read(Some(&answer)).is_none(), "{bad}");
+        }
     }
 
     #[test]

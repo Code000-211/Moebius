@@ -35,6 +35,7 @@ mod cycles;
 mod deletions;
 mod diffs;
 mod digest;
+pub mod factory;
 mod intake;
 mod issues;
 mod jira;
@@ -50,6 +51,7 @@ mod projects;
 mod repositories;
 mod reproduce;
 mod review_context;
+pub(crate) use review_context::review_brief_at;
 mod review_sweep;
 pub(crate) use review_context::ContextError;
 mod reviews;
@@ -166,6 +168,10 @@ pub enum AppError {
     Conflict(String),
     #[error("{0}")]
     Forbidden(String),
+    /// The merge gate refused to merge a change (see `factory::gate`); the text is the reason, which the owner is also
+    /// shown in the inbox.
+    #[error("{0}")]
+    Refused(String),
     /// A wiki page changed after the version a person based their save on: what is there now, `None` when the page is
     /// gone. Nothing was written.
     #[error("someone saved a newer version of {path} since you opened it")]
@@ -287,6 +293,10 @@ pub struct App {
     review_contexts: review_context::Contexts,
     /// Where the server and the web app run (see `whereabouts`).
     whereabouts: whereabouts::Whereabouts,
+    /// The server's rules file, which the merge gate holds merges to (see `factory::gate`).
+    rules_file: Mutex<Option<PathBuf>>,
+    /// The day's token budget, which the factory's breaker reads (see `factory::freeze`).
+    day_budget: Mutex<Option<i64>>,
 }
 
 impl App {
@@ -364,6 +374,8 @@ impl App {
             #[cfg(test)]
             review_runs: Mutex::default(),
             review_contexts: Default::default(),
+            rules_file: Mutex::default(),
+            day_budget: Mutex::default(),
             whereabouts: Default::default(),
         }
     }

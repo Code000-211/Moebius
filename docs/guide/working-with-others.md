@@ -159,6 +159,49 @@ Issues a helper took and never worked on, and pull requests nobody pushes to aft
 released, reminded about and closed by the server itself, and the owner reads one digest a day instead of watching the
 forge; see [Keeping the owner's work small](software-factory.md).
 
+## Running it as a factory
+
+[ADR 0031](../adr/0031-one-merge-gate-and-a-brake-for-the-factory.md). When your repository takes many outside pull
+requests and you want them merged with as little of your own work as possible, the same box, **Working with others**,
+holds the rules that keep that safe. Everything the server merges, whichever way it came to merge it, goes through one gate;
+the gate says no with a reason, and a no is never a silent one: the card goes to **Ready to merge** and an Inbox item
+says why.
+
+- **Locked paths.** Changes to the files that run or build things (`.github/**`, the build files, the package
+  manifests, `AGENTS.md`, `CLAUDE.md`) never merge without you: the server leaves them in **Ready to merge** and you merge
+  them yourself. Add your own globs under **Locked paths**; the built-in ones stay.
+- **Require a measurement.** For a repository whose merge bar is a measurement (before and after on one machine, output
+  parity), turn this on. A change then merges only when a measurement is accepted for its current head, or its issue
+  carries the label `no-measurement`. Until helpers' measurements can be read from their comments (the next release), you
+  accept one with `POST /v1/changes/{id}/measurement`, or from the `moebius` command line:
+
+  ```sh
+  moebius api POST /v1/changes/12/measurement --body '{"reason": "kbench rows checked"}'
+  ```
+
+- **Review brief.** The Reviewer is told your rules for a change from files of your default branch, not from the pull
+  request: list them under **Review brief** (default `REVIEW.md`; for a GPU engine, `notes/backlog/CARDS.md` and
+  `AGENTS.md`). The server reads them from the default branch at the commit the review is of, so a pull request that edits
+  one is judged by yours. They are at most 40 KB together; more, and the review does not start and you get an Inbox item.
+  When the rules ask for a measurement the pull request does not carry, and the code is right, the Reviewer answers
+  `approve_code`: the server approves the code on the forge, merges nothing, labels the issue (the **Ready for testing label**,
+  default `ready-for-testing`), moves the card to the project's **Ready for testing** column when it has one, and tells
+  the author a measurement is needed, and that you accept it once you have checked the numbers. The round counts toward the
+  three. You accept the measurement with `POST /v1/changes/{id}/measurement`, then merge; nothing reads the author's
+  `## Measurement` comment by itself yet.
+- **Measurers.** The logins whose `## Measurement` comments will count once the next release reads them. For now they are
+  only stored and shown here.
+- **Freeze.** The brake. A frozen repository starts no review round, merges nothing and starts no agent run of its cards.
+  **Freeze** in the box does it, or `POST /v1/repositories/{id}/freeze`, or the label `factory:freeze` on any open issue.
+  It also freezes by itself when two merged changes are reverted within seven days, when more than 80% of the day's token
+  budget is used, or when a nightly check fails (`App::freeze_for_failed_nightly`). You get an Inbox item, and the card
+  window says "Frozen: <reason>". Only you lift it: **Unfreeze**, or taking the label off.
+
+Put rules in prose in `rules.md` too: the server's merge is checked against them the way an agent's tool call is (the
+decision `merge_check`), so a rule such as "No merge without a measurement in the pull request's description" refuses the
+server as it refuses an agent. A guard with no teacher refuses everything while prose rules exist, as it does for tool
+calls.
+
 ## How to try it
 
 Run two servers against one test repository, each with a different person and login. On the first, take an issue; the
@@ -173,6 +216,8 @@ to In review.
   collaborator (GitHub), a project member (GitLab) or a collaborator (Forgejo).
 - **Both servers start the same issue.** Neither person had said their login, or the label was not used. Set the logins
   and `agents_take` as above.
+- **A merge is refused.** Open its card: the Inbox item `merge_refused` names the reason (a locked path, a missing measurement, a freeze, checks, a hold or the rules). Fix what it names, or merge it yourself where a person may (locked paths).
+- **The repository is frozen.** The card window says why. Take the label `factory:freeze` off, or unfreeze it in the box; a breaker's freeze stays until you do.
 - **A pull request is not followed.** Its author is one of your server's people, or it is already a change of the
   repository, or it names no closing keyword for an issue that has a card that is not done, or the issue's card already
   has an open change. A failed fetch of its head is a `forge_error` event; the card is still followed.

@@ -7,7 +7,7 @@
 //!   reminder comment, once for each head; after `close_after_days` it is closed with a polite comment and its issue is
 //!   released.
 //!
-//! Nothing is done for a card that is held, nor while **Pause all** is on. Every action is written to the log the
+//! Nothing is done for a card that is held, in a repository that is frozen, nor while **Pause all** is on. Every action is written to the log the
 //! digest reads, and one the forge refuses is reported with the forge's other errors and left for the next day.
 
 use serde_json::json;
@@ -32,6 +32,11 @@ impl App {
     pub(crate) fn upkeep_exempt(&self, card: &Card) -> Result<Option<&'static str>> {
         if card.held.is_some() {
             return Ok(Some("held"));
+        }
+        // A frozen repository (a person froze it, the label `factory:freeze` is on, or a breaker tripped) starts and
+        // changes nothing by itself.
+        if self.repository(card.repository_id)?.frozen.is_some() {
+            return Ok(Some("frozen"));
         }
         if self.runs_paused()?.is_some() {
             return Ok(Some("paused"));

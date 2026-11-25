@@ -58,6 +58,24 @@ pub struct Repository {
     /// are green (see `app::reviews`); otherwise it only approves it and the owner merges.
     #[serde(default = "default_answer_on_forge")]
     pub merge_reviewed: bool,
+    /// Whether a change merges only with an accepted measurement or the label `no-measurement` (see `app::factory`).
+    #[serde(default)]
+    pub require_measurement: bool,
+    /// The owner's path globs that never merge without a person, besides the built-in ones.
+    #[serde(default)]
+    pub locked_paths: Vec<String>,
+    /// The files of the default branch whose text is the repository's rules for the Reviewer of a pull request.
+    #[serde(default = "default_review_brief")]
+    pub review_brief: Vec<String>,
+    /// The label a pull request whose code is right but whose measurement is missing gets on its issue.
+    #[serde(default = "default_testing_label")]
+    pub testing_label: String,
+    /// The logins on the forge whose `## Measurement` comments count.
+    #[serde(default)]
+    pub measurers: Vec<String>,
+    /// Why the repository is frozen; none when it is not.
+    #[serde(default)]
+    pub frozen: Option<super::factory::Frozen>,
 }
 
 fn default_command_limit() -> i64 {
@@ -66,6 +84,14 @@ fn default_command_limit() -> i64 {
 
 fn default_answer_on_forge() -> bool {
     true
+}
+
+fn default_review_brief() -> Vec<String> {
+    vec![super::factory::DEFAULT_REVIEW_BRIEF.into()]
+}
+
+fn default_testing_label() -> String {
+    super::factory::DEFAULT_TESTING_LABEL.into()
 }
 
 fn default_ready_label() -> String {
@@ -244,10 +270,16 @@ fn card_records_last(runs: &str, changes: &str, cards: &str) -> Vec<String> {
     ]
 }
 
-const REPOSITORY_COLUMNS: &str = "id, name, path, forge, default_branch, github, trusted, project, home_project_id, files_of, mark_ready, ready_label, agents_take, commands, command_limit, answer_on_forge, merge_reviewed";
+fn repository_columns() -> String {
+    format!(
+        "id, name, path, forge, default_branch, github, trusted, project, home_project_id, files_of, mark_ready, ready_label, agents_take, commands, command_limit, answer_on_forge, merge_reviewed, require_measurement, locked_paths, review_brief, testing_label, measurers, {}",
+        super::factory::FROZEN_COLUMNS
+    )
+}
 
 fn repository_from_row(r: &rusqlite::Row) -> rusqlite::Result<Repository> {
     let trusted: String = r.get(6)?;
+    let (factory, frozen) = super::factory::read_factory(r, 17)?;
     Ok(Repository {
         id: r.get(0)?,
         name: r.get(1)?,
@@ -268,6 +300,12 @@ fn repository_from_row(r: &rusqlite::Row) -> rusqlite::Result<Repository> {
         command_limit: r.get(14)?,
         answer_on_forge: r.get(15)?,
         merge_reviewed: r.get(16)?,
+        require_measurement: factory.require_measurement,
+        locked_paths: factory.locked_paths,
+        review_brief: factory.review_brief,
+        testing_label: factory.testing_label,
+        measurers: factory.measurers,
+        frozen,
     })
 }
 
@@ -364,12 +402,21 @@ impl Store {
             command_limit: default_command_limit(),
             answer_on_forge: default_answer_on_forge(),
             merge_reviewed: default_answer_on_forge(),
+            require_measurement: false,
+            locked_paths: Vec::new(),
+            review_brief: default_review_brief(),
+            testing_label: default_testing_label(),
+            measurers: Vec::new(),
+            frozen: None,
         })
     }
 
     pub fn repositories(&self) -> Result<Vec<Repository>> {
         self.rows(
-            &format!("SELECT {REPOSITORY_COLUMNS} FROM repositories ORDER BY id"),
+            &format!(
+                "SELECT {} FROM repositories ORDER BY id",
+                repository_columns()
+            ),
             [],
             repository_from_row,
         )
@@ -389,7 +436,10 @@ impl Store {
         Ok(self
             .conn()
             .query_row(
-                &format!("SELECT {REPOSITORY_COLUMNS} FROM repositories WHERE id = ?1"),
+                &format!(
+                    "SELECT {} FROM repositories WHERE id = ?1",
+                    repository_columns()
+                ),
                 [id],
                 repository_from_row,
             )

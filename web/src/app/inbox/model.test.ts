@@ -546,3 +546,35 @@ describe("the tag of a done question", () => {
     expect(kindTag(item)).toEqual({ label: "Says it is done", mark: "none" });
   });
 });
+
+describe("the items of the gate and the freeze", () => {
+  it("says why a merge was refused, in the item's own reason", () => {
+    const refused = item(7, "merge_refused", 45, {
+      change: 3,
+      reason: "the change touches a locked path: .github/workflows/ci.yml",
+      repository: "demo",
+    });
+    expect(kindTag(refused).label).toBe("Merge refused");
+    expect(why(refused, {})).toBe(
+      "Merge refused: the change touches a locked path: .github/workflows/ci.yml. A person merges this change, or fixes what is missing.",
+    );
+  });
+
+  it("says Frozen with the reason and names the repository", () => {
+    const frozen = item(8, "factory_frozen", null, {
+      repository: "demo",
+      reason: "two reverts of merged changes in 7 days",
+      source: "automatic",
+    });
+    expect(kindTag(frozen).label).toBe("Frozen");
+    expect(why(frozen, {})).toContain("Frozen: two reverts of merged changes in 7 days.");
+    expect(meta(frozen, {})).toBe("demo");
+  });
+
+  it("shows the reason of a review brief that is too large", () => {
+    const large = item(9, "review_not_possible", 45, {
+      reason: "the review brief is 52000 bytes, over the 40 KB limit",
+    });
+    expect(why(large, {})).toContain("over the 40 KB limit");
+  });
+});

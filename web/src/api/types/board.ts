@@ -32,6 +32,27 @@ export interface Repository {
   answer_on_forge?: boolean;
   /** Whether the server merges a followed pull request the Reviewer approved and whose checks are green; on until turned off. */
   merge_reviewed?: boolean;
+  /** Whether a change merges only with an accepted measurement or a `no-measurement` label; off until turned on. */
+  require_measurement?: boolean;
+  /** The owner's own path globs that never merge without a person, besides the ones the server always locks. */
+  locked_paths?: string[];
+  /** How many changes the server merges into the repository in a day; 10 until it is changed. */
+  /** The files of the default branch that hold the repository's review rules; `["REVIEW.md"]` until it is changed. */
+  review_brief?: string[];
+  /** The label an approved change gets while its measurement is missing; `ready-for-testing` until it is changed. */
+  testing_label?: string;
+  /** The forge logins whose `## Measurement` comments count. */
+  measurers?: string[];
+  /** Why the repository is frozen (nothing is reviewed, merged or started), and since when; none when it is not. */
+  frozen?: Frozen | null;
+}
+
+/** A frozen repository: `manual` by a person, `label` by `factory:freeze` on the forge, `automatic` by a breaker. */
+export interface Frozen {
+  reason: string;
+  source: "manual" | "label" | "automatic";
+  /** When it froze, in seconds since 1970. */
+  since: number;
 }
 
 /** `all` approved issues, or `labelled` only those that carry the ready label and nobody else took. */
@@ -53,7 +74,7 @@ export interface CardChange {
   repository?: string;
   state: string;
   checks: "pending" | "success" | "failure" | "none";
-  review_verdict: "approve" | "changes" | null;
+  review_verdict: "approve" | "approve_code" | "changes" | null;
   /** The forge login of the person who opened the pull request the card follows; absent for Moebius's own change. */
   outside_author?: string;
   /** The latest round of the Reviewer on that pull request (ADR 0029); absent until the author asked for one. */
@@ -75,6 +96,7 @@ export type ExternalReviewState =
   | "approved"
   | "posting"
   | "posted"
+  | "awaiting_measurement"
   | "merged"
   | "stale"
   | "failed";
@@ -84,7 +106,7 @@ export interface ExternalReview {
   round: number;
   round_limit: number;
   state: ExternalReviewState;
-  verdict: "approve" | "changes" | null;
+  verdict: "approve" | "approve_code" | "changes" | null;
   summary: string;
   comments: ReviewComment[];
   /** Where the review is on the forge, once it is written there. */

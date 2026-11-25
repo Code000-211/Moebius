@@ -539,6 +539,12 @@ mod tests {
             command_limit: 3,
             answer_on_forge: true,
             merge_reviewed: true,
+            require_measurement: false,
+            locked_paths: Vec::new(),
+            review_brief: vec!["REVIEW.md".into()],
+            testing_label: "ready-for-testing".into(),
+            measurers: Vec::new(),
+            frozen: None,
         }
     }
 

@@ -34,9 +34,11 @@ typing the issues by hand and an agent that makes them all at once, so that the 
   none of its titles, logins or links.
 - **A log, written where it happens.** `factory_log` takes a line when a change is set to `merged`, when a merge stops,
   when the assignees of an issue change (so a `/take`, an assignment on the forge and a release by the owner are all
-  seen the same way), and for what the stale handling and the backlog sync do. A part that builds on the factory (a
-  freeze, a revert, a measurement) writes its own line with `Store::note_activity`; the digest shows `revert`, `frozen`
-  and `merge_refused` lines and counts a `measurement` line that names a change as the measurement that came with it.
+  seen the same way), when the merge gate refuses a merge ([0031](0031-one-merge-gate-and-a-brake-for-the-factory.md)),
+  and for what the stale handling and the backlog sync do. What the gate keeps is read where it keeps it: a merge is
+  measured when a measurement was accepted for its head, reverts are the gate's `reverts`, and a frozen repository is
+  told with the reasons of its causes. A part that builds on the factory writes its own line with
+  `Store::note_activity`.
   The digest partitions the log by line number, which only grows, so a line is told once whatever the second it was
   written in.
 - **Stale handling, once a day, before the digest.** Per repository on a forge, with its own settings
@@ -47,7 +49,7 @@ typing the issues by hand and an agent that makes them all at once, so that the 
   pull request has now) gets one reminder comment for that head; after `close_after_days` it is closed with a polite
   comment and its issue released. The first time an assignee is seen starts their time (`assigned_since`), so
   installing this releases nobody at once. A person of this server who is assigned is not "taken": only logins that
-  are no one of this server's people count. **Nothing is done for a card that is held, nor while Pause all is on**, and
+  are no one of this server's people count. **Nothing is done for a card that is held, in a repository that is frozen ([0031](0031-one-merge-gate-and-a-brake-for-the-factory.md)), nor while Pause all is on**, and
   every action is a line of the log and so of the digest.
 - **Backlog sync is a tool.** A project says where its backlog is (`backlogs`: repository, path, a pattern for an item,
   a closed marker, a cap and the label names) and a sync, run by a person, by the Moebius agent as `"$MOEBIUS" backlog

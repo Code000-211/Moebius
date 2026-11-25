@@ -180,6 +180,8 @@ keep their rows: the role is checked before the `410`.
 | `POST /v1/repositories` | owner | yes |
 | `PUT /v1/repositories/{id}` | owner | yes |
 | `DELETE /v1/repositories/{id}` | owner | yes |
+| `POST /v1/repositories/{id}/freeze` | owner | yes |
+| `POST /v1/repositories/{id}/unfreeze` | owner | no |
 | `POST /v1/repositories/{id}/issues` | viewer | yes |
 | `GET /v1/repositories/{id}/issues` | viewer | yes |
 | `GET /v1/repositories/{id}/upkeep` | viewer | yes |
@@ -243,6 +245,7 @@ keep their rows: the role is checked before the `410`.
 | `GET /v1/cards/{id}/runs` | viewer | yes |
 | `GET /v1/cards/{id}/history` | viewer | yes |
 | `POST /v1/changes/{id}/merge` | member | yes |
+| `POST /v1/changes/{id}/measurement` | member | no |
 | `POST /v1/changes/{id}/reject` | member | yes |
 | `POST /v1/changes/{id}/review` | member | no |
 | `POST /v1/changes/{id}/review/end` | member | no |
@@ -439,7 +442,7 @@ These objects appear in the responses. All ids are numbers; times are Unix secon
 GitLab, such as `group/project`, or the repository on Forgejo as `owner/repo`, or null) and `home_project_id` (the
 [project](#projects) its new issues land in, which was made with it) and `files_of` (the id of the project whose own
 files the repository holds, see [a project's own files](#a-projects-own-files), or null for every repository a person
-added), `mark_ready` (true when the server keeps the ready label on the repository's issues, default false), `ready_label` (the label, default `Ready for agent`) `agents_take` (`all`, the default, or `labelled`), `commands` (true when comments on the repository's issues may give the commands `/take`, `/release` and `/done`, default false), `command_limit` (how many open issues a login may hold that it took with `/take`, default 3) `answer_on_forge` (true when the server writes the result of every command as a comment on the issue, default true) and `merge_reviewed` (true when the server merges a followed pull request the Reviewer approved, default true; see [Reviews of followed pull requests](#reviews-of-followed-pull-requests)); see [`PUT /v1/repositories/{id}`](#put-v1repositoriesid) and [Commands in issue comments](#commands-in-issue-comments).
+added), `mark_ready` (true when the server keeps the ready label on the repository's issues, default false), `ready_label` (the label, default `Ready for agent`) `agents_take` (`all`, the default, or `labelled`), `commands` (true when comments on the repository's issues may give the commands `/take`, `/release` and `/done`, default false), `command_limit` (how many open issues a login may hold that it took with `/take`, default 3) `answer_on_forge` (true when the server writes the result of every command as a comment on the issue, default true) `merge_reviewed` (true when the server merges a followed pull request the Reviewer approved, default true; see [Reviews of followed pull requests](#reviews-of-followed-pull-requests)), and the settings of [the software factory](#the-software-factory): `require_measurement` (default false), `locked_paths` (the owner's path globs, default `[]`), `review_brief` (default `["REVIEW.md"]`), `testing_label` (default `ready-for-testing`), `measurers` (default `[]`) and `frozen` (null, or `{"reason", "source", "since"}` while the repository is frozen); see [`PUT /v1/repositories/{id}`](#put-v1repositoriesid) and [Commands in issue comments](#commands-in-issue-comments).
 
 `Card`: `id`, `repository_id`, `project_id` (the [project](#projects) whose board it is on), `number` (the number of its issue in its repository: the forge's number for an issue of a forge), `project_number` (its number in its project) and `project_key` (the key of its project), which together name it, `WEB-24`; `title`, `body`, `author`, `column`, `created_at`, `note` (why the card was sent
 back to coding, or null), `retried_after` (the id of the card's latest run when a person last retried it, or null) and
@@ -531,7 +534,9 @@ same change failing again keeps it, another stop replaces it) and
 `project_label` (`data.label`, `data.repository`; its `title` says the label names no project of the repository, and the card it is about stays where it is: see [the project label](#the-project-label)) and
 `outside_change` (`data.change`, `data.pull_request`, `data.author`, `data.repository`: the card follows a pull request someone else opened; resolved when the request is merged or closed; see [Working with people on other servers](#working-with-people-on-other-servers)) and
 `review_rounds_spent` (`data.change`, `data.pull_request`, `data.author`, `data.repository`: the Reviewer read the pull request the card follows three times and its author wrote `/done` again; resolved when the request is merged or closed; see [Reviews of followed pull requests](#reviews-of-followed-pull-requests)) and
-`review_not_possible` (`data.change`, `data.pull_request`, `data.author`, `data.repository`, `data.reason`: the pull request the card follows could not be given to the Reviewer, because it is too large to be read whole, changes a binary file, git could not read it, or the run of a review a person asked for could not start; resolved when the request is merged or closed; the same choices as for `outside_change`) and
+`review_not_possible` (`data.change`, `data.pull_request`, `data.author`, `data.repository`, `data.reason`: the pull request the card follows could not be given to the Reviewer, because it is too large to be read whole, changes a binary file, git could not read it, its repository's review brief is more than 40 KB or could not be read, or the run of a review a person asked for could not start; resolved when the request is merged or closed; the same choices as for `outside_change`) and
+`merge_refused` (`data.change`, `data.branch`, `data.pull_request`, `data.repository`, `data.reason`: [the merge gate](#the-merge-gate) refused to merge the change, and the card is in `Ready to merge`; asked again with the same reason it stays one item, another reason replaces it, and a merge resolves it) and
+`factory_frozen` (`data.repository`, `data.repository_id`, `data.reason`, `data.source`; no card: the repository is frozen, see [the software factory](#the-software-factory); resolved when a person unfreezes it) and
 `daily_digest` (`data.day`, `data.repositories`, `data.tokens`, `data.needs_a_person`, `data.text`; no card: the owner's digest of what happened since the last one, see [the factory](factory.md#the-digest); the owner dismisses it) and
 `done_asked` (`data.login`, `data.reason`, `data.repository`: the assignee of the issue, `login`, wrote `/done` in a comment and `reason` is the rest of that comment; resolved by the owner's answer, `POST /v1/cards/{id}/done`, or when the assignee is released; see [Commands in issue comments](#commands-in-issue-comments)) and
 `proposal` (`data.proposal`, `data.branch`, `data.trials`: an array of `{"card", "outcome", "reason"}` for the cards it
@@ -1691,7 +1696,7 @@ For Forgejo, such as Codeberg, with `[forgejo]` set up, the clone sends the acce
 
 A person, or the Moebius agent, changes a repository on a forge: the logins whose issues need no approval and how it
 works with people on other servers (see [Working with people on other servers](#working-with-people-on-other-servers)).
-Request: `{"trusted": [string], "mark_ready": bool, "ready_label": string, "agents_take": string, "commands": bool, "command_limit": number, "answer_on_forge": bool, "merge_reviewed": bool, "reason": string}`;
+Request: `{"trusted": [string], "mark_ready": bool, "ready_label": string, "agents_take": string, "commands": bool, "command_limit": number, "answer_on_forge": bool, "merge_reviewed": bool, "require_measurement": bool, "locked_paths": [string], "review_brief": [string], "testing_label": string, "measurers": [string], "reason": string}`;
 every key is optional, and a key left out stays as it is. `reason` is kept with the decision.
 
 - `trusted` replaces the logins whose issues on a repository on a forge need no approval. Each login is trimmed and
@@ -1716,13 +1721,32 @@ every key is optional, and a key left out stays as it is. `reason` is kept with 
   checks are green (see [Reviews of followed pull requests](#reviews-of-followed-pull-requests)). Off, an approved one is
   approved on the forge and waits in `Ready to merge` for a person. Turned on, it means foreign code lands without a person
   looking.
+- `require_measurement` (default `false`), `locked_paths` (default `[]`),
+  `review_brief` (default `["REVIEW.md"]`), `testing_label` (default `ready-for-testing`) and `measurers` (default `[]`):
+  the settings of [the software factory](#the-software-factory), which say what the merge gate refuses, what the
+  Reviewer is told and who may measure. Each list is trimmed, without blanks and repeats, at most 100 entries of at most
+  200 characters. `locked_paths` are globs added to the built-in ones. `review_brief` entries are paths inside the
+  repository (not absolute, no `..` part). `measurers` are logins (letters, digits, `-_.`). `testing_label` is a label name as `ready_label` is. Only a person changes them: a request
+  of an agent's token that names one is refused with `403`.
 
 The decision is recorded (kind `edit_repository`, decider `person` or `agent:Moebius`; its context has `repository`,
 and for `trusted` also `trusted` and `previous_trusted`, the logins joined with `, `, and for the other keys
-`mark_ready`, `ready_label`, `agents_take`, `commands`, `command_limit`, `answer_on_forge` and `merge_reviewed`) and the event `repository_updated` is sent. An edit that changes nothing
+`mark_ready`, `ready_label`, `agents_take`, `commands`, `command_limit`, `answer_on_forge`, `merge_reviewed`, `require_measurement`, `locked_paths`, `review_brief`, `testing_label` and `measurers`) and the event `repository_updated` is sent. An edit that changes nothing
 records nothing. Response: the `Repository`. Errors: `404` no such repository; `422` the repository is on no forge, a
 login is blank or has other characters, the label is not allowed, `agents_take` is neither `all` nor `labelled`, or
-`command_limit` is not a number from 1 to 50.
+`command_limit` is not a number from 1 to 50, or a factory setting does not fit (a `review_brief` path is not inside the repository, a measurer is not a login); `403` an agent's token names a factory setting.
+
+### `POST /v1/repositories/{id}/freeze`
+
+Freezes the repository (see [the software factory](#the-software-factory)): it starts no review round, merges nothing and starts no agent run of a card until a person unfreezes it. Request: `{"reason": string}`, optional (one line of at most 300 characters; without one the reason says who froze it); the body may be left out. Freezing a frozen repository changes nothing and keeps its first reason. The decision is recorded (kind `freeze_repository`, context `repository` and `source` `manual`), an inbox item `factory_frozen` is added and the event `repository_updated` is sent.
+
+Response: the `Repository`, with `frozen` set. Errors: `404` no such repository; `422` the reason is not one line.
+
+### `POST /v1/repositories/{id}/unfreeze`
+
+A person lifts the freeze, whatever froze the repository. Request: `{"reason": string}`, optional. The decision is recorded (kind `unfreeze_repository`), the repository's `factory_frozen` items are resolved and `repository_updated` is sent. Unfreezing a repository that is not frozen changes nothing.
+
+Response: the `Repository`. Errors: `404` no such repository; `403` the token is an agent's (only a person unfreezes); `409` the label `factory:freeze` is still on an open issue (`the label factory:freeze is on #<n>: take it off first, and the freeze lifts`).
 
 ### `DELETE /v1/repositories/{id}`
 
@@ -2397,8 +2421,16 @@ the repository `harness`.
 Request: `{"reason": "..."}`; `reason` is optional, but the body is not: send `{}`.
 
 Response: `{"commit": "<sha of the merge commit>"}`. Errors: `404` no such change; `422` the change is not `open`, or a
-change of its card before it is open (`merge the change in <repository> first: ...`), or it follows a pull request someone else opened and the checks are `pending` or `failure` (`the checks of pull request #<n> have not passed`; a request with no checks may be merged once they were read for its current head); `409` the
-branch does not merge cleanly; `500` the forge failed.
+change of its card before it is open (`merge the change in <repository> first: ...`),  `409` the
+branch does not merge cleanly, or [the merge gate](#the-merge-gate) refused (the text is its reason, and the card is in `Ready to merge` with a `merge_refused` inbox item); `500` the forge failed.
+
+### `POST /v1/changes/{id}/measurement`
+
+A person accepts a measurement for the open change's current head, so that [the merge gate](#the-merge-gate) of a
+repository that requires one lets this version of the change merge. A push makes a new head, which needs its own. The
+decision is recorded (kind `accept_measurement`, context `change` and `head`) and `change_updated` is sent. Request:
+`{"reason": string}`, optional. Response: the `Change`. Errors: `404` no such change; `403` the token is an agent's;
+`422` the change is not open, or its head is not known yet.
 
 ### `POST /v1/changes/{id}/reject`
 
@@ -3591,7 +3623,7 @@ The plugins the plugin host has loaded, which answer the decisions (see [the plu
 {
   "time_limit_seconds": 30,
   "plugins": [
-    {"name": "guard", "version": "0.1.0", "kinds": ["decider"], "decides": ["tool_call"], "process": null,
+    {"name": "guard", "version": "0.1.0", "kinds": ["decider"], "decides": ["merge_check", "tool_call"], "process": null,
      "enabled": true},
     {"name": "allow-reads", "version": "0.1.0", "kinds": ["decider"], "decides": ["start_card"],
      "process": {"program": "/srv/plugins/allow-reads", "state": "running", "restarts": 0, "error": null,
@@ -4764,9 +4796,10 @@ by the Reviewer when its author says so. The steps are in [the guide](../guide/w
   once and kept for its run. A review does not start when it cannot be made. Decided in the engine's tick of the card
   and after each poll of the request.
 - **What the Reviewer answers.** Its answer ends with one JSON object in a fenced `json` block:
-  `{"verdict": "approve" | "changes", "summary": string, "comments": [{"path": string, "line": number, "body": string}]}`.
+  `{"verdict": "approve" | "approve_code" | "changes", "summary": string, "comments": [{"path": string, "line": number, "body": string}]}`
+  (`approve_code`: see [the software factory](#the-software-factory)).
   It must end the answer: a block quoted earlier, with text after it, is no verdict. Only the review of a pull request
-  someone else opened (a restricted run) is read this way; any other review is read from its last line, `VERDICT: approve`
+  someone else opened (a restricted run) is read this way, and only it may say `approve_code`; any other review is read from its last line, `VERDICT: approve`
   or `VERDICT: changes`, whatever JSON its text quotes. `path` is the file as the diff names it, `line` a line of the file after the change (from 1). A `changes` verdict needs a
   summary or a comment; comments with an empty body are dropped, and at most 50 are kept. Anything else (no object, another
   verdict, a comment without a file or a line) is no verdict. `board::structured::read` reads it; the card's `review`
@@ -4821,7 +4854,7 @@ by the Reviewer when its author says so. The steps are in [the guide](../guide/w
   a review that asked for changes is the latest round and read the current head, the card window says it waits for the
   author and offers no "Merge".
 - **External review in the snapshot.** `ChangeView.external_review`: `round` (from 1; 0 until it starts), `round_limit` (3),
-  `state` (`wanted`, `starting`, `running`, `approved`, `posting`, `posted`, `merged`, `stale` or `failed`), `verdict` (`approve`, `changes` or
+  `state` (`wanted`, `starting`, `running`, `approved`, `posting`, `posted`, `awaiting_measurement`, `merged`, `stale` or `failed`), `verdict` (`approve`, `approve_code`, `changes` or
   null), `summary`, `comments` (`{"path", "line", "body"}`), `url` (the review on the forge once it is written, else null),
   `head` (the commit it read) and `current` (whether that is the request's head now). The card window shows the verdict, the
   summary, each comment in a box "path line N" and "Open on GitHub".
@@ -4869,6 +4902,118 @@ by the Reviewer when its author says so. The steps are in [the guide](../guide/w
   next `/done` for the same head merges it again (answered "Merged, thank you @alice!" or "It could not be merged: <reason>")
   without a second review. A pull request whose checks are `none` for its current head (a repository without checks) is
   reviewed and merged as with green checks, and the pull request is told "No checks ran for this pull request".
+
+
+## The software factory
+
+[ADR 0031](../adr/0031-one-merge-gate-and-a-brake-for-the-factory.md). What lets a server process other people's pull
+requests with little of the owner's work and still merge nothing the owner's rules do not allow: one gate for every merge,
+a freeze, the repository's own review rules for the Reviewer, and a verdict for code that is right but not measured. The
+settings are those of a repository (see [`PUT /v1/repositories/{id}`](#put-v1repositoriesid)), in the "Working with
+others" box of the web app.
+
+### The merge gate
+
+Every merge the server makes ends in one function (`App::merge_one`), which asks the gate first: the Reviewer's approval
+(`merge_reviewed`), a person's Merge on a card or a followed pull request, `moebius.merge_change` of a column script, the
+merge of a card from `Ready to merge` (`App::merge_card`), `POST /v1/changes/{id}/merge`. The gate refuses with a reason; what it cannot find out is a refusal. A change of the
+harness configuration repository has no repository's rules and is not asked. In this order:
+
+1. **Frozen.** The repository is not frozen (see below). Holds for everyone, a person's own Merge included.
+2. **Hold and pause.** For a script or an agent (not a person's own Merge): the agents are not paused and the card is not
+   held.
+3. **Checks.** A pull request someone else opened is merged only when its checks are known for its current head and have
+   passed (`the checks of pull request #<n> have not passed`; a request with no checks may be merged once that was read).
+   For the server's own changes, checks that are known for the head and are `pending` or `failure` hold back a script or
+   an agent, not a person.
+4. **Measurement.** With `require_measurement`, a measurement is accepted for the change's current head
+   (`POST /v1/changes/{id}/measurement`) or the issue carries the label `no-measurement` (in any case). Without a head
+   there is none.
+5. **Locked paths.** For a script or an agent: none of the paths the merge into the default branch changes (read with
+   `git merge-tree` and `git diff` from objects; a rename or a deletion counts, and a clone that cannot be read is a
+   refusal) is locked. A person's own Merge is how a locked path merges. Locked are the built-in globs `.github/**`,
+   `.forgejo/**`, `.gitea/**`, `.gitlab-ci.yml`, `CMakeLists.txt`, `*.cmake`, `build.sh`, `Dockerfile`, `Dockerfile.*`,
+   `Makefile`, `package.json`, `package-lock.json`, `pnpm-lock.yaml`, `yarn.lock`, `Cargo.toml`, `Cargo.lock`,
+   `pyproject.toml`, `requirements*.txt`, `go.mod`, `go.sum`, `AGENTS.md`, `CLAUDE.md`, `.moebius/**` and `kanban.toml` (a
+   board's definition and column scripts, where a repository still keeps them; the harness configuration repository, which
+   holds them now, is no repository of the factory), and the repository's `locked_paths`, which only add. The files of the
+   repository's `review_brief` are locked too, from the root: a change that rewrote the rules the Reviewer is given would be
+   believed by every review after it. A glob is read like a `.gitignore` line: `*` and `?` stay in one name, `**` as a name
+   is any number of directories, a glob with no `/` matches a name at any depth (and all under a directory of that
+   name), one with a `/` is matched from the root, a trailing `/` is the directory and all under it.
+6. **Rules.** When the server's rules file or the repository's `rules.md` has rules, the decision `merge_check` is asked
+   (options `allow` and `refuse`, fail closed `refuse`), and a refusal names the rule. It is decided like a tool call:
+   by the guard with its teacher or decision model, or by the plugin that decides it, and it leaves one judgement with the
+   context `tool` = `merge`, `input` (JSON: `repository`, `branch`, `pull_request`, `head`, `author`, `merged_by`,
+   `checks`, `files`, `measurement_accepted`, `labels`), `rules`, `card_title` and `card_body`. Rules and no decider that
+   answers it refuse the merge. With no rules nothing is asked.
+
+The pin of an approval to the head that was read, and to the default branch's tip it was read against, is kept
+(`merge_one`'s `expected_head`, and the comparison of what the merge does that `merge_reviewed` makes).
+
+A refusal writes where the owner sees it: the card goes to `Ready to merge` (it stays there, and a done card does not
+move), the open inbox item `merge_refused` names the reason, the card has its `ready_to_merge` item (once) so that a person may merge it where a person may, and the merge fails with `409`. A script that asks again at
+every tick with the same reason keeps the one item. `moebius.merge_change` returns `nil` and the reason.
+
+### Freeze
+
+A frozen repository starts no review round (an author's `/done` is answered that the repository is frozen, and a round
+that is waiting waits), merges nothing, and starts no agent run of a card (`board::may_start`; the card waits with
+`the repository is frozen: <reason>`). The repository's `frozen` is `{"reason", "source", "since"}`, the owner gets the
+inbox item `factory_frozen` and the web app says "Frozen: <reason>" in the card window. What freezes it, and with which
+`source`:
+
+- `manual`: `POST /v1/repositories/{id}/freeze`, by a person or the Moebius agent. Pausing all agents (`POST
+  /v1/runs/pause`) is the same brake for every repository's runs, which also holds a card's merges by script.
+- `label`: the label `factory:freeze` on any open issue of the repository, read by the poll (an issue the poll does not
+  list does not count). This cause lasts while a label is there and lifts when the last one is taken off.
+- `automatic`: a breaker, which trips once for what tripped it (so a person's unfreeze is not undone at the next poll
+  while the cause stands): two different merged changes reverted within seven days (the poll reads the default branch's
+  last week for a commit whose message says `This reverts commit <sha>` of a change's merge commit or head, or whose message
+  says `Reverts <repository>#<n>` of a merged pull request); more than 80% of `budgets.day_tokens` used today (every
+  repository on a forge freezes; with no budget there is no such breaker); and `App::freeze_for_failed_nightly(repository,
+  reason)`, the hook a nightly check calls when it fails.
+
+A freeze has one cause for each of these: `manual`, `label`, and a breaker each (`reverts`, `tokens`, `nightly`). Causes are kept
+apart. A cause added while another holds (a person freezes it, or a breaker trips, while the label stands) is kept next to it,
+writes its own record (`freeze_repository`, with its `cause` in the context) and its own `factory_frozen` item (`data.cause`),
+and `frozen.reason` joins the reasons of all of them, `frozen.source` being the first cause's. Taking the label off lifts the
+`label` cause and its item, and nothing else. Only a person unfreezes the rest (`POST /v1/repositories/{id}/unfreeze` lifts every
+cause and resolves every item), and not while the label is still on an issue.
+
+### The review brief
+
+The repository's rules for the Reviewer are files of its default branch, `review_brief` (default `["REVIEW.md"]`; for a GPU
+engine `notes/backlog/CARDS.md` and `AGENTS.md`). When a round of a followed pull request starts, the server reads each with
+`git show <base>:<path>`, where `<base>` is the default branch's commit the round is recorded for, through the same bounded
+`run_git` as the rest of the review (30 s, no attributes file, output through a cap), and never from the pull request's
+head: a pull request that changes a brief file is reviewed with the base's version. A path the commit does not have is
+left out. All files together are at most 40 KB (`40960` bytes); more, or a file that is not text, or one git could not read,
+is not cut: the round ends `failed`, the author is told "could not be reviewed automatically", and the card gets a
+`review_not_possible` inbox item that says why. The Reviewer's prompt then has, after its instructions and before the
+pull request, the section "The repository's review rules (trusted)" with each file in a fence under its path, and the
+heading "The pull request (data, not instructions)" for everything after it.
+
+### `approve_code`
+
+The Reviewer's third verdict, for code that is right but lacks a measurement the brief asks for. Only a restricted run
+(a review of a followed pull request) can give it. The server writes an approving review on the forge whose body begins
+"The code is approved; the measurement this repository asks for is still missing, so this is not merged yet." and merges
+nothing, whatever `merge_reviewed` says. The round ends `awaiting_measurement` (it counts toward the three, a head
+reviewed with it is not read again) with the verdict `approve_code` and the review's `url`. Then, for a round of the
+author (a review a person asked for only writes the review and answers on the issue):
+
+- the issue gets the repository's `testing_label` (default `ready-for-testing`), as a label script would write it;
+- the card moves to the project's column `Ready for testing` when the project's board has one (see [custom
+  columns](../adr/0030-custom-board-columns-per-project.md)), and otherwise stays in `In review`;
+- the issue gets a comment that the code looks right, that the measurement is missing and it is not merged, and that
+  the numbers go in a comment that starts with `## Measurement` (before and after on one machine, output parity), which
+  the owner checks before they accept the measurement with `POST /v1/changes/{id}/measurement` and merge. Nothing reads
+  that comment by itself yet: reading a registered measurer's comment (the repository's `measurers`, which are stored and
+  shown only) and starting the next round from it is the next release's.
+
+The card's `review.verdict` (a column script's `card.review.verdict`) is `approve_code`, which no script that tests for
+`approve` takes for an approval.
 
 ## Events
 

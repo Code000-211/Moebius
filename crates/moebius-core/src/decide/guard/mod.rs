@@ -137,9 +137,10 @@ impl Plugin for Guard {
     fn call(&self, call: Call) -> Result<Value, PluginError> {
         let request: DecideRequest = serde_json::from_value(call.params)
             .map_err(|e| PluginError::BadParams(e.to_string()))?;
-        if request.kind != "tool_call" {
+        // A merge the server makes is decided like a tool call: its rules are the ones the agents' calls are held to.
+        if request.kind != "tool_call" && request.kind != crate::app::factory::MERGE_CHECK {
             return Err(PluginError::Failed(format!(
-                "guard decides tool calls, not {:?}",
+                "guard decides tool calls and merges, not {:?}",
                 request.kind
             )));
         }

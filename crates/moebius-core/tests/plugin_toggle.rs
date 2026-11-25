@@ -898,7 +898,10 @@ async fn the_guard_is_turned_off_only_with_allow_unchecked_and_then_tool_calls_a
     let path = "/v1/plugins/guard/enabled";
     assert_eq!(
         listed(&f, "guard").await,
-        (true, vec!["tool_call".to_string()])
+        (
+            true,
+            vec!["merge_check".to_string(), "tool_call".to_string()]
+        )
     );
     // Refused without the confirmation, in words, and nothing changes.
     let (status, body) = f

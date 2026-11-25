@@ -9,7 +9,7 @@ mod agents;
 mod coding_agents;
 mod end;
 mod lifecycle;
-mod prompts;
+pub(crate) mod prompts;
 pub(crate) mod scratch;
 mod start;
 // Unix only: the fake `pi-bolt` and the fake `claude` are Python scripts started by their `#!` lines.

@@ -48,7 +48,7 @@ interface FakeCard {
       round: number;
       round_limit: number;
       state: string;
-      verdict: "approve" | "changes" | null;
+      verdict: "approve" | "approve_code" | "changes" | null;
       summary: string;
       comments: Array<{ path: string; line: number; body: string }>;
       url: string | null;
@@ -272,6 +272,11 @@ export interface BoardFake {
    * card in review that follows her pull request 7, with its inbox item. Returns their numbers.
    */
   seedElsewhere(): { taken: number; followed: number };
+  /**
+   * Puts a card in review that follows `alice`'s pull request 8, whose code the Reviewer approved while its measurement is
+   * missing (`approve_code`, `awaiting_measurement`), and returns its number.
+   */
+  seedFactory(): number;
   /**
    * Puts two issues `alice` took with `/take` in a comment on the board (Not started): one just taken, and one she says
    * is done, which waits for the owner with its inbox item. Returns their numbers.
@@ -978,6 +983,44 @@ export function createBoardFake(send: (event: ServerEvent) => void): BoardFake {
         at: NOW - 60,
       });
       return { taken: first, followed: first + 1 };
+    },
+    seedFactory() {
+      const id = Math.max(...cards.map((c) => c.id)) + 1;
+      cards.push(
+        card(id, {
+          title: "Fuse the attention kernels",
+          column: "In review",
+          change: {
+            id: 40,
+            repository: "demo",
+            state: "open",
+            checks: "success",
+            review_verdict: "approve",
+            outside_author: "alice",
+            external_review: {
+              round: 1,
+              round_limit: 3,
+              state: "awaiting_measurement",
+              verdict: "approve_code",
+              summary:
+                "The fused kernel reads each block once and the indexing is right. The merge bar asks for a before and after on one machine, and there is none yet.",
+              comments: [],
+              url: "https://github.test/acme/demo/pull/8#pullrequestreview-92",
+              head: "def",
+              current: true,
+            },
+          },
+        }),
+      );
+      changes.push(
+        change(40, id, {
+          pull_request: 8,
+          branch: "moebius/pr-8",
+          outside_author: "alice",
+          taken_from: "In progress",
+        }),
+      );
+      return id;
     },
     seedCommands() {
       const first = Math.max(...cards.map((c) => c.id)) + 1;

@@ -119,6 +119,17 @@ Examples that are refused: `cd / && rm -rf *`, `cd ~ && rm -rf .`, `bash -c "rm 
 `eval rm -rf /`, `echo x > /etc/passwd`, `echo x >> ../outside.txt`, `ls | tee /etc/x`. Examples that are allowed:
 `cd src && rm -rf build`, `bash -c "cargo build"`.
 
+## Merges
+
+The same rules hold the merges the server makes (ADR 0031). When a change is merged by a script, by the Reviewer's approval
+or by a person, and rules apply (the server's file or the repository's `rules.md`), the merge gate asks the decision
+`merge_check` (see [the merge gate](desktop-api.md#the-merge-gate)) with the tool `merge` and the facts of the merge as its
+input (`repository`, `branch`, `pull_request`, `head`, `author`, `merged_by`, `checks`, `files`, `measurement_accepted`,
+`labels`). The guard answers it as it answers a tool call, with the rules in prose judged by the teacher: no rules, nothing
+is asked; rules and no teacher, the merge is refused (`no teacher is configured to check the rules in prose`). A rule such
+as `## measured` with the text "Never merge a change to a kernel without a measurement" therefore refuses the server too.
+The built-in patterns look at tool calls only and do not apply.
+
 ## Known limits
 
 The patterns are a first line only. What they cannot see is for the teacher and the prose rules:

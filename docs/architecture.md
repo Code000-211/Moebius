@@ -594,6 +594,10 @@ At the top:
 | `app/upkeep.rs` | Stale handling ([ADR 0032](adr/0032-the-factory-keeps-the-owners-work-small.md)): an issue taken and not worked on is released, a followed pull request nobody pushes to after a review asked for changes is reminded and then closed; never on a held card. |
 | `app/commands.rs` | Commands in issue comments ([ADR 0028](adr/0028-helpers-take-issues-with-commands-in-comments.md)): `/take`, `/release` and `/done` read once from the comments the poll read, answered on the issue, limited per login, and the owner's answers to a `/done` and release from the card. |
 | `app/reviews.rs` | The Reviewer reads a followed pull request when its author says `/done` ([ADR 0029](adr/0029-the-reviewer-reads-a-pull-request-when-its-author-says-done.md)): rounds that wait for green checks, a review run read as a structured verdict, a review with comments on lines written on the forge, and the merge pinned to the head that was read, or Ready to merge. |
+| `app/factory/mod.rs` | The software factory ([ADR 0031](adr/0031-one-merge-gate-and-a-brake-for-the-factory.md)): the settings a repository keeps for it (measurement, locked paths, review brief, testing label, measurers) and how an edit is checked, a person accepting a measurement, and the names its parts share. |
+| `app/factory/gate.rs` | The merge gate every merge the server makes goes through (`merge_one`): frozen, hold and pause, checks, measurement, locked paths and the rules as the decision `merge_check`; a refusal puts the card in Ready to merge with an Inbox item that names the reason. |
+| `app/factory/freeze.rs` | Freezing a repository: by a person, by the label `factory:freeze`, or by a breaker (two reverts in seven days, 80% of the day's tokens, a failed nightly check); what a frozen repository does not do, and who lifts it. |
+| `app/factory/paths.rs` | Path globs for the paths that never merge without a person, and the built-in list. |
 | `app/review_sweep.rs` | Ending the rounds of the Reviewer that cannot end by themselves: the sweep of rounds left starting or writing a review, a closed pull request's rounds, and a person's end of a round. |
 | `app/review_context.rs` | What the Reviewer of a pull request someone else opened is given to read: the diff and the changed files as of the reviewed commit, built from git objects alone (no checkout, no filters; a changed file too large to give whole is given as the lines of its own part of the diff, and over the total the largest whole files are given so first, sizes read from object headers first), as text for its prompt, and the check that the default branch did not change what the merge does since the review. |
 | `app/taking.rs` | Working with people on other servers through the forge ([ADR 0027](adr/0027-working-with-people-on-other-servers-through-the-forge.md)): taking an issue assigns the person on the forge, an issue someone else took is left alone, the ready label kept on the issues that are ready, and the pull requests of people on other servers followed to their merge or close. |
@@ -704,8 +708,9 @@ At the top:
 | `store/links.rs` | The links between issues besides parent and blockers: a duplicate to its original, and issues related in both directions. |
 | `store/issues.rs` | What an issue has besides its text: its parent, labels, claim, whether it was closed, and its comments. |
 | `store/changes.rs` | Changes: a branch offered for merging, with its pull request, checks and review. |
-| `store/factory.rs` | What the store keeps for the software factory: the log the digest reads, the days a digest was made, when each issue was taken, a repository's stale settings and a project's backlog. |
+| `store/tending.rs` | What the store keeps for the software factory: the log the digest reads, the days a digest was made, when each issue was taken, a repository's stale settings and a project's backlog. |
 | `store/commands.rs` | What the store keeps for commands in issue comments: the repository's settings for them, the newest comment read per issue, the login a card was taken by command, and how many issues a login holds. |
+| `store/factory.rs` | The software factory's state: a repository's factory settings and freeze, the commit a change merged as, accepted measurements, reverts kept once and the breakers that tripped. |
 | `store/reviews.rs` | The rounds of the Reviewer on followed pull requests (state, head, verdict, summary, comments on lines, the review's address) and the repository's `merge_reviewed`. |
 | `store/taking.rs` | What a server knows of who took an issue: a person's logins on the forges, the logins an issue is assigned to, why an assignment failed, and a repository's settings for working with others. |
 | `store/attempts.rs` | Attempts: the runs a card was tried with at once, how each fared, which was picked and why, and the rounds of which none passed. |
@@ -763,9 +768,10 @@ At the top:
 | `server/fake_github.rs` | For the tests only: a fake GitHub with one repository, and a server that polls it. |
 | `server/fake_gitlab.rs` | For the tests only: a fake GitLab with one project, a server that polls it, and the tests of the GitLab forge through it. |
 | `server/fake_forgejo.rs` | For the tests only: a fake Forgejo with one repository, a server that polls it, and the tests of the Forgejo forge through it. |
-| `server/factory_tests.rs` | For the tests only: the daily digest and its clock, the stale handling and the backlog sync, against the fake GitHub. |
+| `server/tending_tests.rs` | For the tests only: the daily digest and its clock, the stale handling and the backlog sync, against the fake GitHub. |
 | `server/commands_tests.rs` | For the tests only: commands in issue comments, against the fake GitHub. |
 | `server/taking_tests.rs` | For the tests only: working with people on other servers, against the fake GitHub. |
+| `server/factory_tests.rs` | For the tests only: the merge gate, the freeze and its breakers, the review brief and `approve_code`, against the fake GitHub. |
 | `server/reviews_tests.rs` | For the tests only: the review of a followed pull request after `/done`, against the fake GitHub. |
 | `server/api/mod.rs` | The desktop API: the state it needs, the token check, the router that merges the routes of its parts, how a failure becomes a status, and `GET /v1/health`. |
 | `server/api/cards.rs` | The snapshot of every board, issues, cards and their changes (edit, approve, block, unblock, delete, retry, merge, reject), a card's runs and history. |

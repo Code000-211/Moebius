@@ -113,14 +113,14 @@ pub fn put_in_host(
 /// The built-in decider of a kind, which decides it when no plugin does.
 pub fn built_in_decider(kind: &str) -> Option<&'static str> {
     match kind {
-        "tool_call" => Some(guard::NAME),
+        "tool_call" | MERGE_CHECK => Some(guard::NAME),
         localize::KIND => Some(localize::KIND),
         _ => None,
     }
 }
 
 /// The kinds a built-in decider decides, which a switch of it gives to a plugin or takes away.
-const BUILT_IN_KINDS: [&str; 2] = ["tool_call", localize::KIND];
+const BUILT_IN_KINDS: [&str; 3] = ["tool_call", MERGE_CHECK, localize::KIND];
 
 /// The built-in deciders that can be switched, by name: the guard and the localizer.
 pub const BUILT_INS: [&str; 2] = [guard::NAME, localize::KIND];
@@ -168,6 +168,7 @@ impl Switches {
     /// not even a plugin. The guard's `tool_call` is not such a kind: it is always decided (see [`route_kind`]).
     pub fn kind_off(&self, kind: &str) -> bool {
         kind != "tool_call"
+            && kind != MERGE_CHECK
             && built_in_decider(kind).is_some_and(|name| self.get(name) == Some(false))
     }
 
@@ -180,6 +181,9 @@ impl Switches {
         }
     }
 }
+
+/// The kind of the decision whether a repository's rules allow a merge the server makes (see `app::factory::gate`).
+use crate::app::factory::MERGE_CHECK;
 
 /// What a decision of `tool_call` is when the guard is off and no plugin decides it.
 const UNCHECKED: &str = "the guard is off: this tool call was not checked, neither by the built-in safety patterns nor by the rules";
@@ -207,7 +211,7 @@ fn route_kind(decisions: &Decisions, kind: &str, plugins: &[PluginConfig], switc
         }
         (None, None) => {}
     }
-    if kind == "tool_call" && plugin.is_none() && !switches.guard {
+    if (kind == "tool_call" || kind == MERGE_CHECK) && plugin.is_none() && !switches.guard {
         decisions.leave_open(kind, "allow", UNCHECKED);
     } else {
         decisions.close(kind);

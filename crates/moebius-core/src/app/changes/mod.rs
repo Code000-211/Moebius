@@ -458,17 +458,9 @@ impl App {
             )));
         }
         self.check_merge_order(&change)?;
-        // A pull request someone else opened is merged only once its checks have passed: it is theirs, not reviewed here.
-        // Its checks must be known for its current head: after a push they are unknown until the poll has read them.
-        if change.outside_author.is_some()
-            && (matches!(change.checks.as_deref(), Some("pending" | "failure"))
-                || change.checks_head != change.head)
-        {
-            return Err(AppError::Invalid(format!(
-                "the checks of pull request #{} have not passed",
-                change.pull_request.unwrap_or_default()
-            )));
-        }
+        // Whatever the path that came here, the merge gate decides first (see `factory::gate`): it refuses with a reason,
+        // and what it cannot find out is a refusal.
+        self.merge_gate(by, &change)?;
         let repository = change
             .repository_id
             .map(|id| self.repository(id))
@@ -538,7 +530,7 @@ impl App {
         commit: Option<&str>,
         by: Option<&Actor>,
     ) -> Result<()> {
-        self.store.set_change_state(change.id, "merged")?;
+        self.store.set_change_merged(change.id, commit)?;
         self.bus.publish(Event::ChangeMerged {
             change: change.id,
             commit: commit.map(str::to_string),

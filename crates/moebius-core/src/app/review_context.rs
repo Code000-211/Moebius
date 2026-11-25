@@ -439,6 +439,110 @@ fn entries(
     Ok(found)
 }
 
+/// How much of the repository's review brief is read, in bytes, all its files together. A brief that is more is refused,
+/// not cut: rules read in part would be rules half applied.
+pub(crate) const BRIEF_AT_MOST: usize = 40 * 1024;
+
+/// The files of the repository's review brief as the commit `base` has them, each with its text: read with `git show
+/// <base>:<path>` through the same bounded `run_git` as the rest of a review, from the default branch's commit and never
+/// from the pull request. A path the commit does not have is left out. The error says why the brief cannot be given: it
+/// is more than [`BRIEF_AT_MOST`], names no file, or git could not read it.
+pub(crate) fn review_brief_at(
+    repository: &Repository,
+    base: &str,
+) -> Result<Vec<(String, String)>, String> {
+    let clone = Path::new(&repository.path);
+    let mut left = BRIEF_AT_MOST;
+    let mut files = Vec::new();
+    for path in &repository.review_brief {
+        let spec = format!("{base}:{path}");
+        // Not a file of the commit (or not a file at all): nothing to read.
+        let kind = run_git(clone, &["cat-file", "-t", &spec], 64)?;
+        if !kind.ok || String::from_utf8_lossy(&kind.bytes).trim() != "blob" {
+            continue;
+        }
+        let out = run_git(clone, &["show", &spec], left)?;
+        if out.truncated {
+            return Err(format!(
+                "the review brief is larger than {} KB (at {path})",
+                BRIEF_AT_MOST / 1024
+            ));
+        }
+        if !out.ok {
+            return Err(format!("git could not read the review brief file {path}"));
+        }
+        if out.bytes.contains(&0) {
+            return Err(format!("the review brief file {path} is not text"));
+        }
+        left -= out.bytes.len();
+        files.push((
+            path.clone(),
+            String::from_utf8_lossy(&out.bytes).into_owned(),
+        ));
+    }
+    Ok(files)
+}
+
+/// The paths merging the commit `head` into the commit `base` changes, as the forge's merge would: the paths that differ
+/// between `base` and the tree `git merge-tree` makes of the two. A merge that conflicts has none, and is an error.
+pub(crate) fn merged_paths(
+    repository: &Repository,
+    base: &str,
+    head: &str,
+) -> Result<Vec<String>, ContextError> {
+    let clone = Path::new(&repository.path);
+    let merged = effect_of(clone, base, head)?;
+    Ok(changes_of(clone, base, &merged)?
+        .into_iter()
+        .map(|c| c.path)
+        .collect())
+}
+
+/// The paths the commit `head` changes against where it left the default branch, which a merge that conflicts has no
+/// other list of. A path that is not valid UTF-8 is an error: it could not be matched against a lock.
+pub(crate) fn branch_paths(repository: &Repository, head: &str) -> Result<Vec<String>, String> {
+    let clone = Path::new(&repository.path);
+    let base = merge_base(repository, head)?;
+    let out = run_git(
+        clone,
+        &[
+            "diff",
+            "--name-only",
+            "-z",
+            "--no-renames",
+            "--no-ext-diff",
+            "--no-textconv",
+            &base,
+            head,
+        ],
+        GIT_OUTPUT_AT_MOST,
+    )?;
+    if !out.ok || out.truncated {
+        return Err("git could not list the paths of the change".into());
+    }
+    out.bytes
+        .split(|b| *b == 0)
+        .filter(|path| !path.is_empty())
+        .map(|path| {
+            std::str::from_utf8(path)
+                .map(str::to_string)
+                .map_err(|_| "a path of the change is not valid UTF-8".to_string())
+        })
+        .collect()
+}
+
+/// What a git command printed in `clone`, read through the cap of a review's commands.
+pub(crate) fn read_git(clone: &Path, args: &[&str], cap: usize) -> Result<String, String> {
+    let out = run_git(clone, args, cap)?;
+    if !out.ok || out.truncated {
+        return Err(format!(
+            "git {} failed",
+            args.first().copied().unwrap_or_default()
+        ));
+    }
+    Ok(String::from_utf8_lossy(&out.bytes).into_owned())
+}
+
 /// The key the context of a round is kept under: the change, the head read and the default branch's tip.
 type Key = (i64, String, String);
 

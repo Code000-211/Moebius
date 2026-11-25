@@ -61,6 +61,7 @@ mod reviews;
 mod runs;
 mod shadows;
 mod taking;
+mod tending;
 mod usage;
 mod views;
 mod wiki_links;
@@ -88,11 +89,7 @@ pub use commands::DEFAULT_COMMAND_LIMIT;
 pub use cycles::{Cycle, CycleCard};
 pub use deletions::{ChatRemoved, ResearchRemoved};
 pub use events::Event;
-pub use factory::{
-    Activity, Backlog, DEFAULT_BACKLOG_CAP, DEFAULT_BACKLOG_PATTERN, DEFAULT_CLOSE_AFTER_DAYS,
-    DEFAULT_CLOSED_MARKER, DEFAULT_DIFFICULTY_LABEL, DEFAULT_LANE_LABEL,
-    DEFAULT_RELEASE_AFTER_DAYS, DEFAULT_STALE_AFTER_DAYS, DigestDay, Upkeep,
-};
+pub use factory::{DEFAULT_REVIEW_BRIEF, DEFAULT_TESTING_LABEL, FactorySettings, Frozen};
 pub use favourites::{PLACE_KINDS, Place, RECENT_LIMIT};
 pub use found::Found;
 pub use grillings::{Grilling, GrillingIssue};
@@ -123,6 +120,11 @@ pub use reviews::{ExternalReview, ReviewComment};
 pub use runs::Run;
 pub use shadows::{NewShadow, ShadowStats, ShadowedOutcome, Takeover};
 pub use taking::{DEFAULT_READY_LABEL, LOGIN_FORGES};
+pub use tending::{
+    Activity, Backlog, DEFAULT_BACKLOG_CAP, DEFAULT_BACKLOG_PATTERN, DEFAULT_CLOSE_AFTER_DAYS,
+    DEFAULT_CLOSED_MARKER, DEFAULT_DIFFICULTY_LABEL, DEFAULT_LANE_LABEL,
+    DEFAULT_RELEASE_AFTER_DAYS, DEFAULT_STALE_AFTER_DAYS, DigestDay, Upkeep,
+};
 pub use usage::{
     ANSWERING, ActivityUsage, AgentUsage, ClassUsage, ModelUsage, NO_RUN, Scope, ToolWait, UNKNOWN,
     Usage, UsageTotals,
@@ -543,6 +545,7 @@ UPDATE cards SET moved_at = COALESCE((SELECT MAX(at) FROM card_moves WHERE card_
     reviews::SCHEMA,
     column_classes::SCHEMA,
     factory::SCHEMA,
+    tending::SCHEMA,
 ];
 
 #[cfg(test)]

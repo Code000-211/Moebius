@@ -13,7 +13,8 @@ request it is about, `who` (a login or `moebius`), a `detail` (redacted like eve
 
 | Kind | Written when | `number` | `who` | `data` |
 |---|---|---|---|---|
-| `merged` | a change is set to `merged`, by whatever merged it | the pull request, else the issue | the outside author of the change, else `moebius` | `change`, `card`, `issue`, `title` |
+| `merged` | a change is set to merged (`Store::set_change_merged`), by whatever merged it | the pull request, else the issue | the outside author of the change, else `moebius` | `change`, `card`, `issue`, `title` |
+| `merge_refused` | [the merge gate](desktop-api.md#the-merge-gate) refused a merge (once for a reason): `detail` is the gate's reason | the issue, else the pull request | | `change`, `card`, `title` |
 | `merge_failed` | a card's merge stopped (the `merge_stopped` inbox item) | the issue | | `change`, `card`, `title`; `detail` is the reason |
 | `take`, `release` | the assignees of an issue changed, for a login that came or went, whoever did it | the issue | the login | `card` |
 | `auto_release` | the stale handling released an issue | the issue | the login released | `card`, `title` |
@@ -23,12 +24,14 @@ request it is about, `who` (a login or `moebius`), a `detail` (redacted like eve
 | `backlog_sync` | a sync that wrote | | | `project`, `path` |
 
 A part that builds on the factory writes a line with `Store::note_activity(kind, repository, number, who, detail,
-data)`; the digest also shows these kinds:
+data)`; the digest also shows these kinds. What the merge gate keeps is read from where it keeps it: a merge is
+`measured` when a measurement is accepted for the head that merged (`POST /v1/changes/{id}/measurement`, `measurements`),
+reverts are the rows of `reverts` since the last digest, and a frozen repository is told with its causes' reasons and
+source, whatever froze it:
 
 | Kind | In the digest as | Meaning |
 |---|---|---|
-| `measurement` | `measured: true` on the `merged` line whose `data.change` it names | A measurement came with the change. |
-| `merge_refused` | a refused merge | A merge was refused (as opposed to failed); `detail` is why. |
+| `measurement` | `measured: true` on the `merged` line whose `data.change` it names | A measurement came with the change, for a part that keeps its own. |
 | `revert` | a revert | A change was reverted; `detail` is why. |
 | `frozen` | something frozen | What was frozen, and why. |
 
@@ -92,8 +95,8 @@ settings (`GET` and `PUT /v1/repositories/{id}/upkeep`):
   request) and then gets a polite comment; the card goes back where it was taken from, the author is released and the line
   is `stale_closed`. A close or a reminder the forge refuses is a `stale_failed` line, told once in the digest and not
   tried again for that head, so nothing is commented on every day.
-- **Never on frozen or held cards.** A card with a hold (`held`) is left alone, and so is everything while **Pause all**
-  is on. Both are checked at the moment of each action.
+- **Never on frozen or held cards.** A card with a hold (`held`) is left alone, so is everything in a repository that is
+  frozen (a person, the label `factory:freeze` or a breaker froze it), and so is everything while **Pause all** is on. Both are checked at the moment of each action.
 - A forge that refuses is a `forge_error` event; the item is tried again the next day.
 
 ## The backlog

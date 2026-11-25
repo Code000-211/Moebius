@@ -32,6 +32,8 @@ pub mod settings;
 pub mod setup;
 #[cfg(test)]
 mod taking_tests;
+#[cfg(test)]
+mod tending_tests;
 pub mod webhooks;
 
 use std::net::SocketAddr;
@@ -309,6 +311,8 @@ impl Server {
             &config.data_dir,
             router_addr.to_string(),
         ));
+        app.set_rules_file(config.rules_path());
+        app.set_day_budget(config.day_tokens);
         let app = Arc::new(app);
         router.set_checker(check::Checker::new(app.clone(), config.rules_path()));
         let runners = Arc::new(Runners::new(config.runners.clone()));

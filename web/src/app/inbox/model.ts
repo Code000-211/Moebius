@@ -18,6 +18,10 @@ export const STUCK = "stuck";
 export const DONE_ASKED = "done_asked";
 export const REVIEW_ROUNDS_SPENT = "review_rounds_spent";
 export const REVIEW_NOT_POSSIBLE = "review_not_possible";
+/** The server's merge gate refused to merge a change; the reason is in `data.reason`. */
+export const MERGE_REFUSED = "merge_refused";
+/** A repository is frozen: nothing is reviewed, merged or started in it until a person unfreezes it. */
+export const FACTORY_FROZEN = "factory_frozen";
 export const CHANGE_CLOSED = "change_closed";
 export const MERGE_STOPPED = "merge_stopped";
 export const PROPOSAL = "proposal";
@@ -145,6 +149,10 @@ export function kindTag(item: InboxItem): { label: string; mark: StateMark } {
       return { label: "Reviewed three times", mark: "none" };
     case REVIEW_NOT_POSSIBLE:
       return { label: "Could not be reviewed", mark: "none" };
+    case MERGE_REFUSED:
+      return { label: "Merge refused", mark: "blocked" };
+    case FACTORY_FROZEN:
+      return { label: "Frozen", mark: "blocked" };
     case PROPOSAL:
       return { label: "Retro proposal", mark: "none" };
     case TAKEOVER:
@@ -197,6 +205,14 @@ export function why(item: InboxItem, about: Found, changes?: string): string | n
       return reason !== ""
         ? `The Reviewer could not read this pull request whole: ${reason}. Review it yourself, or merge it.`
         : "The Reviewer could not read this pull request whole. Review it yourself, or merge it.";
+    case MERGE_REFUSED:
+      return reason !== ""
+        ? `Merge refused: ${reason}. A person merges this change, or fixes what is missing.`
+        : "The merge was refused. A person merges this change, or fixes what is missing.";
+    case FACTORY_FROZEN:
+      return reason !== ""
+        ? `Frozen: ${reason}. Nothing is reviewed, merged or started in this repository until you unfreeze it.`
+        : "Nothing is reviewed, merged or started in this repository until you unfreeze it.";
     case MERGE_STOPPED: {
       const { repository, reason, merged, open } = mergeStopped(item);
       const stopped = `The merge in ${repository || "a repository"} stopped${reason !== "" ? `: ${reason}` : ""}.`;
@@ -251,6 +267,8 @@ export function meta(item: InboxItem, about: Found): string {
       parts.push(`by ${about.card.author}`);
   } else if (grillingOf(item) !== null) {
     parts.push("Grilling");
+  } else if (item.kind === FACTORY_FROZEN) {
+    if (text(item.data.repository) !== "") parts.push(text(item.data.repository));
   } else if (item.card_id === null && item.kind !== PROPOSAL && item.kind !== DAILY_DIGEST) {
     parts.push("chat");
   }

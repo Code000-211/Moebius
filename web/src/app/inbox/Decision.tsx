@@ -51,6 +51,7 @@ import {
   grillingOf,
   issuesSent,
   kindTag,
+  MERGE_REFUSED,
   MERGE_STOPPED,
   meta,
   PROPOSAL,
@@ -240,7 +241,10 @@ export function Decision({
         const chat = chatOf(item);
         buttons.push(plain("Open chat", chat === null ? null : () => navigate(`/chat/${chat}`)));
       }
-    } else if (item.kind === MERGE_STOPPED && item.card_id !== null) {
+    } else if (
+      (item.kind === MERGE_STOPPED || item.kind === MERGE_REFUSED) &&
+      item.card_id !== null
+    ) {
       // What stopped is the forge's or a person's to fix; the card goes on when its last change is merged.
       const board = about.board;
       buttons.push(plain("Open the card", board ? () => openCard(item.card_id as number) : null));

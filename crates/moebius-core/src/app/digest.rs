@@ -134,7 +134,7 @@ impl App {
         }
         // One second past now, so that what happened in this second is in this digest and not the next.
         let until = now() + 1;
-        let upto = self.store.last_activity()?;
+        let upto = (self.store.last_activity()?, self.store.last_revert()?);
         let (data, text) = self.compose_digest(day, (since, until), upto, day_tokens)?;
         let needs = data["needs_a_person"]
             .as_array()
@@ -169,7 +169,7 @@ impl App {
         &self,
         day: &str,
         (since, until): (i64, i64),
-        upto: i64,
+        upto: (i64, i64),
         day_tokens: Option<i64>,
     ) -> Result<(Value, String)> {
         let repositories: Vec<Repository> = self
@@ -193,7 +193,7 @@ impl App {
             .collect();
         let log = self
             .store
-            .activity_after(self.store.digested_activity()?, upto)?;
+            .activity_after(self.store.digested_activity()?, upto.0)?;
         // The stale handling releases through the same call a person's release is, so the digest tells it once.
         let upkeep_releases: std::collections::BTreeSet<(Option<i64>, String)> = log
             .iter()
@@ -218,6 +218,27 @@ impl App {
                 continue;
             };
             self.add_activity(section, &activity)?;
+        }
+        // The reverts the merge gate kept since the last digest.
+        for (repository, change, commit) in self
+            .store
+            .reverts_after(self.store.digested_reverts()?, upto.1)?
+        {
+            let Some(section) = sections.get_mut(&repository) else {
+                continue;
+            };
+            let change = self.change(change)?;
+            let card = change
+                .card_id
+                .and_then(|id| self.store.card(id).ok().flatten());
+            section.reverts.push(Line {
+                card: change.card_id,
+                number: change.pull_request.or(card.as_ref().map(|c| c.number)),
+                title: card.map(|c| c.title).unwrap_or(change.branch.clone()),
+                who: None,
+                detail: format!("reverted by {}", commit.get(..8).unwrap_or(&commit)),
+                measured: false,
+            });
         }
         for (repository, pull_request, round, verdict) in
             self.store.review_rounds_between(since, until)?
@@ -246,6 +267,15 @@ impl App {
             let section = sections
                 .get_mut(&repository.id)
                 .expect("every repository has one");
+            // A frozen repository is told with why, whatever froze it.
+            if let Some(frozen) = &repository.frozen {
+                section.frozen.push(Line {
+                    title: "The repository is frozen".into(),
+                    who: Some(frozen.source.clone()),
+                    detail: frozen.reason.clone(),
+                    ..Line::default()
+                });
+            }
             for card in self.store.cards(repository.id)? {
                 if let Some(held) = &card.held
                     && !card.closed
@@ -300,8 +330,17 @@ impl App {
         };
         match a.kind.as_str() {
             "merged" => {
+                // A measurement was accepted for the head that merged (the merge gate keeps it), or a part that builds on
+                // the factory noted one.
                 line.measured = match a.data["change"].as_i64() {
-                    Some(change) => self.store.has_activity_for_change("measurement", change)?,
+                    Some(change) => {
+                        let head = self.store.change(change)?.and_then(|c| c.head);
+                        let accepted = match head {
+                            Some(head) => self.store.has_measurement(change, &head)?,
+                            None => false,
+                        };
+                        accepted || self.store.has_activity_for_change("measurement", change)?
+                    }
                     None => false,
                 };
                 section.merged.push(line);

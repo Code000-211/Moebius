@@ -319,6 +319,16 @@ its reason says the guard is off.
 A decider for `tool_call` that refuses should say which rule it applied at the start of `reason`, followed by a colon,
 as the guard does (`no-force-push: ...`).
 
+### The `merge_check` context
+
+The kind `merge_check` is asked when the server itself merges a change and rules apply (see [the merge
+gate](desktop-api.md#the-merge-gate)): the options are `allow` and `refuse`, and a decision that cannot be made is
+`refuse`. The guard decides it as it decides a tool call, so the rules a repository wrote for tool calls read on it too.
+The context has the keys of `tool_call` that mean something here: `tool` (always `merge`), `input` (a JSON object as text:
+`repository`, `branch`, `pull_request`, `head`, `author`, `merged_by`, `checks`, `files`, `measurement_accepted`,
+`labels`), `rules`, `card_title` and `card_body`. A plugin that decides `merge_check` replaces the guard for it. With the
+guard turned off and no plugin deciding it, a merge the rules would have judged is allowed with a note on its judgement.
+
 ### The `localize` context
 
 The kind `localize` is asked once at the start of every `code` run of a card, with no options and the fail-closed answer

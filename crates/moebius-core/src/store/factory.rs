@@ -1,691 +1,373 @@
-//! The software factory (ADR 0032): what the store keeps so that the owner of a busy repository has little to do. A
-//! log of what happened that the daily digest reports (`factory_log`), the days a digest was made (`digests`, so that
-//! one day has one), when each card's issue was taken (`assigned_since`, which the stale handling reads), the stale
-//! settings of each repository (`upkeep_settings`) and the backlog file of each project (`backlogs`).
+//! The software factory's state (ADR 0031): what the store keeps so that every merge the server makes can be held to a
+//! repository's rules. A repository keeps its factory settings in columns of `repositories` (whether a measurement is
+//! required, the owner's locked paths, the review brief, the ready-for-testing label and the
+//! measurers) and, while it is frozen, why. A merged change keeps the commit its merge made. A
+//! measurement is accepted for one head of one change. A revert of a merged change is kept once, with the time of the
+//! revert commit, which the automatic freeze counts.
 
 use rusqlite::{OptionalExtension, params};
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
 
 use super::{Result, Store, now};
-use crate::blobs::{redact, redact_json};
 
-/// The tables of this part.
+/// The tables and columns of this part.
 pub(super) const SCHEMA: &str = r#"
-CREATE TABLE factory_log (
+ALTER TABLE repositories ADD COLUMN require_measurement INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE repositories ADD COLUMN locked_paths TEXT NOT NULL DEFAULT '[]';
+ALTER TABLE repositories ADD COLUMN review_brief TEXT NOT NULL DEFAULT '["REVIEW.md"]';
+ALTER TABLE repositories ADD COLUMN testing_label TEXT NOT NULL DEFAULT 'ready-for-testing';
+ALTER TABLE repositories ADD COLUMN measurers TEXT NOT NULL DEFAULT '[]';
+CREATE TABLE freezes (
+    repository_id INTEGER NOT NULL REFERENCES repositories(id),
+    cause TEXT NOT NULL,
+    source TEXT NOT NULL,
+    reason TEXT NOT NULL,
+    at INTEGER NOT NULL,
+    PRIMARY KEY (repository_id, cause)
+);
+ALTER TABLE changes ADD COLUMN merge_commit TEXT;
+CREATE TABLE measurements (
     id INTEGER PRIMARY KEY,
+    change_id INTEGER NOT NULL REFERENCES changes(id),
+    head TEXT NOT NULL,
+    accepted_by TEXT NOT NULL,
+    source TEXT NOT NULL,
+    at INTEGER NOT NULL
+);
+CREATE INDEX measurements_of_a_change ON measurements (change_id, head);
+CREATE TABLE breaker_trips (
+    repository_id INTEGER NOT NULL REFERENCES repositories(id),
+    breaker TEXT NOT NULL,
+    cause TEXT NOT NULL,
     at INTEGER NOT NULL,
-    kind TEXT NOT NULL,
-    repository_id INTEGER,
-    number INTEGER,
-    who TEXT,
-    detail TEXT NOT NULL DEFAULT '',
-    data TEXT NOT NULL DEFAULT '{}'
+    PRIMARY KEY (repository_id, breaker, cause)
 );
-CREATE INDEX factory_log_by_time ON factory_log (at);
-CREATE TABLE digests (
-    day TEXT PRIMARY KEY,
+CREATE TABLE reverts (
+    id INTEGER PRIMARY KEY,
+    repository_id INTEGER NOT NULL REFERENCES repositories(id),
+    change_id INTEGER NOT NULL REFERENCES changes(id),
+    revert_commit TEXT NOT NULL,
     at INTEGER NOT NULL,
-    since INTEGER NOT NULL,
-    item_id INTEGER,
-    log_id INTEGER NOT NULL DEFAULT 0
-);
-CREATE TABLE assigned_since (
-    card_id INTEGER PRIMARY KEY,
-    since INTEGER NOT NULL
-);
-CREATE TABLE upkeep_settings (
-    repository_id INTEGER PRIMARY KEY,
-    release_after_days INTEGER NOT NULL DEFAULT 14,
-    stale_after_days INTEGER NOT NULL DEFAULT 14,
-    close_after_days INTEGER NOT NULL DEFAULT 30
-);
-CREATE TABLE backlog_cards (
-    card_id INTEGER PRIMARY KEY,
-    project_id INTEGER NOT NULL,
-    item_id TEXT NOT NULL
-);
-CREATE INDEX backlog_cards_by_item ON backlog_cards (project_id, item_id);
-CREATE TABLE backlog_intents (
-    project_id INTEGER NOT NULL,
-    item_id TEXT NOT NULL,
-    title TEXT NOT NULL,
-    at INTEGER NOT NULL,
-    PRIMARY KEY (project_id, item_id)
-);
-CREATE TABLE backlogs (
-    project_id INTEGER PRIMARY KEY,
-    repository_id INTEGER NOT NULL,
-    path TEXT NOT NULL,
-    pattern TEXT NOT NULL,
-    closed_marker TEXT NOT NULL,
-    cap INTEGER NOT NULL,
-    difficulty_label TEXT NOT NULL,
-    lane_label TEXT NOT NULL
+    UNIQUE (repository_id, revert_commit)
 );
 "#;
 
-/// How many days an issue may be taken without a followed pull request before it is released, until a repository says
-/// otherwise. 0 turns it off.
-pub const DEFAULT_RELEASE_AFTER_DAYS: i64 = 14;
-/// How many days a followed pull request whose last review asked for changes may see no push before it gets a
-/// reminder. 0 turns the reminder and the closing off.
-pub const DEFAULT_STALE_AFTER_DAYS: i64 = 14;
-/// How many days such a pull request may see no push before it is closed. 0 turns the closing off.
-pub const DEFAULT_CLOSE_AFTER_DAYS: i64 = 30;
-
-/// The default item pattern of a backlog: a heading whose text starts with an ID such as `K-47`, then the title.
-pub const DEFAULT_BACKLOG_PATTERN: &str =
-    r"^#{1,6}\s+(?P<id>[A-Z][A-Z0-9]*-\d+)\s*[:.\u{2013}\u{2014}-]?\s*(?P<title>.*?)\s*$";
-/// The default text that marks a backlog item as closed.
-pub const DEFAULT_CLOSED_MARKER: &str = "[closed]";
-/// The default most open issues one sync creates.
-pub const DEFAULT_BACKLOG_CAP: i64 = 15;
-/// The default label of the form `difficulty:<easy|medium|hard>`: the text before the level.
-pub const DEFAULT_DIFFICULTY_LABEL: &str = "difficulty:";
-/// The default label of an item that requires a lane.
-pub const DEFAULT_LANE_LABEL: &str = "lane-required";
-
-/// A round of the Reviewer on a followed pull request: the repository, the pull request, the round and the verdict
-/// (`approve` or `changes`, none while there is none).
-pub type ReviewRound = (i64, i64, i64, Option<String>);
-
-/// What a change row says of its merge: the repository, the card, the pull request and who opened it, if someone else.
-type MergedChange = (Option<i64>, Option<i64>, Option<i64>, Option<String>);
-
-/// One line of the log of what the factory did or saw.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct Activity {
-    pub id: i64,
-    pub at: i64,
-    /// `merged`, `merge_failed`, `revert`, `frozen`, `unfrozen`, `measurement`, `take`, `release`, `stale_reminder`,
-    /// `stale_closed`, `auto_release` or `backlog_sync`; anything else a part of Moebius notes is kept and shown.
-    pub kind: String,
-    pub repository_id: Option<i64>,
-    pub number: Option<i64>,
-    pub who: Option<String>,
-    pub detail: String,
-    pub data: Value,
-}
-
-/// The stale settings of a repository, in days; 0 turns the matching handling off.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-pub struct Upkeep {
-    pub release_after_days: i64,
-    pub stale_after_days: i64,
-    pub close_after_days: i64,
-}
-
-impl Default for Upkeep {
-    fn default() -> Self {
-        Self {
-            release_after_days: DEFAULT_RELEASE_AFTER_DAYS,
-            stale_after_days: DEFAULT_STALE_AFTER_DAYS,
-            close_after_days: DEFAULT_CLOSE_AFTER_DAYS,
-        }
-    }
-}
-
-/// Where a project keeps its backlog and how the sync reads it.
+/// Why a repository is frozen, and since when. A frozen repository starts no review round, merges nothing and starts no
+/// agent run.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct Backlog {
-    pub project_id: i64,
-    /// The repository that holds the file and receives the issues.
-    pub repository_id: i64,
-    /// The file's path in the repository's default branch.
-    pub path: String,
-    /// A regular expression with the groups `id` and `title`, matched against each line; a line that matches starts an
-    /// item, which lasts until the next heading of the same level or a higher one.
-    pub pattern: String,
-    /// Text that marks an item as closed wherever it stands in the item, in any case; empty has no marker.
-    pub closed_marker: String,
-    /// The most open issues one sync creates.
-    pub cap: i64,
-    /// The start of the label that states an item's difficulty, as `difficulty:` for `difficulty:easy`.
-    pub difficulty_label: String,
-    /// The label for an item that says a lane is required.
-    pub lane_label: String,
-}
-
-/// A digest that was made: the day, when, from when it reports, and its inbox item.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct DigestDay {
-    pub day: String,
-    pub at: i64,
+pub struct Frozen {
+    /// What the owner reads: "Frozen: <reason>".
+    pub reason: String,
+    /// `manual` (a person froze it), `label` (the label `factory:freeze` is on an issue: it lifts when the label does)
+    /// or `automatic` (a breaker tripped).
+    pub source: String,
+    /// When it was frozen, in seconds since the epoch.
     pub since: i64,
-    pub item_id: Option<i64>,
 }
 
-fn activity_from_row(r: &rusqlite::Row<'_>) -> rusqlite::Result<Activity> {
-    let data: String = r.get(7)?;
-    Ok(Activity {
-        id: r.get(0)?,
-        at: r.get(1)?,
-        kind: r.get(2)?,
-        repository_id: r.get(3)?,
-        number: r.get(4)?,
-        who: r.get(5)?,
-        detail: r.get(6)?,
-        data: serde_json::from_str(&data).unwrap_or(Value::Null),
-    })
+/// A repository's factory settings, as one edit writes them.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FactorySettings {
+    pub require_measurement: bool,
+    pub locked_paths: Vec<String>,
+    pub review_brief: Vec<String>,
+    pub testing_label: String,
+    pub measurers: Vec<String>,
 }
 
-const ACTIVITY_COLUMNS: &str = "id, at, kind, repository_id, number, who, detail, data";
+/// The three columns of a repository select that say why it is frozen: all the causes' reasons together, the first
+/// cause's source and when the first began; null while no cause holds.
+pub(super) const FROZEN_COLUMNS: &str = "(SELECT group_concat(reason, '; ') FROM (SELECT reason FROM freezes WHERE repository_id = repositories.id ORDER BY at, cause)), \
+     (SELECT source FROM freezes WHERE repository_id = repositories.id ORDER BY at, cause LIMIT 1), \
+     (SELECT MIN(at) FROM freezes WHERE repository_id = repositories.id)";
+
+/// The default of `review_brief`.
+pub const DEFAULT_REVIEW_BRIEF: &str = "REVIEW.md";
+/// The default of `testing_label`.
+pub const DEFAULT_TESTING_LABEL: &str = "ready-for-testing";
+
+fn list(text: String) -> Vec<String> {
+    serde_json::from_str(&text).unwrap_or_default()
+}
+
+/// The factory part of a repository row, read from the columns [`REPOSITORY_FACTORY_COLUMNS`] starting at `at`.
+pub(super) fn read_factory(
+    r: &rusqlite::Row,
+    at: usize,
+) -> rusqlite::Result<(FactorySettings, Option<Frozen>)> {
+    let settings = FactorySettings {
+        require_measurement: r.get(at)?,
+        locked_paths: list(r.get(at + 1)?),
+        review_brief: list(r.get(at + 2)?),
+        testing_label: r.get(at + 3)?,
+        measurers: list(r.get(at + 4)?),
+    };
+    let reason: Option<String> = r.get(at + 5)?;
+    let source: Option<String> = r.get(at + 6)?;
+    let since: Option<i64> = r.get(at + 7)?;
+    let frozen = reason.map(|reason| Frozen {
+        reason,
+        source: source.unwrap_or_else(|| "manual".into()),
+        since: since.unwrap_or_default(),
+    });
+    Ok((settings, frozen))
+}
 
 impl Store {
-    /// Writes a line to the log the digest reads. What it says is redacted. `merged`, `merge_failed`, `take` and
-    /// `release` are written by Moebius itself; a part that builds on the factory (a freeze, a revert, a measurement)
-    /// writes its own with this.
-    pub fn note_activity(
-        &self,
-        kind: &str,
-        repository_id: Option<i64>,
-        number: Option<i64>,
-        who: Option<&str>,
-        detail: &str,
-        data: &Value,
-    ) -> Result<()> {
-        self.note_activity_at(now(), kind, repository_id, number, who, detail, data)
-    }
-
-    #[allow(clippy::too_many_arguments)]
-    pub(super) fn note_activity_at(
-        &self,
-        at: i64,
-        kind: &str,
-        repository_id: Option<i64>,
-        number: Option<i64>,
-        who: Option<&str>,
-        detail: &str,
-        data: &Value,
-    ) -> Result<()> {
+    /// Replaces the repository's factory settings.
+    pub fn set_repository_factory(&self, id: i64, settings: &FactorySettings) -> Result<()> {
         self.conn().execute(
-            "INSERT INTO factory_log (at, kind, repository_id, number, who, detail, data) \
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+            "UPDATE repositories SET require_measurement = ?1, locked_paths = ?2, \
+             review_brief = ?3, testing_label = ?4, measurers = ?5 WHERE id = ?6",
             params![
-                at,
-                kind,
-                repository_id,
-                number,
-                who,
-                redact(detail),
-                serde_json::to_string(&redact_json(data))?
+                settings.require_measurement,
+                serde_json::to_string(&settings.locked_paths)?,
+                serde_json::to_string(&settings.review_brief)?,
+                settings.testing_label,
+                serde_json::to_string(&settings.measurers)?,
+                id
             ],
         )?;
         Ok(())
     }
 
-    /// The log lines after the line `after` up to the line `upto`, oldest first. Digests partition the log by these
-    /// numbers, which only grow, so that a line written in the second a digest was made is told once.
-    pub fn activity_after(&self, after: i64, upto: i64) -> Result<Vec<Activity>> {
-        self.rows(
-            &format!(
-                "SELECT {ACTIVITY_COLUMNS} FROM factory_log WHERE id > ?1 AND id <= ?2 ORDER BY id"
-            ),
-            params![after, upto],
-            activity_from_row,
-        )
-    }
-
-    /// The number of the newest log line, 0 for an empty log.
-    pub fn last_activity(&self) -> Result<i64> {
-        Ok(self
-            .read()
-            .query_row("SELECT COALESCE(MAX(id), 0) FROM factory_log", [], |r| {
-                r.get(0)
-            })?)
-    }
-
-    /// The log lines from `since` (included) to `until` (excluded) by their time, oldest first.
-    pub fn activity_between(&self, since: i64, until: i64) -> Result<Vec<Activity>> {
-        self.rows(
-            &format!(
-                "SELECT {ACTIVITY_COLUMNS} FROM factory_log WHERE at >= ?1 AND at < ?2 ORDER BY id"
-            ),
-            params![since, until],
-            activity_from_row,
-        )
-    }
-
-    /// The log lines of `kind` about the issue or pull request `number` of the repository, oldest first.
-    pub fn activity_about(
+    /// Adds a cause to the repository's freeze: `cause` is `manual`, `label` or the breaker's name (`tokens`, `reverts`,
+    /// `nightly`), `source` what the owner reads it as (`manual`, `label` or `automatic`). False when that cause holds
+    /// already, which keeps its first reason. Causes are kept apart, so that lifting one never lifts another.
+    pub fn freeze_repository(
         &self,
-        kind: &str,
-        repository_id: i64,
-        number: i64,
-    ) -> Result<Vec<Activity>> {
-        self.rows(
-            &format!(
-                "SELECT {ACTIVITY_COLUMNS} FROM factory_log WHERE kind = ?1 AND repository_id = ?2 AND number = ?3 \
-                 ORDER BY id"
-            ),
-            params![kind, repository_id, number],
-            activity_from_row,
-        )
-    }
-
-    /// Takes the digest of `day` for the caller: true for the first to ask, false when the day has one already, so a
-    /// day has one digest however often the clock looks and whether or not the server restarted in between. `since` is
-    /// where the digest starts reporting.
-    pub fn claim_digest(&self, day: &str, since: i64) -> Result<bool> {
+        id: i64,
+        cause: &str,
+        source: &str,
+        reason: &str,
+    ) -> Result<bool> {
         Ok(self.conn().execute(
-            "INSERT OR IGNORE INTO digests (day, at, since) VALUES (?1, ?2, ?3)",
-            params![day, now(), since],
+            "INSERT OR IGNORE INTO freezes (repository_id, cause, source, reason, at) VALUES (?1, ?2, ?3, ?4, ?5)",
+            params![id, cause, source, reason, now()],
         )? > 0)
     }
 
-    /// Records the inbox item of the digest of `day`, and that it reported everything up to the time `until` and the log
-    /// line `log_id`: the next digest starts there, so that nothing is told twice or not at all.
-    pub fn set_digest_item(&self, day: &str, item_id: i64, until: i64, log_id: i64) -> Result<()> {
-        self.conn().execute(
-            "UPDATE digests SET item_id = ?1, at = ?3, log_id = ?4 WHERE day = ?2",
-            params![item_id, day, until, log_id],
-        )?;
-        Ok(())
+    /// Lifts one cause of the freeze. False when it did not hold.
+    pub fn lift_freeze_cause(&self, id: i64, cause: &str) -> Result<bool> {
+        Ok(self.conn().execute(
+            "DELETE FROM freezes WHERE repository_id = ?1 AND cause = ?2",
+            params![id, cause],
+        )? > 0)
     }
 
-    /// The newest log line the digests have reported, 0 when none was made.
-    pub fn digested_activity(&self) -> Result<i64> {
-        Ok(self
-            .read()
-            .query_row("SELECT COALESCE(MAX(log_id), 0) FROM digests", [], |r| {
-                r.get(0)
-            })?)
-    }
-
-    /// The digest of `day`, if one was made.
-    pub fn digest_of(&self, day: &str) -> Result<Option<DigestDay>> {
-        Ok(self
-            .read()
-            .query_row(
-                "SELECT day, at, since, item_id FROM digests WHERE day = ?1",
-                [day],
-                |r| {
-                    Ok(DigestDay {
-                        day: r.get(0)?,
-                        at: r.get(1)?,
-                        since: r.get(2)?,
-                        item_id: r.get(3)?,
-                    })
-                },
-            )
-            .optional()?)
-    }
-
-    /// When the latest digest was made, if there is one.
-    pub fn last_digest_at(&self) -> Result<Option<i64>> {
-        Ok(self
-            .read()
-            .query_row("SELECT MAX(at) FROM digests", [], |r| r.get(0))?)
-    }
-
-    /// Forgets the digest of `day`, so that the next look at the clock makes it again; for a person who asks for the
-    /// day's digest anew.
-    pub fn forget_digest(&self, day: &str) -> Result<()> {
-        self.conn()
-            .execute("DELETE FROM digests WHERE day = ?1", [day])?;
-        Ok(())
-    }
-
-    /// The stale settings of the repository: what was set, else the defaults.
-    pub fn upkeep(&self, repository_id: i64) -> Result<Upkeep> {
-        Ok(self
-            .read()
-            .query_row(
-                "SELECT release_after_days, stale_after_days, close_after_days FROM upkeep_settings \
-                 WHERE repository_id = ?1",
-                [repository_id],
-                |r| {
-                    Ok(Upkeep {
-                        release_after_days: r.get(0)?,
-                        stale_after_days: r.get(1)?,
-                        close_after_days: r.get(2)?,
-                    })
-                },
-            )
-            .optional()?
-            .unwrap_or_default())
-    }
-
-    /// Sets the stale settings of the repository.
-    pub fn set_upkeep(&self, repository_id: i64, upkeep: &Upkeep) -> Result<()> {
-        self.conn().execute(
-            "INSERT INTO upkeep_settings (repository_id, release_after_days, stale_after_days, close_after_days) \
-             VALUES (?1, ?2, ?3, ?4) ON CONFLICT (repository_id) DO UPDATE SET \
-             release_after_days = ?2, stale_after_days = ?3, close_after_days = ?4",
-            params![
-                repository_id,
-                upkeep.release_after_days,
-                upkeep.stale_after_days,
-                upkeep.close_after_days
-            ],
-        )?;
-        Ok(())
-    }
-
-    /// Since when the card's issue has had an assignee on the forge, in seconds since the epoch, as the poll saw it;
-    /// none while it has none.
-    pub fn assigned_since(&self, card_id: i64) -> Result<Option<i64>> {
-        Ok(self
-            .read()
-            .query_row(
-                "SELECT since FROM assigned_since WHERE card_id = ?1",
-                [card_id],
-                |r| r.get(0),
-            )
-            .optional()?)
-    }
-
-    /// Writes down that the card's issue was taken at `at`, replacing what was there.
-    pub fn set_assigned_since(&self, card_id: i64, at: i64) -> Result<()> {
-        self.conn().execute(
-            "INSERT INTO assigned_since (card_id, since) VALUES (?1, ?2) \
-             ON CONFLICT (card_id) DO UPDATE SET since = ?2",
-            params![card_id, at],
-        )?;
-        Ok(())
-    }
-
-    /// The backlog of the project, if it has one.
-    pub fn backlog(&self, project_id: i64) -> Result<Option<Backlog>> {
-        Ok(self
-            .read()
-            .query_row(
-                "SELECT project_id, repository_id, path, pattern, closed_marker, cap, difficulty_label, lane_label \
-                 FROM backlogs WHERE project_id = ?1",
-                [project_id],
-                |r| {
-                    Ok(Backlog {
-                        project_id: r.get(0)?,
-                        repository_id: r.get(1)?,
-                        path: r.get(2)?,
-                        pattern: r.get(3)?,
-                        closed_marker: r.get(4)?,
-                        cap: r.get(5)?,
-                        difficulty_label: r.get(6)?,
-                        lane_label: r.get(7)?,
-                    })
-                },
-            )
-            .optional()?)
-    }
-
-    /// Sets the backlog of the project.
-    pub fn set_backlog(&self, backlog: &Backlog) -> Result<()> {
-        self.conn().execute(
-            "INSERT INTO backlogs (project_id, repository_id, path, pattern, closed_marker, cap, difficulty_label, \
-             lane_label) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8) ON CONFLICT (project_id) DO UPDATE SET \
-             repository_id = ?2, path = ?3, pattern = ?4, closed_marker = ?5, cap = ?6, difficulty_label = ?7, \
-             lane_label = ?8",
-            params![
-                backlog.project_id,
-                backlog.repository_id,
-                backlog.path,
-                backlog.pattern,
-                backlog.closed_marker,
-                backlog.cap,
-                backlog.difficulty_label,
-                backlog.lane_label
-            ],
-        )?;
-        Ok(())
-    }
-
-    /// Takes the backlog of the project away.
-    pub fn remove_backlog(&self, project_id: i64) -> Result<()> {
-        self.conn()
-            .execute("DELETE FROM backlogs WHERE project_id = ?1", [project_id])?;
-        Ok(())
-    }
-
-    /// The card the sync of `project_id` made for the backlog item `item`, if it did.
-    pub fn backlog_card(&self, project_id: i64, item: &str) -> Result<Option<i64>> {
-        Ok(self
-            .read()
-            .query_row(
-                "SELECT card_id FROM backlog_cards WHERE project_id = ?1 AND item_id = ?2 ORDER BY card_id LIMIT 1",
-                params![project_id, item],
-                |r| r.get(0),
-            )
-            .optional()?)
-    }
-
-    /// Whether the card is one a backlog sync made, or adopted.
-    pub fn is_backlog_card(&self, card_id: i64) -> Result<bool> {
+    /// Whether the cause holds.
+    pub fn has_freeze_cause(&self, id: i64, cause: &str) -> Result<bool> {
         Ok(self.read().query_row(
-            "SELECT EXISTS (SELECT 1 FROM backlog_cards WHERE card_id = ?1)",
-            [card_id],
+            "SELECT EXISTS(SELECT 1 FROM freezes WHERE repository_id = ?1 AND cause = ?2)",
+            params![id, cause],
             |r| r.get(0),
         )?)
     }
 
-    /// Records that the card is the issue of the backlog item `item` of the project: the sync only ever changes these.
-    pub fn set_backlog_card(&self, card_id: i64, project_id: i64, item: &str) -> Result<()> {
-        self.conn().execute(
-            "INSERT OR REPLACE INTO backlog_cards (card_id, project_id, item_id) VALUES (?1, ?2, ?3)",
-            params![card_id, project_id, item],
-        )?;
-        Ok(())
-    }
-
-    /// Writes down that the sync is about to make the issue of `item` with `title`, so that an issue the forge made
-    /// that the store never heard of (a crash between the two) is found again and not made twice.
-    pub fn set_backlog_intent(&self, project_id: i64, item: &str, title: &str) -> Result<()> {
-        self.conn().execute(
-            "INSERT OR REPLACE INTO backlog_intents (project_id, item_id, title, at) VALUES (?1, ?2, ?3, ?4)",
-            params![project_id, item, title, now()],
-        )?;
-        Ok(())
-    }
-
-    /// The title and time of an issue the sync meant to make for `item` and has not recorded, if there is one.
-    pub fn backlog_intent(&self, project_id: i64, item: &str) -> Result<Option<(String, i64)>> {
+    /// Lifts every cause of the freeze. False when the repository was not frozen.
+    pub fn unfreeze_repository(&self, id: i64) -> Result<bool> {
         Ok(self
-            .read()
-            .query_row(
-                "SELECT title, at FROM backlog_intents WHERE project_id = ?1 AND item_id = ?2",
-                params![project_id, item],
-                |r| Ok((r.get(0)?, r.get(1)?)),
-            )
-            .optional()?)
-    }
-
-    /// Forgets the intent: the issue is recorded.
-    pub fn clear_backlog_intent(&self, project_id: i64, item: &str) -> Result<()> {
-        self.conn().execute(
-            "DELETE FROM backlog_intents WHERE project_id = ?1 AND item_id = ?2",
-            params![project_id, item],
-        )?;
-        Ok(())
-    }
-
-    /// The ids of the cards of the repository whose title starts with `<item>:`, oldest first, closed ones included.
-    pub fn cards_of_backlog_item(&self, repository_id: i64, item: &str) -> Result<Vec<i64>> {
-        self.rows(
-            "SELECT id FROM cards WHERE repository_id = ?1 AND substr(title, 1, length(?2) + 1) = ?2 || ':' \
-             ORDER BY id",
-            params![repository_id, item],
-            |r| r.get(0),
-        )
-    }
-
-    /// Whether a log line of `kind` names the change `change_id` in its data (a measurement that came with it, say).
-    pub fn has_activity_for_change(&self, kind: &str, change_id: i64) -> Result<bool> {
-        Ok(self.read().query_row(
-            "SELECT EXISTS (SELECT 1 FROM factory_log WHERE kind = ?1 AND json_extract(data, '$.change') = ?2)",
-            params![kind, change_id],
-            |r| r.get(0),
-        )?)
-    }
-
-    /// The rounds of the Reviewer on followed pull requests that began from `since` to `until`: the repository, the pull
-    /// request, the round and the verdict (`approve` or `changes`, none while there is none).
-    pub fn review_rounds_between(&self, since: i64, until: i64) -> Result<Vec<ReviewRound>> {
-        self.rows(
-            "SELECT c.repository_id, COALESCE(c.pull_request, 0), e.round, e.verdict FROM external_reviews e \
-             JOIN changes c ON c.id = e.change_id WHERE e.at >= ?1 AND e.at < ?2 AND c.repository_id IS NOT NULL \
-             ORDER BY e.id",
-            params![since, until],
-            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)),
-        )
-    }
-
-    /// How many runs of the Reviewer of a card's own change started from `since` to `until`, by repository.
-    pub fn review_runs_between(&self, since: i64, until: i64) -> Result<Vec<(i64, i64)>> {
-        self.rows(
-            "SELECT repository_id, COUNT(*) FROM runs WHERE purpose IN ('review', 'review-spec', 'review-standards') \
-             AND started_at >= ?1 AND started_at < ?2 AND repository_id IS NOT NULL GROUP BY repository_id",
-            params![since, until],
-            |r| Ok((r.get(0)?, r.get(1)?)),
-        )
-    }
-
-    /// The tokens all runs used from `since` to `until`.
-    pub fn tokens_between(&self, since: i64, until: i64) -> Result<i64> {
-        Ok(self.read().query_row(
-            "SELECT COALESCE(SUM(input_tokens + output_tokens), 0) FROM usage WHERE at >= ?1 AND at < ?2",
-            params![since, until],
-            |r| r.get(0),
-        )?)
-    }
-
-    /// The people-readable record of a card's merge: written when its change is set to `merged`. Kept apart from
-    /// [`Store::note_activity`] because it reads the change.
-    pub(super) fn note_merge(&self, change_id: i64) -> Result<()> {
-        let row: Option<MergedChange> = self
             .conn()
-            .query_row(
-                "SELECT repository_id, card_id, pull_request, outside_author FROM changes WHERE id = ?1",
-                [change_id],
-                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)),
-            )
-            .optional()?;
-        let Some((repository_id, card_id, pull_request, author)) = row else {
-            return Ok(());
-        };
-        let (number, title): (Option<i64>, String) = match card_id {
-            Some(card) => self
-                .conn()
-                .query_row(
-                    "SELECT number, title FROM cards WHERE id = ?1",
-                    [card],
-                    |r| Ok((r.get(0)?, r.get(1)?)),
-                )
-                .optional()?
-                .unwrap_or_default(),
-            None => (None, String::new()),
-        };
-        self.note_activity(
-            "merged",
-            repository_id,
-            pull_request.or(number),
-            Some(author.as_deref().unwrap_or("moebius")),
-            "",
-            &serde_json::json!({ "change": change_id, "card": card_id, "issue": number, "title": title }),
-        )
+            .execute("DELETE FROM freezes WHERE repository_id = ?1", [id])?
+            > 0)
     }
 
-    /// Logs what changed between two lists of assignees (`take` for a login that came, `release` for one that went) and
-    /// keeps when the card was taken.
-    pub(super) fn note_assignees(&self, card_id: i64, before: &[String], after: &[String]) {
-        let Ok((repository_id, number)) = self.conn().query_row(
-            "SELECT repository_id, number FROM cards WHERE id = ?1",
-            [card_id],
-            |r| Ok((r.get::<_, i64>(0)?, r.get::<_, Option<i64>>(1)?)),
-        ) else {
-            return;
-        };
-        let has = |list: &[String], login: &str| list.iter().any(|l| l.eq_ignore_ascii_case(login));
-        for login in after.iter().filter(|l| !has(before, l)) {
-            let _ = self.note_activity(
-                "take",
-                Some(repository_id),
-                number,
-                Some(login),
-                "",
-                &serde_json::json!({ "card": card_id }),
-            );
-        }
-        for login in before.iter().filter(|l| !has(after, l)) {
-            let _ = self.note_activity(
-                "release",
-                Some(repository_id),
-                number,
-                Some(login),
-                "",
-                &serde_json::json!({ "card": card_id }),
-            );
-        }
-        if after.is_empty() {
-            let _ = self
-                .conn()
-                .execute("DELETE FROM assigned_since WHERE card_id = ?1", [card_id]);
-        } else if before.is_empty() || self.assigned_since(card_id).ok().flatten().is_none() {
-            let _ = self.set_assigned_since(card_id, now());
-        }
+    /// Records when a change merged and, when it is known, the commit the merge made.
+    pub fn set_change_merged(&self, id: i64, commit: Option<&str>) -> Result<()> {
+        self.conn().execute(
+            "UPDATE changes SET state = 'merged', merge_commit = COALESCE(?1, merge_commit) WHERE id = ?2",
+            params![commit, id],
+        )?;
+        // The daily digest tells it (ADR 0032); failing to note it never fails the merge.
+        let _ = self.note_merge(id);
+        Ok(())
+    }
+
+    /// The merged change of the repository that was merged as, or whose head is, the commit `commit`.
+    pub fn merged_change_of_commit(&self, repository_id: i64, commit: &str) -> Result<Option<i64>> {
+        Ok(self
+            .read()
+            .query_row(
+                "SELECT id FROM changes WHERE repository_id = ?1 AND state = 'merged' \
+                 AND (merge_commit = ?2 OR head = ?2) ORDER BY id DESC LIMIT 1",
+                params![repository_id, commit],
+                |r| r.get(0),
+            )
+            .optional()?)
+    }
+
+    /// The merged change of the repository whose pull request is number `number`.
+    pub fn merged_change_of_request(&self, repository_id: i64, number: i64) -> Result<Option<i64>> {
+        Ok(self
+            .read()
+            .query_row(
+                "SELECT id FROM changes WHERE repository_id = ?1 AND state = 'merged' AND pull_request = ?2 \
+                 ORDER BY id DESC LIMIT 1",
+                params![repository_id, number],
+                |r| r.get(0),
+            )
+            .optional()?)
+    }
+
+    /// Notes that the breaker `breaker` tripped for `cause` in the repository: true the first time, so that one cause
+    /// freezes a repository once, and a person who unfreezes it is not frozen again by what already tripped it.
+    pub fn trip_breaker(&self, repository_id: i64, breaker: &str, cause: &str) -> Result<bool> {
+        Ok(self.conn().execute(
+            "INSERT OR IGNORE INTO breaker_trips (repository_id, breaker, cause, at) VALUES (?1, ?2, ?3, ?4)",
+            params![repository_id, breaker, cause, now()],
+        )? > 0)
+    }
+
+    /// Accepts a measurement for the head of the change: who accepted it and where it came from (`person`, or the
+    /// forge comment of a measurer).
+    pub fn add_measurement(
+        &self,
+        change_id: i64,
+        head: &str,
+        accepted_by: &str,
+        source: &str,
+    ) -> Result<()> {
+        self.conn().execute(
+            "INSERT INTO measurements (change_id, head, accepted_by, source, at) VALUES (?1, ?2, ?3, ?4, ?5)",
+            params![change_id, head, accepted_by, source, now()],
+        )?;
+        Ok(())
+    }
+
+    /// Whether a measurement is accepted for exactly this head of the change.
+    pub fn has_measurement(&self, change_id: i64, head: &str) -> Result<bool> {
+        Ok(self.read().query_row(
+            "SELECT EXISTS(SELECT 1 FROM measurements WHERE change_id = ?1 AND head = ?2)",
+            params![change_id, head],
+            |r| r.get(0),
+        )?)
+    }
+
+    /// Keeps a revert of a merged change: true when `revert_commit` was not kept before. `at` is the time of the revert.
+    pub fn add_revert(
+        &self,
+        repository_id: i64,
+        change_id: i64,
+        revert_commit: &str,
+        at: i64,
+    ) -> Result<bool> {
+        Ok(self.conn().execute(
+            "INSERT OR IGNORE INTO reverts (repository_id, change_id, revert_commit, at) VALUES (?1, ?2, ?3, ?4)",
+            params![repository_id, change_id, revert_commit, at],
+        )? > 0)
+    }
+
+    /// How many different merged changes of the repository were reverted since `since`.
+    pub fn reverted_since(&self, repository_id: i64, since: i64) -> Result<i64> {
+        Ok(self.read().query_row(
+            "SELECT COUNT(DISTINCT change_id) FROM reverts WHERE repository_id = ?1 AND at >= ?2",
+            params![repository_id, since],
+            |r| r.get(0),
+        )?)
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use serde_json::json;
-
     use super::*;
 
-    #[test]
-    fn a_day_has_one_digest_however_often_it_is_claimed() {
+    fn store() -> (tempfile::TempDir, Store) {
         let dir = tempfile::tempdir().unwrap();
         let store = Store::in_memory(dir.path()).unwrap();
-        assert!(store.claim_digest("2026-11-25", 0).unwrap());
-        assert!(!store.claim_digest("2026-11-25", 0).unwrap());
-        assert!(store.claim_digest("2026-11-26", 5).unwrap());
-        store.set_digest_item("2026-11-25", 7, 100, 3).unwrap();
-        assert_eq!(store.digested_activity().unwrap(), 3);
-        assert_eq!(
-            store.digest_of("2026-11-25").unwrap().unwrap().item_id,
-            Some(7)
+        (dir, store)
+    }
+
+    #[test]
+    fn a_new_repository_has_the_defaults_and_is_not_frozen() {
+        let (_dir, store) = store();
+        let repo = store.add_repository("r", "/r", "none", "main").unwrap();
+        assert!(!repo.require_measurement);
+        assert!(repo.locked_paths.is_empty());
+        assert_eq!(repo.review_brief, vec!["REVIEW.md".to_string()]);
+        assert_eq!(repo.testing_label, "ready-for-testing");
+        assert!(repo.measurers.is_empty());
+        assert!(repo.frozen.is_none());
+        // What the row holds is what the insert returned.
+        assert_eq!(store.repository(repo.id).unwrap().unwrap(), repo);
+    }
+
+    #[test]
+    fn causes_of_a_freeze_are_kept_apart_and_only_a_person_lifts_them_all() {
+        let (_dir, store) = store();
+        let repo = store.add_repository("r", "/r", "none", "main").unwrap();
+        assert!(
+            store
+                .freeze_repository(repo.id, "label", "label", "the label is on #1")
+                .unwrap()
         );
-        store.forget_digest("2026-11-25").unwrap();
-        assert!(store.claim_digest("2026-11-25", 0).unwrap());
+        assert!(
+            store
+                .freeze_repository(repo.id, "nightly", "automatic", "the nightly check failed")
+                .unwrap()
+        );
+        // The same cause twice keeps the first reason.
+        assert!(
+            !store
+                .freeze_repository(repo.id, "label", "label", "again")
+                .unwrap()
+        );
+        let frozen = store.repository(repo.id).unwrap().unwrap().frozen.unwrap();
+        assert_eq!(frozen.source, "label");
+        assert!(
+            frozen.reason.contains("the label is on #1"),
+            "{}",
+            frozen.reason
+        );
+        assert!(
+            frozen.reason.contains("nightly check failed"),
+            "{}",
+            frozen.reason
+        );
+        // Lifting the label's cause leaves the other.
+        assert!(store.lift_freeze_cause(repo.id, "label").unwrap());
+        assert!(!store.lift_freeze_cause(repo.id, "label").unwrap());
+        let frozen = store.repository(repo.id).unwrap().unwrap().frozen.unwrap();
+        assert_eq!(
+            (frozen.reason.as_str(), frozen.source.as_str()),
+            ("the nightly check failed", "automatic")
+        );
+        assert!(store.unfreeze_repository(repo.id).unwrap());
+        assert!(!store.unfreeze_repository(repo.id).unwrap());
+        assert!(store.repository(repo.id).unwrap().unwrap().frozen.is_none());
     }
 
     #[test]
-    fn the_log_is_read_between_two_moments_and_redacted() {
-        let dir = tempfile::tempdir().unwrap();
-        let store = Store::in_memory(dir.path()).unwrap();
-        store
-            .note_activity_at(10, "take", Some(1), Some(3), Some("alice"), "", &json!({}))
-            .unwrap();
-        store
-            .note_activity_at(
-                20,
-                "merge_failed",
-                Some(1),
-                Some(4),
-                None,
-                "token ghp_0123456789abcdefghijklmnopqrstuvwxyz was refused",
-                &json!({}),
-            )
-            .unwrap();
-        let lines = store.activity_between(10, 20).unwrap();
-        assert_eq!(lines.len(), 1);
-        assert_eq!(lines[0].who.as_deref(), Some("alice"));
-        let later = store.activity_between(20, 21).unwrap();
-        assert!(!later[0].detail.contains("ghp_"));
+    fn a_merged_change_is_found_by_the_commit_of_its_merge() {
+        let (_dir, store) = store();
+        let repo = store.add_repository("r", "/r", "none", "main").unwrap();
+        let a = store.add_change(repo.id, None, "b1", None, "h1").unwrap();
+        let b = store.add_change(repo.id, None, "b2", None, "h2").unwrap();
+        store.set_change_merged(a.id, Some("c1")).unwrap();
+        assert_eq!(
+            store.merged_change_of_commit(repo.id, "c1").unwrap(),
+            Some(a.id)
+        );
+        assert_eq!(
+            store.merged_change_of_commit(repo.id, "nope").unwrap(),
+            None
+        );
+        // A change that is still open is no merge.
+        assert_eq!(store.change(b.id).unwrap().unwrap().state, "open");
     }
 
     #[test]
-    fn a_repository_has_the_default_settings_until_it_is_given_others() {
-        let dir = tempfile::tempdir().unwrap();
-        let store = Store::in_memory(dir.path()).unwrap();
-        assert_eq!(store.upkeep(1).unwrap(), Upkeep::default());
-        let own = Upkeep {
-            release_after_days: 3,
-            stale_after_days: 0,
-            close_after_days: 9,
-        };
-        store.set_upkeep(1, &own).unwrap();
-        assert_eq!(store.upkeep(1).unwrap(), own);
-        assert_eq!(store.upkeep(2).unwrap(), Upkeep::default());
+    fn a_measurement_counts_for_its_head_only_and_a_revert_is_kept_once() {
+        let (_dir, store) = store();
+        let repo = store.add_repository("r", "/r", "none", "main").unwrap();
+        let change = store.add_change(repo.id, None, "b", None, "h1").unwrap();
+        store
+            .add_measurement(change.id, "h1", "owner", "person")
+            .unwrap();
+        assert!(store.has_measurement(change.id, "h1").unwrap());
+        assert!(!store.has_measurement(change.id, "h2").unwrap());
+        assert!(store.add_revert(repo.id, change.id, "r1", now()).unwrap());
+        assert!(!store.add_revert(repo.id, change.id, "r1", now()).unwrap());
+        assert_eq!(store.reverted_since(repo.id, now() - 60).unwrap(), 1);
+        assert_eq!(store.reverted_since(repo.id, now() + 60).unwrap(), 0);
     }
 }

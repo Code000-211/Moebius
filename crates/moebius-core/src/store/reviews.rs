@@ -46,7 +46,7 @@ pub struct ReviewComment {
 /// One round of the Reviewer reading a followed pull request at one head. Its `state` is `wanted` (the author said
 /// `/done` and the checks of the head are not known yet), `running`, `approved` (approved, waiting for the checks of the
 /// head to be green before it is merged), `starting` and `posting` (a thread has taken the round to start its run or to
-/// write its review, which only one does: see [`Store::move_external_review`]), `posted` (the review is on the forge), `merged`, `stale` (the head moved
+/// write its review, which only one does: see [`Store::move_external_review`]), `posted` (the review is on the forge), `awaiting_measurement` (the review approved the code and is on the forge, and the measurement the repository asks for is missing: a later round starts when one is posted), `merged`, `stale` (the head moved
 /// before the verdict could be used: nothing was posted) or `failed` (the run ended without a verdict).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct ExternalReview {
@@ -59,7 +59,8 @@ pub struct ExternalReview {
     pub round: i64,
     pub run_id: Option<i64>,
     pub state: String,
-    /// `approve` or `changes` once the run ended with one.
+    /// `approve`, `approve_code` (the code is right but the measurement the brief asks for is missing) or `changes`
+    /// once the run ended with one.
     pub verdict: Option<String>,
     pub summary: String,
     pub comments: Vec<ReviewComment>,
@@ -85,7 +86,8 @@ const SAME_PULL_REQUEST: &str = "(e.change_id = ?1 OR e.change_id IN (SELECT o.i
 
 /// The states in which a head counts as read, so that it is not read again: a round that ended with a verdict, or has
 /// its run going.
-const COUNTED: &str = "('starting', 'running', 'approved', 'posting', 'posted', 'merged')";
+const COUNTED: &str =
+    "('starting', 'running', 'approved', 'posting', 'posted', 'awaiting_measurement', 'merged')";
 
 const COLUMNS: &str = "id, change_id, head, round, run_id, state, verdict, summary, comments, url, at, base, kind, moved_at";
 
