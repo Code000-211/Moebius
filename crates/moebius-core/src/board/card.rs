@@ -25,7 +25,12 @@
 //! - `card.merged`: whether a change of the card was merged, which is what tells a card that is done because its work
 //!   was merged from one that was closed.
 //! - `card.review`: the verdict and findings of the review since the card's latest `code` run, if there is one; for a
-//!   review along two axes also its `judgements` and the `standards` and `spec` axes (see `review`).
+//!   review along two axes also its `judgements`, its `comments` (the findings that name a file and a line, each with
+//!   `path`, `line` and `body`) and the `standards` and `spec` axes (see `review`).
+//! - `card.issue`: what the issue's body says, read by the repository's issue template (`fields` by the slug of each
+//!   heading, `missing` the required sections it lacks); nil for an issue a backlog sync made.
+//! - `card.changes[i].fields`, `.missing`: what the pull request's body says, read by the pull request template (see
+//!   `app::forms::pull`).
 //! - `card.note`: why the card went back to coding, if it did and no `code` run has succeeded since.
 //! - `card.repositories`: the names of the repositories the card works in, its own issue's first (see
 //!   `app::card_repositories`).
@@ -44,7 +49,7 @@ use std::sync::Arc;
 use mlua::{Lua, Table};
 
 use super::Engine;
-use super::review::{AxisReview, two_axes};
+use super::review::{AxisReview, LineComment, two_axes};
 use crate::app::{App, CardFacts, runs_since_retry};
 use crate::store::{Card, Change, Run};
 
@@ -52,11 +57,16 @@ use crate::store::{Card, Change, Run};
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Review {
     pub verdict: &'static str,
+    /// How many findings `findings` holds: the blocking findings of a review along two axes, the comments on lines of a review
+    /// of a pull request someone else opened, and 0 for any other review.
+    pub count: usize,
     pub findings: String,
     /// The judgement calls of a two-axis review, for the person who gets the change; empty for another review.
     pub judgements: String,
     /// The Standards and the Spec axis of a two-axis review, in that order; empty for another review.
     pub axes: Vec<AxisReview>,
+    /// The findings that name a line of the diff, for the review the server writes on the pull request.
+    pub comments: Vec<LineComment>,
 }
 
 /// Reads the verdict from the end of a review run's summary: a last line `VERDICT: approve` or `VERDICT: changes`,
@@ -75,9 +85,11 @@ fn verdict(summary: Option<&str>, restricted: bool) -> Review {
         }
         return Review {
             verdict: said.verdict,
+            count: said.comments.len(),
             findings: findings.trim().to_string(),
             judgements: String::new(),
             axes: Vec::new(),
+            comments: Vec::new(),
         };
     }
     let text = summary.unwrap_or("").trim_end();
@@ -97,9 +109,11 @@ fn verdict(summary: Option<&str>, restricted: bool) -> Review {
     };
     Review {
         verdict,
+        count: 0,
         findings: findings.into(),
         judgements: String::new(),
         axes: Vec::new(),
+        comments: Vec::new(),
     }
 }
 
@@ -146,7 +160,21 @@ impl Engine {
         )?;
         t.set("note", card.note.as_deref())?;
         t.set("repositories", card.repositories.clone())?;
-        t.set("changes", changes_table(&self.app, lua, card.id)?)?;
+        let changes = changes_table(&self.app, lua, card.id)?;
+        // The card's own repository's change, for the fields of its pull request: `card.change.fields`.
+        t.set("change", changes.get::<Option<Table>>(1)?)?;
+        t.set("changes", changes)?;
+        // What the issue says, read by the issue template; nil for an issue a backlog sync made.
+        if let Some(issue) = self.app.issue_fields(card) {
+            let i = lua.create_table()?;
+            let fields = lua.create_table()?;
+            for (name, text) in &issue.fields {
+                fields.set(name.as_str(), text.as_str())?;
+            }
+            i.set("fields", fields)?;
+            i.set("missing", issue.missing)?;
+            t.set("issue", i)?;
+        }
         refuse_the_old_change(lua, &t)?;
         t.set("trusted", self.app.is_trusted(card))?;
         t.set("confirmed", card.confirmed)?;
@@ -244,7 +272,17 @@ impl Engine {
             let v = lua.create_table()?;
             v.set("verdict", review.verdict)?;
             v.set("findings", review.findings)?;
+            v.set("count", review.count)?;
             v.set("judgements", review.judgements)?;
+            let lines = lua.create_table()?;
+            for comment in &review.comments {
+                let c = lua.create_table()?;
+                c.set("path", comment.path.as_str())?;
+                c.set("line", comment.line)?;
+                c.set("body", comment.body.as_str())?;
+                lines.push(c)?;
+            }
+            v.set("comments", lines)?;
             for axis in review.axes {
                 let a = lua.create_table()?;
                 a.set("verdict", axis.verdict)?;
@@ -288,6 +326,22 @@ pub(super) fn changes_table(app: &Arc<App>, lua: &Lua, card_id: i64) -> mlua::Re
         c.set(
             "check_output",
             change.check_output.as_deref().filter(|_| current),
+        )?;
+        c.set("draft", change.draft)?;
+        let parsed: crate::app::forms::pull::Pull = change
+            .pull_fields
+            .as_deref()
+            .and_then(|json| serde_json::from_str(json).ok())
+            .unwrap_or_default();
+        let fields = lua.create_table()?;
+        for (name, text) in &parsed.fields {
+            fields.set(name.as_str(), text.as_str())?;
+        }
+        c.set("fields", fields)?;
+        c.set("missing", parsed.missing.clone())?;
+        c.set(
+            "measurement",
+            parsed.measurement.as_ref().map(|m| m.state.as_str()),
         )?;
         read_conflict_when_asked(lua, &c, app.clone(), change)?;
         list.push(c)?;
@@ -415,6 +469,17 @@ mod tests {
             verdict(Some("Fine.\nVERDICT: approve_code"), false).verdict,
             "changes"
         );
+    }
+
+    #[test]
+    fn the_count_of_a_review_of_someone_elses_pull_request_is_its_comments_on_lines() {
+        let two = "```json\n{\"verdict\": \"changes\", \"summary\": \"s\", \"comments\": [\
+            {\"path\": \"a.rs\", \"line\": 1, \"body\": \"x\"}, {\"path\": \"b.rs\", \"line\": 2, \"body\": \"y\"}]}\n```\n";
+        assert_eq!(verdict(Some(two), true).count, 2);
+        let none = "```json\n{\"verdict\": \"approve\", \"summary\": \"fine\"}\n```\n";
+        assert_eq!(verdict(Some(none), true).count, 0);
+        // A review of Moebius's own change that is not along two axes counts nothing.
+        assert_eq!(verdict(Some("Bad.\nVERDICT: changes"), false).count, 0);
     }
 
     #[test]

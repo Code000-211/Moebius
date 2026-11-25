@@ -15,6 +15,9 @@ Each example is small, runs in CI and is meant to be copied. The contracts they 
   of the job (build, tests, selftests and a measurement before and after, by turns). Copy both to
   `projects/<project name>/` of the harness configuration repository. Parsed by the same test. See [the test lane](../docs/guide/test-lane.md)
   and the [reference](../docs/reference/lanes.md).
+- [`project-templates/`](project-templates/README.md): a pull request template and an issue template for a repository with a
+  measured merge bar (an item ID, `[measured]` and `[needs testing]` title tags, a measurement kept in a committed file). Copy the files to
+  `projects/<project name>/templates/`. Tested by the same test. See [templates](../docs/reference/templates.md).
 - [`rules.md`](rules.md): three rules in prose. Point `rules_file` at it, or copy it to the project's `rules.md`
   (`repos/<repository name>/rules.md` of the harness configuration repository). Parsed by the same test. See [rules](../docs/reference/rules.md).
 - [`../crates/moebius-plugin-api/examples/allow_reads.rs`](../crates/moebius-plugin-api/examples/allow_reads.rs): a

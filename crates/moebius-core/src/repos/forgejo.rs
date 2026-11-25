@@ -639,8 +639,8 @@ impl Forgejo {
             .collect();
         let request = json!({
             "commit_id": review.head,
-            "body": review.body,
-            "event": if review.approve { "APPROVED" } else { "REQUEST_CHANGES" },
+            "body": review.summary(),
+            "event": if review.comment_only { "COMMENT" } else if review.approve { "APPROVED" } else { "REQUEST_CHANGES" },
             "comments": comments,
         });
         let posted: serde_json::Value = self

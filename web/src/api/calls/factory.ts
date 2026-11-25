@@ -1,6 +1,14 @@
 /** The calls of the software factory (ADR 0032): a repository's stale settings, a project's backlog and its sync, and the digest. */
 import { del, get, post, put } from "../http";
-import type { Backlog, BacklogEdit, Flow, SyncReport, Upkeep } from "../types/factory";
+import type {
+  Backlog,
+  BacklogEdit,
+  Flow,
+  SyncReport,
+  TemplateSync,
+  Templates,
+  Upkeep,
+} from "../types/factory";
 
 export function readUpkeep(repository: number): Promise<Upkeep> {
   return get<Upkeep>(`/v1/repositories/${repository}/upkeep`);
@@ -18,6 +26,16 @@ export function readFlow(repository: number): Promise<Flow> {
 /** Sets how a repository's reviews and unbound pull requests flow (an owner). */
 export function editFlow(repository: number, flow: Flow): Promise<Flow> {
   return put<Flow>(`/v1/repositories/${repository}/flow`, flow);
+}
+
+/** The pull request and comment templates in effect for a repository (ADR 0034). */
+export function readTemplates(repository: number): Promise<Templates> {
+  return get<Templates>(`/v1/repositories/${repository}/templates`);
+}
+
+/** Opens the pull request that brings the repository's copies of the templates up to date; it waits for the owner. */
+export function syncTemplates(repository: number): Promise<TemplateSync> {
+  return post<TemplateSync>(`/v1/repositories/${repository}/templates/sync`, {});
 }
 
 /** The project's backlog, or null when it has none. */

@@ -135,6 +135,46 @@ describe.skipIf(usesRealServer)("the factory", () => {
     expect(await window.getByTestId("external-review").textContent()).toContain("Round 2 of 3");
   });
 
+  it("shows what the pull request's body says, read by its template, and the new settings", async () => {
+    await open();
+    const pulled = server.board?.seedPulled();
+    await page.goto(`${server.url}/projects/1`);
+    await page.getByTestId(`card-${pulled}`).click();
+    const fields = page.locator("[data-card-window]").getByTestId("pull-fields");
+    await fields.waitFor();
+    expect(await fields.getByTestId("pull-draft").textContent()).toBe("Draft");
+    expect(await fields.textContent()).toContain("What the change does");
+    expect(await fields.textContent()).toContain("Plans are cached for the life of a request");
+    expect(await fields.getByTestId("pull-tests").textContent()).toContain("412 passed");
+    expect(await fields.getByTestId("pull-missing").textContent()).toBe(
+      "The body lacks: Measurement.",
+    );
+    await page.keyboard.press("Escape");
+
+    await page.goto(`${server.url}/projects/1/repositories/1`);
+    const flow = page.getByTestId("review-flow");
+    await flow.waitFor();
+    const forge = flow.getByLabel("Work on the forge");
+    expect(await forge.getAttribute("aria-checked")).toBe("true");
+    await forge.click();
+    await flow.getByRole("button", { name: "Save settings" }).click();
+    await page.reload();
+    await page.waitForFunction(
+      () =>
+        document
+          .querySelector('[data-testid="review-flow"] [aria-label="Work on the forge"]')
+          ?.getAttribute("aria-checked") === "false",
+    );
+    const templates = page.getByTestId("templates");
+    await templates.waitFor();
+    expect(await templates.textContent()).toContain("kept at .github/PULL_REQUEST_TEMPLATE.md");
+    expect(await templates.getByTestId("template-sections").textContent()).toContain(
+      "Item, What the change does, Tests I ran, Measurement",
+    );
+    await templates.getByRole("button", { name: "Update the repository's copies" }).click();
+    await templates.getByText("Pull request #12: it is in your Inbox.").waitFor();
+  });
+
   it("saves the review flow settings of a repository", async () => {
     await open();
     await page.goto(`${server.url}/projects/1/repositories/1`);
@@ -216,6 +256,23 @@ describe.skipIf(usesRealServer)("the factory", () => {
           0,
         );
         await shoot("measurement-accepted", scheme);
+        // The template: a card whose draft pull request body was read into fields, and the new settings.
+        const pulled = server.board?.seedPulled();
+        await page.goto(`${server.url}/projects/1`);
+        await page.getByTestId(`card-${pulled}`).click();
+        await page.locator("[data-card-window]").getByTestId("pull-fields").waitFor();
+        await shoot("pull-fields", scheme);
+        await page.keyboard.press("Escape");
+        await page.goto(`${server.url}/projects/1/repositories/1`);
+        const forge = page.getByTestId("review-flow");
+        await forge.waitFor();
+        await page.setViewportSize({ width: 1280, height: 3000 });
+        await forge.scrollIntoViewIfNeeded();
+        await shoot("work-on-forge", scheme, forge);
+        const templates = page.getByTestId("templates");
+        await templates.waitFor();
+        await shoot("templates", scheme, templates);
+        await page.setViewportSize({ width: 1280, height: 900 });
       }
     });
   }

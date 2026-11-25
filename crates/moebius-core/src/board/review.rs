@@ -3,7 +3,9 @@
 //! Each axis is a run of its own (`review-standards`, `review-spec`) that ends with findings and a last line
 //! `VERDICT: approve` or `VERDICT: changes`. A finding is a line `FINDING blocking: <what is wrong>` or
 //! `FINDING judgement: <what is doubtful>` followed by `EVIDENCE: <the hunk or the spec line it quotes>`. A finding
-//! without evidence is dropped, so that what a reviewer only suspects never sends a card back. Only blocking findings
+//! without evidence is dropped, so that what a reviewer only suspects never sends a card back. A finding may say where it
+//! is, on a line `FILE: <path>:<line>` after its text or its evidence: the server then writes it as a comment on that
+//! line of the pull request (ADR 0034). Only blocking findings
 //! send it back; judgement calls go to the person with the offered change. A finding that begins "Possible" names a
 //! smell of the fixed baseline, which is always a judgement call, whatever the reviewer called it.
 
@@ -15,6 +17,19 @@ struct Finding {
     blocking: bool,
     text: String,
     evidence: String,
+    /// The file and the line of the file as the change leaves it, when the reviewer said where.
+    location: Option<(String, i64)>,
+}
+
+/// A finding as read: blocking, its text lines, its evidence lines and where it is.
+type Raw<'a> = (bool, Vec<&'a str>, Vec<&'a str>, Option<(String, i64)>);
+
+/// A finding that names a line, for a comment on that line of the pull request.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LineComment {
+    pub path: String,
+    pub line: i64,
+    pub body: String,
 }
 
 /// An axis as the card's script sees it: the verdict that follows from its findings, what sends the card back, the
@@ -26,6 +41,10 @@ pub struct AxisReview {
     pub findings: String,
     pub judgements: String,
     pub dropped: usize,
+    /// How many blocking findings the axis has.
+    pub blocking: usize,
+    /// The findings of the axis that name a line, blocking ones and judgement calls.
+    pub comments: Vec<LineComment>,
 }
 
 /// The findings in `summary` that cite evidence, whether the reviewer ended with a verdict, and how many findings
@@ -40,15 +59,24 @@ fn read_axis(summary: Option<&str>) -> (Vec<Finding>, bool, usize) {
     if said {
         lines.pop();
     }
-    // Findings as (blocking, text lines, evidence lines).
-    let mut found: Vec<(bool, Vec<&str>, Vec<&str>)> = Vec::new();
+    // Findings as (blocking, text lines, evidence lines, where).
+    let mut found: Vec<Raw> = Vec::new();
     let mut in_evidence = false;
     for line in lines {
         let trimmed = line.trim();
         if let Some(severity) = finding_severity(trimmed) {
-            found.push((severity.0, vec![severity.1], Vec::new()));
+            found.push((severity.0, vec![severity.1], Vec::new(), None));
             in_evidence = false;
         } else if let Some(current) = found.last_mut() {
+            if let Some(place) = trimmed
+                .get(..5)
+                .filter(|p| p.eq_ignore_ascii_case("file:"))
+                .and_then(|_| location(trimmed[5..].trim()))
+            {
+                current.3 = Some(place);
+                in_evidence = false;
+                continue;
+            }
             match trimmed
                 .get(..9)
                 .filter(|p| p.eq_ignore_ascii_case("evidence:"))
@@ -64,7 +92,7 @@ fn read_axis(summary: Option<&str>) -> (Vec<Finding>, bool, usize) {
     }
     let mut dropped = 0;
     let mut kept = Vec::new();
-    for (blocking, text, evidence) in found {
+    for (blocking, text, evidence, location) in found {
         let text = text.join("\n").trim().to_string();
         let evidence = evidence.join("\n").trim().to_string();
         let quoted =
@@ -78,9 +106,19 @@ fn read_axis(summary: Option<&str>) -> (Vec<Finding>, bool, usize) {
             blocking,
             text,
             evidence,
+            location,
         });
     }
     (kept, said, dropped)
+}
+
+/// Reads `path:line` into the path and the line, `` `src/a.rs:12` `` and `src/a.rs:12-14` too (the first line counts).
+fn location(text: &str) -> Option<(String, i64)> {
+    let text = text.trim().trim_matches('`');
+    let (path, line) = text.rsplit_once(':')?;
+    let line = line.split(['-', ',']).next()?.trim().parse::<i64>().ok()?;
+    let path = path.trim().trim_start_matches("./");
+    (line > 0 && !path.is_empty()).then(|| (path.to_string(), line))
 }
 
 /// Reads `FINDING blocking: text` into whether it blocks and its text; another severity is a judgement call.
@@ -114,6 +152,22 @@ fn render(findings: &[&Finding]) -> String {
 /// The review of one axis from the summary of its run.
 fn axis(name: &'static str, summary: Option<&str>) -> AxisReview {
     let (findings, said, dropped) = read_axis(summary);
+    let comments = findings
+        .iter()
+        .filter_map(|f| {
+            let (path, line) = f.location.clone()?;
+            let kind = if f.blocking {
+                "Blocking"
+            } else {
+                "Judgement call"
+            };
+            Some(LineComment {
+                path,
+                line,
+                body: format!("**{kind}:** {}", f.text),
+            })
+        })
+        .collect();
     let blocking: Vec<_> = findings.iter().filter(|f| f.blocking).collect();
     let judgements: Vec<_> = findings.iter().filter(|f| !f.blocking).collect();
     // Work that was not reviewed is not approved.
@@ -130,6 +184,8 @@ fn axis(name: &'static str, summary: Option<&str>) -> AxisReview {
         findings,
         judgements: render(&judgements),
         dropped,
+        blocking: blocking.len(),
+        comments,
     }
 }
 
@@ -147,11 +203,15 @@ pub(super) fn two_axes(standards: Option<&str>, spec: Option<&str>) -> Review {
     let findings = section(|a| &a.findings);
     let judgements = section(|a| &a.judgements);
     let changes = axes.iter().any(|a| a.verdict == "changes");
+    let comments = axes.iter().flat_map(|a| a.comments.clone()).collect();
+    let count = axes.iter().map(|a| a.blocking).sum();
     Review {
+        count,
         verdict: if changes { "changes" } else { "approve" },
         findings,
         judgements,
         axes,
+        comments,
     }
 }
 
@@ -189,6 +249,27 @@ mod tests {
             "- The name says little.\n  Evidence: fn do_it()"
         );
         assert_eq!(r.dropped, 1);
+    }
+
+    #[test]
+    fn a_finding_may_say_which_line_it_is_about() {
+        let text = "FINDING blocking: The retry is never tested.\nFILE: src/retry.rs:42\nEVIDENCE: > + if retries > 3 {\n\
+            FINDING judgement: The name says little.\nEVIDENCE: fn do_it()\nFILE: `src/a.rs:7-9`\n\
+            FINDING blocking: No place.\nEVIDENCE: `x`\nFILE: not a place\nVERDICT: changes";
+        let r = axis("Standards", Some(text));
+        assert_eq!(r.comments.len(), 2);
+        assert_eq!(
+            (r.comments[0].path.as_str(), r.comments[0].line),
+            ("src/retry.rs", 42)
+        );
+        assert!(r.comments[0].body.starts_with("**Blocking:** The retry"));
+        assert_eq!(
+            (r.comments[1].path.as_str(), r.comments[1].line),
+            ("src/a.rs", 7)
+        );
+        // The line a finding names does not change what it says, or what it cites.
+        assert!(r.findings.contains("Evidence: > + if retries > 3 {"));
+        assert!(!r.findings.contains("src/retry.rs"));
     }
 
     #[test]

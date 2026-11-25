@@ -166,6 +166,12 @@ pub struct ChangeView {
     /// The latest measurement a registered measurer posted on that pull request (ADR 0033); left out while there is none.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub measurement: Option<MeasurementView>,
+    /// Whether the pull request is still a draft (ADR 0034); left out when it is not.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub draft: bool,
+    /// What the pull request's body says, read by the pull request template (ADR 0034); left out until it was read.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pull: Option<crate::app::forms::pull::Pull>,
 }
 
 /// A measurement a registered measurer posted as a comment, as the card window shows it.
@@ -377,6 +383,11 @@ fn card_view(
                     accepted,
                     at: report.at,
                 }),
+            draft: change.draft,
+            pull: change
+                .pull_fields
+                .as_deref()
+                .and_then(|json| serde_json::from_str(json).ok()),
         };
         if change.repository_id == Some(view.card.repository_id) {
             view.change = Some(shown.clone());

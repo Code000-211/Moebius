@@ -24,6 +24,8 @@ mod flow_tests;
 // Unix only: the fake `ssh` and the fake container runtime are scripts started by their `#!` line, and a job runs `sh`.
 #[cfg(all(test, unix))]
 mod lane_tests;
+#[cfg(test)]
+mod forms_tests;
 mod leftovers;
 pub(crate) mod loops;
 pub mod outgoing;

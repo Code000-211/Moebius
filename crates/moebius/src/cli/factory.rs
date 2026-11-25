@@ -1,6 +1,6 @@
 //! The software factory's commands: `backlog` (where a project's backlog is, and the sync that makes issues of its
 //! items), `upkeep` (when stale issues and pull requests of a repository are handled) and `digest` (the owner's daily
-//! digest, made now).
+//! digest, made now) and `templates` (the pull request and comment templates, and the pull request that keeps a repository's copies current).
 
 use clap::Subcommand;
 use serde_json::{Value, json};
@@ -151,6 +151,24 @@ pub fn upkeep(
         }
     }
     Ok((Request::put(path, body), Show::Object))
+}
+
+/// `templates <repository>` shows the templates in effect for a repository; with `--sync` it opens the pull request that
+/// brings the repository's copies of them up to date.
+pub fn templates(repository: i64, sync: bool, reason: &str) -> Plan {
+    if sync {
+        return Ok((
+            Request::post(
+                format!("/v1/repositories/{repository}/templates/sync"),
+                json!({ "reason": reason }),
+            ),
+            Show::Object,
+        ));
+    }
+    Ok((
+        Request::get(format!("/v1/repositories/{repository}/templates")),
+        Show::Object,
+    ))
 }
 
 /// `digest` makes today's digest now when it has none yet.

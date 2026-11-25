@@ -27,6 +27,7 @@ interface Flow {
   unbound_close_days: number;
   status_labels: boolean;
   status_prefix: string;
+  work_on_forge: boolean;
 }
 
 interface Backlog {
@@ -67,6 +68,7 @@ export function createFactoryFake(): FactoryFake {
     unbound_close_days: 14,
     status_labels: false,
     status_prefix: "status:",
+    work_on_forge: true,
   });
   let backlog: Backlog | null = null;
   const defaults = (): Upkeep => ({
@@ -93,10 +95,40 @@ export function createFactoryFake(): FactoryFake {
       const stale = /^\/v1\/repositories\/(\d+)\/upkeep$/.exec(path);
       const flow = /^\/v1\/repositories\/(\d+)\/flow$/.exec(path);
       const mine = /^\/v1\/projects\/(\d+)\/backlog(\/sync)?$/.exec(path);
-      if (!stale && !flow && !mine) return false;
+      const templates = /^\/v1\/repositories\/(\d+)\/templates(\/sync)?$/.exec(path);
+      if (!stale && !flow && !mine && !templates) return false;
       const body: Record<string, unknown> =
         method === "GET" ? {} : JSON.parse((await readBody(request)) || "{}");
       if (method !== "GET") requests.push({ method, path, body });
+      if (templates?.[2]) return reply(response, 200, { change: { id: 31, pull_request: 12 } });
+      if (templates) {
+        const named = (name: string, first: string, source = "default") => ({
+          name,
+          source,
+          path:
+            name === "pull_request"
+              ? ".github/PULL_REQUEST_TEMPLATE.md"
+              : `.github/moebius/${name}.md`,
+          first_line: first,
+        });
+        return reply(response, 200, {
+          templates: [
+            named("pull_request", ""),
+            named("measurement", "## Measurement"),
+            named("done", "/done", "project"),
+            named("review-answer", "## Review answer"),
+            named("take", "/take"),
+            named("release", "/release"),
+          ],
+          sections: [
+            { heading: "Item", required: true, hint: "" },
+            { heading: "What the change does", required: true, hint: "" },
+            { heading: "Tests I ran", required: true, hint: "" },
+            { heading: "Measurement", required: true, hint: "" },
+          ],
+          problem: null,
+        });
+      }
       if (flow) {
         const id = Number(flow[1]);
         if (method === "PUT") flows.set(id, { ...(flows.get(id) ?? flowDefaults()), ...body });

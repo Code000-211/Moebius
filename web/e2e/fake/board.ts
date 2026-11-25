@@ -42,6 +42,8 @@ interface FakeCard {
     state: string;
     checks: string;
     review_verdict: string | null;
+    draft?: boolean;
+    pull?: unknown;
     outside_author?: string;
     /** The Reviewer's latest round on a followed pull request (ADR 0029). */
     /** The latest measurement a registered measurer posted (ADR 0033). */
@@ -290,6 +292,11 @@ export interface BoardFake {
   seedFactory(): number;
   /** Adds a followed pull request whose measurement a registered measurer posted and the Reviewer accepted; its card id. */
   seedMeasured(): number;
+  /**
+   * Adds a card in review whose own pull request is a draft written from the pull request template (ADR 0034), with its
+   * body read into fields and one required section missing; its card id.
+   */
+  seedPulled(): number;
   /**
    * Puts two issues `alice` took with `/take` in a comment on the board (Not started): one just taken, and one she says
    * is done, which waits for the owner with its inbox item. Returns their numbers.
@@ -1081,6 +1088,46 @@ export function createBoardFake(send: (event: ServerEvent) => void): BoardFake {
           branch: "moebius/pr-9",
           outside_author: "alice",
           taken_from: "In progress",
+        }),
+      );
+      return id;
+    },
+    seedPulled() {
+      const id = Math.max(...cards.map((c) => c.id)) + 1;
+      cards.push(
+        card(id, {
+          title: "Cache the compiled attention plan",
+          column: "In review",
+          change: {
+            id: 51,
+            repository: "demo",
+            state: "open",
+            checks: "success",
+            review_verdict: null,
+            draft: true,
+            pull: {
+              fixes: [id],
+              fields: {
+                item: `#${id}: Cache the compiled attention plan`,
+                what_the_change_does:
+                  "Plans are cached for the life of a request, so a second decode step does not plan again. The cache is keyed by the batch shape.",
+                tests_i_ran:
+                  "- [x] `cargo test`: 412 passed, 0 failed\n- [ ] `cargo bench plan`: not run",
+              },
+              tests: [
+                { done: true, text: "`cargo test`: 412 passed, 0 failed" },
+                { done: false, text: "`cargo bench plan`: not run" },
+              ],
+              measurement: null,
+              missing: ["Measurement"],
+            },
+          },
+        }),
+      );
+      changes.push(
+        change(51, id, {
+          pull_request: 12,
+          branch: `moebius/card-${id}`,
         }),
       );
       return id;

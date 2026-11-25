@@ -1,4 +1,5 @@
--- In review: the change is published, one per repository the card works in (its branch is pushed; the pull request
+-- In review: the change is published, one per repository the card works in (its branch is pushed; where the agents work
+-- on the forge the pull request is a draft from the first round and the verdict is written there as a review, else it
 -- opens only when the change is offered), then waits for their checks,
 -- then each must merge cleanly, then the Reviewer reads it along two axes, Standards and then Spec, each ending with
 -- findings that cite evidence. Failing checks, a conflict or blocking findings send the card back to In progress with
@@ -108,6 +109,8 @@ local function review(card, run)
   if not moebius.has_agent("Reviewer") then
     moebius.offer_change()
   elseif card.review ~= nil then
+    -- Where the agents work on the forge, the verdict is a review of the pull request, with comments on its lines.
+    moebius.post_review(card.review)
     if card.review.verdict == "approve" then
       moebius.offer_change(card.review.judgements)
     else

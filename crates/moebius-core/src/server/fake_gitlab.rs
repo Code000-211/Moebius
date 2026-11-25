@@ -455,6 +455,8 @@ mod tests {
     async fn an_offered_change_is_pushed_and_opened_as_a_merge_request_and_a_merge_there_finishes_it()
      {
         let f = Fixture::new().await;
+        // The classic path: the pull request opens when the change is offered.
+        crate::server::fake_github::classic_flow(&f.server.app, &f.repository);
         let change = f.offered_change().await;
 
         assert!(git(&f.remote, &["rev-parse", "--verify", "moebius/card-1"]).is_ok());
@@ -500,6 +502,8 @@ mod tests {
     #[tokio::test(flavor = "multi_thread")]
     async fn a_merge_request_is_updated_when_the_branch_moves_on() {
         let f = Fixture::new().await;
+        // The classic path: the pull request opens when the change is offered.
+        crate::server::fake_github::classic_flow(&f.server.app, &f.repository);
         let change = f.offered_change().await;
         assert_eq!(change.pull_request, Some(7));
 
@@ -600,6 +604,8 @@ mod tests {
     #[tokio::test(flavor = "multi_thread")]
     async fn a_person_merges_the_merge_request_and_issues_are_opened_and_edited_on_gitlab() {
         let f = Fixture::new().await;
+        // The classic merge message: the pull request's fields are not read.
+        crate::server::fake_github::classic_flow(&f.server.app, &f.repository);
         let change = f.offered_change().await;
         let app = f.server.app.clone();
         let repository = f.repository.id;

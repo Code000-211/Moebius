@@ -33,7 +33,7 @@ reads them too: they are its `moebius` skill.
   [desktop API](reference/desktop-api.md), [router](reference/router.md), [plugin API](reference/plugin-api.md),
   [bridge protocol](reference/bridge-protocol.md), [harness configuration](reference/harness-configuration.md),
   [training export](reference/training-export.md), [decision model](reference/decision-model.md),
-  [workflows](reference/workflows.md), [packages](reference/packages.md), [the factory](reference/factory.md) and [the test lane](reference/lanes.md). Tests check that
+  [workflows](reference/workflows.md), [packages](reference/packages.md), [the factory](reference/factory.md) and [templates](reference/templates.md), [the test lane](reference/lanes.md). Tests check that
   every route, script function, `card` field, configuration key and event kind is on its page.
 - [`examples/`](../examples/README.md): small examples to copy, run in CI.
 

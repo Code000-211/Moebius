@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 use super::{Result, Store, now};
 
 const CHANGE_COLUMNS: &str = "id, repository_id, card_id, run_id, branch, state, pull_request, checks, review, \
-     head, published_at, checks_head, failed_checks, check_output, harness_repository, outside_author, taken_from, reviewed_head";
+     head, published_at, checks_head, failed_checks, check_output, harness_repository, outside_author, taken_from, reviewed_head, draft, pull_fields";
 
 fn change_from_row(r: &rusqlite::Row) -> rusqlite::Result<Change> {
     Ok(Change {
@@ -28,6 +28,8 @@ fn change_from_row(r: &rusqlite::Row) -> rusqlite::Result<Change> {
         outside_author: r.get(15)?,
         taken_from: r.get(16)?,
         reviewed_head: r.get(17)?,
+        draft: r.get(18)?,
+        pull_fields: r.get(19)?,
     })
 }
 
@@ -71,6 +73,14 @@ pub struct Change {
     /// while the request's head is still this commit.
     #[serde(default)]
     pub reviewed_head: Option<String>,
+    /// Whether the pull request is still a draft on the forge: Moebius opens its own as one after the first round of
+    /// work (ADR 0034) and takes it out of draft when the review approves.
+    #[serde(default)]
+    pub draft: bool,
+    /// What the pull request's body said, read by the pull request template, as JSON (see `app::forms::pull::Pull`);
+    /// none until the body was read.
+    #[serde(default)]
+    pub pull_fields: Option<String>,
 }
 
 impl Change {
@@ -160,6 +170,8 @@ impl Store {
             outside_author: None,
             taken_from: None,
             reviewed_head: None,
+            draft: false,
+            pull_fields: None,
         })
     }
 

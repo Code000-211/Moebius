@@ -456,6 +456,10 @@ const FILES: &[(&str, &str)] = &[
         include_str!("../../../../docs/reference/factory.md"),
     ),
     (
+        "reference/templates.md",
+        include_str!("../../../../docs/reference/templates.md"),
+    ),
+    (
         "reference/harness-configuration.md",
         include_str!("../../../../docs/reference/harness-configuration.md"),
     ),

@@ -179,6 +179,18 @@ pub enum Operate {
         #[arg(long)]
         close_after_days: Option<i64>,
     },
+    /// The pull request and comment templates in effect for a repository; `--sync` opens the pull request that keeps the
+    /// repository's copies in `.github/` current (it waits for the owner's click).
+    Templates {
+        /// The repository, as `repos` shows it.
+        repository: i64,
+        /// Open the pull request that brings the repository's copies up to date.
+        #[arg(long)]
+        sync: bool,
+        /// Why; recorded with the decision.
+        #[arg(long, default_value = "")]
+        reason: String,
+    },
     /// Make today's digest now, when it has none yet; `--force` makes it again.
     Digest {
         #[arg(long)]
@@ -303,6 +315,11 @@ impl Operate {
                 *stale_after_days,
                 *close_after_days,
             ),
+            Templates {
+                repository,
+                sync,
+                reason,
+            } => factory::templates(*repository, *sync, reason),
             Digest { force } => factory::digest(*force),
             Repos => repos::repos(),
             Repo { command } => repos::repo(command),

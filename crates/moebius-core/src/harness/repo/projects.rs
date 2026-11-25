@@ -38,7 +38,7 @@ const MOVE_WORKFLOWS_KIND: &str = "move_workflows";
 /// The kind of the decision recorded for moving a project's folder when it is renamed.
 const RENAME_KIND: &str = "rename_project";
 
-/// Whether `file` is one of a project's files: the script of a column of the default Kanban, such as `ready.luau`,
+/// Whether `file` is one of a project's files: a template (see [`is_template_file`]), the script of a column of the default Kanban, such as `ready.luau`,
 /// the project's `kanban.toml` that defines its custom columns, its `lane.toml` that defines the job of its test lane,
 /// or a script file such a column names (a plain
 /// `.luau` file name, see `app::columns::safe_script_name`).
@@ -47,6 +47,21 @@ pub fn is_project_file(file: &str) -> bool {
         || file == KANBAN_FILE
         || file == LANE_FILE
         || safe_script_name(file)
+        || is_template_file(file)
+}
+
+/// Whether `file` is a template of the project, `templates/<name>.md` (ADR 0034): the pull request template or the
+/// template of a kind of comment.
+pub fn is_template_file(file: &str) -> bool {
+    file.strip_prefix("templates/")
+        .and_then(|name| name.strip_suffix(".md"))
+        .is_some_and(|name| {
+            !name.is_empty()
+                && name.len() <= 64
+                && name
+                    .chars()
+                    .all(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_'))
+        })
 }
 
 /// Whether the project name `name` can be a folder on every system: not empty, not starting with a dot, not ending

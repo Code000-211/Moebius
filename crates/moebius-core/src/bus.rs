@@ -517,6 +517,8 @@ mod tests {
             outside_author: None,
             taken_from: None,
             reviewed_head: None,
+            draft: false,
+            pull_fields: None,
         }
     }
 

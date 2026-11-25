@@ -31,6 +31,8 @@ export const keys = {
   repositoryLane: (repository: number) => ["lane", "repository", repository] as const,
   /** A card's report of the lane: under `cards`, so a card's events make it stale. */
   cardLane: (card: number) => ["card", card, "lane"] as const,
+  /** The templates in effect for a repository (ADR 0034). */
+  repositoryTemplates: (repository: number) => ["repository-templates", repository] as const,
   /** What a repository's files page has read: directories, one file, the paths for "Go to file", a search. */
   files: (repository: number) => ["files", repository] as const,
   tree: (repository: number, directory: string) =>

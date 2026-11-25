@@ -797,7 +797,13 @@ async fn a_pull_request_naming_a_backlog_item_in_its_title_or_branch_is_bound_to
     ))
     .await;
     assert!(f.follows(), "bound by the ID in the title");
-    assert!(f.on_the_pull_request().is_empty(), "nothing is asked");
+    // Nothing is asked of it but the sections of the template, which a body of a few words lacks.
+    assert!(
+        f.on_the_pull_request()
+            .iter()
+            .all(|t| t.starts_with("## Missing")),
+        "nothing is asked"
+    );
     assert!(f.fake.label_adds.lock().unwrap().is_empty());
 
     let (g, _) = unbound_fixture(None).await;
