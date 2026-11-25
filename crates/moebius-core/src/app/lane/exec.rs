@@ -192,6 +192,7 @@ pub fn direct_script(
 /// The shell script that runs `command` in a container, then asks the runtime how the container ended (so that the
 /// command's own exit code is told from the runtime's), and removes the container whatever came of it. Its last line is
 /// `<token> <running> <exit code>`, or `<token> gone` when there was no container to ask.
+#[allow(clippy::too_many_arguments)]
 pub fn contained_script(
     lane: &LaneConfig,
     name: &str,
@@ -224,7 +225,7 @@ pub fn read_status(output: &str, token: &str, seconds: u64) -> (String, Option<F
         return (output.to_string(), None);
     };
     let (before, line) = output.split_at(at);
-    let words: Vec<&str> = line.trim().split_whitespace().skip(1).collect();
+    let words: Vec<&str> = line.split_whitespace().skip(1).collect();
     let finish = match words.as_slice() {
         ["direct", code, took] => match (code.parse::<i32>(), took.parse::<u64>()) {
             (Ok(124), Ok(took)) if took >= seconds => Some(Finish::TimedOut),
