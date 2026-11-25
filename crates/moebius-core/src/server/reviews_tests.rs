@@ -16,7 +16,7 @@ use crate::router::Grant;
 use crate::store::{Card, Run};
 
 /// The text a review run ends with.
-fn said(verdict: &str, summary: &str, comments: Value) -> String {
+pub(super) fn said(verdict: &str, summary: &str, comments: Value) -> String {
     format!(
         "I read it.\n```json\n{}\n```",
         json!({ "verdict": verdict, "summary": summary, "comments": comments })
@@ -25,7 +25,12 @@ fn said(verdict: &str, summary: &str, comments: Value) -> String {
 
 impl Fixture {
     /// Gives pull request 7 a commit that adds `src/lib.rs` with ten lines, in the remote and in the fake.
-    fn pull_adds_a_file(&self) -> String {
+    pub(super) fn pull_adds_a_file(&self) -> String {
+        self.pull_adds("src/lib.rs")
+    }
+
+    /// Gives pull request 7 a commit that adds the file `path` with ten lines.
+    pub(super) fn pull_adds(&self, path: &str) -> String {
         let work = self._dir.path().join("pull-work");
         git(
             self._dir.path(),
@@ -37,9 +42,9 @@ impl Fixture {
             ],
         )
         .unwrap();
-        std::fs::create_dir_all(work.join("src")).unwrap();
+        std::fs::create_dir_all(work.join(path).parent().unwrap()).unwrap();
         let lines: String = (1..=10).map(|n| format!("line {n}\n")).collect();
-        std::fs::write(work.join("src/lib.rs"), lines).unwrap();
+        std::fs::write(work.join(path), lines).unwrap();
         git(&work, &["add", "."]).unwrap();
         git(
             &work,
@@ -67,7 +72,7 @@ impl Fixture {
     }
 
     /// The default branch of the remote moves on: it gets a commit that writes `path`.
-    fn main_moves(&self, path: &str, text: &str) {
+    pub(super) fn main_moves(&self, path: &str, text: &str) {
         let work = self._dir.path().join("main-work");
         if !work.exists() {
             git(
@@ -102,18 +107,18 @@ impl Fixture {
     }
 
     /// Says what the checks of the pull request's head are.
-    fn checks_are(&self, status: &str, conclusion: &str) {
+    pub(super) fn checks_are(&self, status: &str, conclusion: &str) {
         self.fake.pulls.lock().unwrap().check_runs = vec![check("build", status, conclusion)];
     }
 
     /// The author writes `/done` on the issue, and the poll reads it.
-    async fn author_says_done(&self) {
+    pub(super) async fn author_says_done(&self) {
         self.fake.comment(1, "alice", "/done");
         self.server.poll_github().await;
     }
 
     /// The runs of the card whose purpose is `review`.
-    fn reviews_of(&self, card: &Card) -> Vec<Run> {
+    pub(super) fn reviews_of(&self, card: &Card) -> Vec<Run> {
         self.server
             .app
             .store
@@ -125,7 +130,7 @@ impl Fixture {
     }
 
     /// The review run ends with `text`, and the engine ticks the card.
-    async fn reviewer_ends(&self, card: &Card, run: &Run, text: &str) {
+    pub(super) async fn reviewer_ends(&self, card: &Card, run: &Run, text: &str) {
         self.server.app.store.set_run_summary(run.id, text).unwrap();
         self.server
             .app
@@ -138,7 +143,7 @@ impl Fixture {
             .unwrap();
     }
 
-    fn on_the_pull_request(&self) -> Vec<String> {
+    pub(super) fn on_the_pull_request(&self) -> Vec<String> {
         self.fake
             .posted
             .lock()
@@ -149,7 +154,7 @@ impl Fixture {
             .collect()
     }
 
-    fn on_the_issue(&self) -> Vec<String> {
+    pub(super) fn on_the_issue(&self) -> Vec<String> {
         self.fake
             .posted
             .lock()
@@ -160,14 +165,14 @@ impl Fixture {
             .collect()
     }
 
-    fn merged_requests(&self) -> Vec<Value> {
+    pub(super) fn merged_requests(&self) -> Vec<Value> {
         self.fake.pulls.lock().unwrap().merged.clone()
     }
 }
 
 /// A fixture whose card follows alice's pull request 7, which adds `src/lib.rs`, with green checks for its head, a
 /// Reviewer that starts runs, and commands on. The pull request is not reviewed yet.
-async fn ready() -> (Fixture, Card, String) {
+pub(super) async fn ready() -> (Fixture, Card, String) {
     let f = Fixture::new().await;
     f.fake.threads.lock().unwrap().insert(1, Vec::new());
     f.fake.writers.lock().unwrap().push("alice".into());

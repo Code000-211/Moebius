@@ -130,11 +130,23 @@ impl Store {
         Ok(())
     }
 
-    /// Resolves the open "ready to merge" item of a change, which has no card to resolve it through.
+    /// Resolves the open "ready to merge" item of a change, and the item that says why the merge gate refused it, which
+    /// have no card to resolve them through.
     pub fn resolve_inbox_for_change(&self, change_id: i64) -> Result<()> {
         self.conn().execute(
             "UPDATE inbox_items SET resolved_at = ?1 \
-             WHERE kind = 'ready_to_merge' AND json_extract(data, '$.change') = ?2 AND resolved_at IS NULL",
+             WHERE kind IN ('ready_to_merge', 'merge_refused') AND json_extract(data, '$.change') = ?2 \
+             AND resolved_at IS NULL",
+            params![now(), change_id],
+        )?;
+        Ok(())
+    }
+
+    /// Resolves the open items that say why the merge gate refused to merge a change.
+    pub fn resolve_merge_refused_for_change(&self, change_id: i64) -> Result<()> {
+        self.conn().execute(
+            "UPDATE inbox_items SET resolved_at = ?1 \
+             WHERE kind = 'merge_refused' AND json_extract(data, '$.change') = ?2 AND resolved_at IS NULL",
             params![now(), change_id],
         )?;
         Ok(())

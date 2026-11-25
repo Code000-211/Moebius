@@ -472,6 +472,59 @@ mod tests {
     }
 
     #[test]
+    fn a_script_that_merges_a_change_with_a_locked_path_is_refused_by_the_gate_and_the_owner_is_told()
+     {
+        let (_dir, app, engine, repo) = setup();
+        let project = app.harness_repo().unwrap().project_dir("demo");
+        std::fs::create_dir_all(&project).unwrap();
+        std::fs::write(
+            project.join("merge.luau"),
+            r#"
+function on_card(card)
+  if #card.changes == 0 then
+    return moebius.wait("waiting for the change")
+  end
+  local commit, why = moebius.merge_change("both reviews approved")
+  if not commit then
+    moebius.wait("not merged: " .. why)
+  end
+end
+"#,
+        )
+        .unwrap();
+        let mut settings = crate::app::factory::settings_of(&app.repository(repo).unwrap());
+        settings.locked_paths = vec!["run-*.txt".into()];
+        app.store.set_repository_factory(repo, &settings).unwrap();
+        let card = app
+            .create_issue(repo, "Add a feature", "", OWNER_AUTHOR)
+            .unwrap();
+        for _ in 0..8 {
+            engine.settle(card.id).unwrap();
+        }
+        let card = app.card(card.id).unwrap();
+        assert_eq!(card.column, columns::READY_TO_MERGE);
+        let change = app.store.changes(repo).unwrap().pop().unwrap();
+        assert_eq!(change.state, "open", "the gate refused the script");
+        let items = app.store.inbox_for_card(card.id).unwrap();
+        let refused: Vec<_> = items
+            .iter()
+            .filter(|i| i.kind == "merge_refused" && i.resolved_at.is_none())
+            .collect();
+        assert_eq!(
+            refused.len(),
+            1,
+            "asked at every tick, told once: {items:?}"
+        );
+        let reason = refused[0].data["reason"].as_str().unwrap();
+        assert!(reason.contains("locked by run-*.txt"), "{reason}");
+        assert!(items.iter().all(|i| i.kind != "merge_stopped"));
+        // The same script merges it once a person has: the lock is the person's to open by merging.
+        app.merge_change(&crate::decide::Actor::first_owner(), change.id, "I read it")
+            .unwrap();
+        assert_eq!(app.card(card.id).unwrap().column, columns::DONE);
+    }
+
+    #[test]
     fn a_script_that_merges_the_change_finishes_the_card_and_the_script_is_the_decider() {
         let (_dir, app, engine, repo) = setup();
         // The project decides in its settings that what both reviews approved is merged.

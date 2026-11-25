@@ -103,6 +103,9 @@ pub enum StartError {
     /// All agents are paused (see `App::pause_runs`); nothing was started.
     #[error("all agents are paused")]
     Paused,
+    /// The card's repository is frozen (see `app::factory::freeze`); nothing was started. The text says why.
+    #[error("the repository is frozen: {0}")]
+    Frozen(String),
     /// Someone on another server took the issue, or the repository's agents take only labelled issues and this one is
     /// not (see `App::left_alone`); nothing was started. The text says why.
     #[error("{0}")]
@@ -120,6 +123,13 @@ pub fn may_start(app: &App, card: &Card) -> Result<(), StartError> {
         .is_some()
     {
         return Err(StartError::Paused);
+    }
+    // A frozen repository starts no agent run. What the store cannot say is no run either.
+    match app.frozen(card.repository_id) {
+        Ok(None) => {}
+        Ok(Some(frozen)) => return Err(StartError::Frozen(frozen.reason)),
+        Err(crate::app::AppError::NotFound(_)) => return Err(StartError::RepositoryGone),
+        Err(e) => return Err(StartError::Store(e.to_string())),
     }
     match app.card(card.id) {
         Ok(now) if now.held.is_none() => Ok(()),

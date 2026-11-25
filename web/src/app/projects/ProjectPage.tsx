@@ -142,7 +142,7 @@ function RepositoryView({ repository, projectId }: { repository: Repository; pro
         </Box>
         {filesOf === null && onForge(repository) && (
           <WorkingWithOthers
-            key={`${repository.mark_ready}-${repository.ready_label}-${repository.agents_take}-${repository.commands}-${repository.command_limit}-${repository.answer_on_forge}-${repository.merge_reviewed}`}
+            key={`${repository.mark_ready}-${repository.ready_label}-${repository.agents_take}-${repository.commands}-${repository.command_limit}-${repository.answer_on_forge}-${repository.merge_reviewed}-${repository.require_measurement}-${repository.locked_paths?.join(",")}-${repository.daily_merge_limit}-${repository.review_brief?.join(",")}-${repository.testing_label}-${repository.measurers?.join(",")}-${repository.frozen?.since}`}
             repository={repository}
           />
         )}

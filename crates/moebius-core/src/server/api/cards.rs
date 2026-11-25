@@ -12,7 +12,9 @@
 //! - `POST /v1/cards/{id}/block` `{reason}` and `POST /v1/cards/{id}/unblock` `{reason}`: a person or the Moebius agent
 //!   holds a card, which stops its runs and keeps the board from working on it, or releases it.
 //! - `DELETE /v1/cards/{id}`: a person deletes a card with everything stored for it.
-//! - `POST /v1/changes/{id}/merge` `{reason}`: a person merges a change; its card moves to done.
+//! - `POST /v1/changes/{id}/merge` `{reason}`: a person merges a change; its card moves to done. The merge gate may
+//!   refuse (`409`, see [`crate::app::factory::gate`]).
+//! - `POST /v1/changes/{id}/measurement` `{reason}`: a person accepts a measurement for the change's current head.
 //! - `POST /v1/changes/{id}/reject` `{reason}`: a person sends a change waiting to be merged back to coding.
 //! - `POST /v1/changes/{id}/review/end` `{reason}`: a person ends the review round of a followed pull request that is going.
 //! - `POST /v1/changes/{id}/review` `{reason}`: a person has the Reviewer read a pull request someone else opened that a
@@ -64,6 +66,7 @@ pub(super) fn routes() -> Router<ApiState> {
         .route("/v1/cards/{id}/done", post(answer_done))
         .route("/v1/cards/{id}/release-taken", post(release_taken))
         .route("/v1/changes/{id}/merge", post(merge_change))
+        .route("/v1/changes/{id}/measurement", post(accept_measurement))
         .route("/v1/changes/{id}/reject", post(reject_change))
         .route("/v1/changes/{id}/review", post(review_change))
         .route("/v1/changes/{id}/review/end", post(end_review_round))
@@ -564,6 +567,19 @@ async fn merge_change(
     blocking(&state.app, move |app| {
         app.merge_change(&by, id, &merge.reason)
             .map(|commit| Merged { commit })
+    })
+    .await
+}
+
+async fn accept_measurement(
+    State(state): State<ApiState>,
+    Extension(by): Extension<Actor>,
+    UrlPath(id): UrlPath<i64>,
+    body: Option<axum::Json<Reason>>,
+) -> Result<axum::Json<crate::store::Change>, ApiError> {
+    let reason = body.map(|body| body.0.reason).unwrap_or_default();
+    blocking(&state.app, move |app| {
+        app.accept_measurement(&by, id, &reason)
     })
     .await
 }
@@ -1362,6 +1378,142 @@ mod tests {
         };
         assert_eq!(missing("/v1/changes/999/diff").await, 404);
         assert_eq!(missing("/v1/runs/999/diff").await, 404);
+    }
+
+    #[tokio::test]
+    async fn the_merge_route_goes_through_the_gate_and_a_person_accepts_a_measurement() {
+        let (dir, state, addr) = start().await;
+        let app = &state.app;
+        let repo = app
+            .add_repository("demo", origin(dir.path()).to_str().unwrap())
+            .unwrap();
+        let card = app
+            .create_issue(repo.id, "Add a feature", "", OWNER_AUTHOR)
+            .unwrap();
+        let change = code_and_offer(app, &repo, &card);
+        let mut settings = crate::app::factory::settings_of(&repo);
+        settings.require_measurement = true;
+        app.store
+            .set_repository_factory(repo.id, &settings)
+            .unwrap();
+        let merge = || {
+            post(
+                &state,
+                &addr,
+                format!("/v1/changes/{}/merge", change.id),
+                serde_json::json!({}),
+            )
+        };
+        let refused = merge().await;
+        assert_eq!(refused.status(), 409);
+        assert!(
+            refused
+                .text()
+                .await
+                .unwrap()
+                .contains("requires a measurement")
+        );
+        assert_eq!(app.store.change(change.id).unwrap().unwrap().state, "open");
+        let items = app.store.inbox_for_card(card.id).unwrap();
+        assert!(
+            items
+                .iter()
+                .any(|i| i.kind == "merge_refused" && i.resolved_at.is_none()),
+            "{items:?}"
+        );
+        // An agent's word is no measurement.
+        let agent = crate::server::api::testing::agent_token(&state);
+        let by_agent = reqwest::Client::new()
+            .post(format!(
+                "http://{addr}/v1/changes/{}/measurement",
+                change.id
+            ))
+            .bearer_auth(agent)
+            .json(&serde_json::json!({}))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(by_agent.status(), 403);
+        // A person accepts one, and the merge goes through; the refusal's item is resolved with it.
+        let accepted = post(
+            &state,
+            &addr,
+            format!("/v1/changes/{}/measurement", change.id),
+            serde_json::json!({ "reason": "rows checked" }),
+        )
+        .await;
+        assert_eq!(accepted.status(), 200);
+        assert_eq!(merge().await.status(), 200);
+        assert_eq!(
+            app.store.change(change.id).unwrap().unwrap().state,
+            "merged"
+        );
+        assert!(
+            app.store
+                .inbox_for_card(card.id)
+                .unwrap()
+                .iter()
+                .all(|i| i.resolved_at.is_some())
+        );
+        // A change that is merged takes no measurement.
+        let late = post(
+            &state,
+            &addr,
+            format!("/v1/changes/{}/measurement", change.id),
+            serde_json::json!({}),
+        )
+        .await;
+        assert_eq!(late.status(), 422);
+        assert_eq!(
+            post(
+                &state,
+                &addr,
+                "/v1/changes/999/measurement".into(),
+                serde_json::json!({})
+            )
+            .await
+            .status(),
+            404
+        );
+    }
+
+    #[tokio::test]
+    async fn a_frozen_repository_refuses_the_merge_route_until_it_is_unfrozen() {
+        let (dir, state, addr) = start().await;
+        let app = &state.app;
+        let repo = app
+            .add_repository("demo", origin(dir.path()).to_str().unwrap())
+            .unwrap();
+        let card = app
+            .create_issue(repo.id, "Add a feature", "", OWNER_AUTHOR)
+            .unwrap();
+        let change = code_and_offer(app, &repo, &card);
+        post(
+            &state,
+            &addr,
+            format!("/v1/repositories/{}/freeze", repo.id),
+            serde_json::json!({"reason": "odd"}),
+        )
+        .await;
+        let merge = || {
+            post(
+                &state,
+                &addr,
+                format!("/v1/changes/{}/merge", change.id),
+                serde_json::json!({}),
+            )
+        };
+        let refused = merge().await;
+        assert_eq!(refused.status(), 409);
+        assert!(refused.text().await.unwrap().contains("frozen: odd"));
+        post(
+            &state,
+            &addr,
+            format!("/v1/repositories/{}/unfreeze", repo.id),
+            serde_json::json!({}),
+        )
+        .await;
+        assert_eq!(merge().await.status(), 200);
     }
 
     #[tokio::test]

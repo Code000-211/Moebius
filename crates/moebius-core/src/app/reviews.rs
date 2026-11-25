@@ -37,6 +37,9 @@ use crate::store::{Card, Change, ExternalReview, Repository, ReviewComment, Run}
 /// How many rounds of the Reviewer a followed pull request gets; the owner is asked after that.
 pub const ROUND_LIMIT: i64 = 3;
 
+/// The column a project may have, for a card whose pull request waits for a measurement.
+pub const READY_FOR_TESTING: &str = "Ready for testing";
+
 /// The kind of the inbox item that asks the owner to look at a pull request the Reviewer read [`ROUND_LIMIT`] times.
 pub const ROUNDS_SPENT: &str = "review_rounds_spent";
 /// What the owner is told when a review was not written to the end.
@@ -103,10 +106,14 @@ impl App {
         Ok(runs)
     }
 
-    /// Whether a round of the card may act now: the card is not held and the agents are not paused. A round that posts a
-    /// review or merges is the server acting for the owner, and the owner's hold and pause stop it as they stop a run.
+    /// Whether a round of the card may act now: the card is not held, the agents are not paused and the repository is not
+    /// frozen. A round that posts a review or merges is the server acting for the owner, and the owner's hold, pause and
+    /// freeze stop it as they stop a run.
     fn may_act(&self, card_id: i64) -> Result<bool> {
-        Ok(self.card(card_id)?.held.is_none() && self.runs_paused()?.is_none())
+        let card = self.card(card_id)?;
+        Ok(card.held.is_none()
+            && self.runs_paused()?.is_none()
+            && self.frozen(card.repository_id)?.is_none())
     }
 
     /// Whether the pull request is against the repository's default branch, as the poll last read it. Unknown, which a
@@ -195,6 +202,13 @@ impl App {
             self.ask_owner_to_look(card, change)?;
             return Ok(
                 "The pull request was reviewed three times already; a person will look.".into(),
+            );
+        }
+        // A frozen repository starts no round: the author is told, and writes `/done` again once it is lifted.
+        if self.frozen(repository.id)?.is_some() {
+            return Ok(
+                "This repository is frozen for now, so no review starts. Write /done again once the owner has lifted it."
+                    .into(),
             );
         }
         let wanted = self
@@ -494,6 +508,11 @@ impl App {
                 | ContextError::Other(why),
             ) => return not_possible(&why),
         }
+        // The repository's rules for the Reviewer are read from the default branch's commit the review is of, never from
+        // the pull request; a brief that is too large, or cannot be read, is a review that does not start.
+        if let Err(why) = super::review_context::review_brief_at(repository, &base) {
+            return not_possible(&why);
+        }
         // Only one thread starts the run, and only one round of the pull request runs at a time: the poll and the engine
         // both come here. The claim writes the two commits with it, and the run reads them from the claimed round, so
         // nothing a thread that lost wrote can reach the run.
@@ -693,9 +712,12 @@ impl App {
         said: &structured::Structured,
     ) -> Result<()> {
         let number = change.pull_request.unwrap_or_default();
-        let approve = said.verdict == "approve";
+        // `approve_code` is an approval of the code that never merges: the measurement the repository's rules ask for is
+        // missing (see `awaiting_measurement`).
+        let code_only = said.verdict == "approve_code";
+        let approve = said.verdict != "changes";
         // A review a person asked for is never merged: the person merges the pull request where they asked for it.
-        let merges = repository.merge_reviewed && round.kind == "author";
+        let merges = repository.merge_reviewed && round.kind == "author" && !code_only;
         if approve && merges {
             // Merged only when the checks of the head that was read are green; pending ones are waited for.
             if change.head.as_deref() != Some(round.head.as_str()) {
@@ -737,7 +759,12 @@ impl App {
         }
         let (comments, rest) = self.split_comments(repository, &round.head, &said.comments);
         // Whatever the Reviewer wrote is redacted before it is posted: it was told by a stranger's pull request.
-        let body = crate::blobs::redact(&format!("{}{rest}", said.summary.trim()));
+        let lead = if code_only {
+            "**The code is approved; the measurement this repository asks for is still missing, so this is not merged yet.**\n\n"
+        } else {
+            ""
+        };
+        let body = crate::blobs::redact(&format!("{lead}{}{rest}", said.summary.trim()));
         let comments: Vec<ReviewComment> = comments
             .into_iter()
             .map(|c| ReviewComment {
@@ -779,6 +806,11 @@ impl App {
             &said.summary,
             &said.comments,
         )?;
+        if code_only {
+            self.store
+                .set_external_review_state(round.id, "awaiting_measurement", Some(&url))?;
+            return self.awaiting_measurement(repository, card, change, round);
+        }
         self.store
             .set_external_review_state(round.id, "posted", Some(&url))?;
         if !approve {
@@ -920,10 +952,87 @@ impl App {
                         "The reviewer approved this version, but it could not be merged: {reason}"
                     ),
                 );
-                self.hand_to_owner(card, change, &reason)?;
+                // A refusal of the merge gate has put the card in Ready to merge with its reason already.
+                if !matches!(e, AppError::Refused(_)) {
+                    self.hand_to_owner(card, change, &reason)?;
+                }
                 Ok(Err(reason))
             }
         }
+    }
+
+    /// The Reviewer approved the code of `round` and its review is on the forge, but the measurement the repository's
+    /// brief asks for is missing. Nothing is merged. The issue gets the repository's ready-for-testing label, the card
+    /// goes to the project's column "Ready for testing" when the project has one (else it stays in In review), and the
+    /// issue says that a measurement is needed and how to post one. The round counts; a later measurement starts the
+    /// next. A review a person asked for is only written, as for any verdict: it moves nothing.
+    fn awaiting_measurement(
+        &self,
+        repository: &Repository,
+        card: &Card,
+        change: &Change,
+        round: &ExternalReview,
+    ) -> Result<()> {
+        let number = change.pull_request.unwrap_or_default();
+        if round.kind == "person" {
+            self.answer(
+                repository,
+                card.id,
+                &format!(
+                    "Reviewed pull request #{number}: the code is approved, but the measurement the repository asks for is missing."
+                ),
+            );
+            self.bus
+                .publish(crate::bus::Event::CardUpdated(self.card(card.id)?));
+            return Ok(());
+        }
+        let report = |what: &str, e: &dyn std::fmt::Display| {
+            self.bus.publish(crate::bus::Event::ForgeError {
+                repository: repository.name.clone(),
+                message: format!("pull request #{number}: {what}: {e}"),
+            });
+        };
+        if let Err(e) =
+            self.set_labels_for_script(card.id, &[(repository.testing_label.clone(), true)])
+        {
+            report("the label could not be written", &e);
+        }
+        let now = self.card(card.id)?;
+        let has_column = self
+            .project_columns_of(now.project_id)?
+            .views()
+            .into_iter()
+            .find(|c| c.name.eq_ignore_ascii_case(READY_FOR_TESTING))
+            .map(|c| c.name);
+        if let Some(column) = has_column
+            && now.column != column
+            && self.column_class(now.project_id, &now.column) != columns::DONE
+        {
+            self.move_card(card.id, &column, Some(&reviewer()))?;
+        }
+        let measurers = match repository.measurers.as_slice() {
+            [] => "a registered measurer".to_string(),
+            logins => format!(
+                "a registered measurer ({})",
+                logins
+                    .iter()
+                    .map(|login| format!("@{login}"))
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            ),
+        };
+        let text = format!(
+            "Reviewed pull request #{number}: the code looks right, but the measurement this repository asks for is missing, so it is not merged. \
+             To go on, {measurers} posts a comment on this issue that starts with `## Measurement` and gives the measured numbers: \
+             before and after on one machine, and that the output is the same. The pull request is reviewed again once that comment is here."
+        );
+        let by = reviewer();
+        if let Err(e) = self.comment_issue(&by, card.id, &text) {
+            report("the reply could not be written", &e);
+        }
+        self.bus
+            .publish(crate::bus::Event::CardUpdated(self.card(card.id)?));
+        Ok(())
     }
 
     /// The approved pull request waits for the owner: the card goes to Ready to merge, with an Inbox item that says why

@@ -200,7 +200,9 @@ approval of what the Reviewer did not read could be merged.
 ## `[guard]`
 
 The guard is the built-in decider of `tool_call`: it refuses a call that breaks a built-in safety pattern or a rule (see
-[the plugin API](plugin-api.md#the-tool_call-context)). The table is optional.
+[the plugin API](plugin-api.md#the-tool_call-context)). It also decides `merge_check`, whether the rules allow a merge the
+server makes (see [the plugin API](plugin-api.md#the-merge_check-context)); with `guard.enabled = false` those merges are
+not judged against the rules either. The table is optional.
 
 | Key | Type | Default | Meaning and validation |
 |---|---|---|---|

@@ -69,6 +69,12 @@ export interface WorkingWithOthers {
   command_limit: number;
   answer_on_forge: boolean;
   merge_reviewed: boolean;
+  require_measurement?: boolean;
+  locked_paths?: string[];
+  daily_merge_limit?: number;
+  review_brief?: string[];
+  testing_label?: string;
+  measurers?: string[];
 }
 
 /** Sets how the repository works with people on other servers: the ready label and which issues its agents take. */
@@ -77,6 +83,16 @@ export function editWorkingWithOthers(
   settings: WorkingWithOthers,
 ): Promise<Repository> {
   return put<Repository>(`/v1/repositories/${repository}`, settings);
+}
+
+/** Freezes the repository: nothing is reviewed, merged or started in it until a person unfreezes it. */
+export function freezeRepository(repository: number, reason: string): Promise<Repository> {
+  return post<Repository>(`/v1/repositories/${repository}/freeze`, { reason });
+}
+
+/** Lifts a freeze; the server refuses while the `factory:freeze` label is still on an issue. */
+export function unfreezeRepository(repository: number, reason: string): Promise<Repository> {
+  return post<Repository>(`/v1/repositories/${repository}/unfreeze`, { reason });
 }
 
 /** Removes a repository with its cards, changes, chats and clone; the server refuses while one of its runs goes on. */

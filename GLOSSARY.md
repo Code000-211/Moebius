@@ -83,14 +83,30 @@ web app.
 _Avoid_: MCP proxy, MCP hub
 
 **Rule**:
-Something the work must or must not do, which Moebius enforces on every tool call; a call that breaks one goes back to the
-model to find another way, and the run does not stop.
+Something the work must or must not do, which Moebius enforces on every tool call and on every merge the server makes; a call
+that breaks one goes back to the model to find another way, and the run does not stop.
 _Avoid_: policy, guardrail, guideline
 
 **Model class**:
 How Moebius groups the models the router reaches: Frontier for the strongest models, Flash for the fast and cheaper ones, and
 Local for models running on one's own hardware.
 _Avoid_: tier, model size, Sonnet class, Opus class
+
+**Merge gate**:
+The one check every merge the server makes goes through: the repository is not frozen, the checks have passed, the daily
+limit is not reached, a measurement is accepted when one is required, no locked path is touched without a person, and the
+repository's rules allow it. It refuses with a reason the owner reads in the Inbox.
+_Avoid_: merge check, merge policy
+
+**Freeze**:
+A repository's brake: while it is frozen it starts no review round, merges nothing and starts no agent run of a card. A
+person, the label `factory:freeze` or a breaker freezes it; only a person lifts what a person or a breaker froze.
+_Avoid_: lock, pause (which stops all agents at once)
+
+**Review brief**:
+The files of a repository's default branch that are its rules for the Reviewer of a pull request someone else opened, read
+at the commit the review is of and never from the pull request.
+_Avoid_: review prompt, review rules
 
 **Decision point**:
 A place where Moebius or a person chooses between options, such as whether a tool call may run, whether a review passed,

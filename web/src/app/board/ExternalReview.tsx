@@ -1,7 +1,7 @@
 /**
  * The review of a pull request someone else opened, as the card window shows it (ADR 0029): what the Reviewer concluded
  * (approved, or changes requested), its summary, and the comments it wrote on lines of the diff, each in a box that says
- * which file and line it is about, with the way to the review on the forge. While the author's `/done` waits for the
+ * which file and line it is about, and, for a change whose code is right but whose measurement is missing, what is awaited, with the way to the review on the forge. While the author's `/done` waits for the
  * checks or the Reviewer reads, one quiet line says so.
  */
 import { ArrowSquareOutIcon } from "@phosphor-icons/react";
@@ -31,7 +31,8 @@ export function ExternalReview({ review, forge }: { review: Round; forge: string
       </p>
     );
   }
-  const approved = review.verdict === "approve";
+  const approved = review.verdict === "approve" || review.verdict === "approve_code";
+  const needsMeasurement = review.verdict === "approve_code";
   const merged = review.state === "merged";
   return (
     <section
@@ -43,7 +44,13 @@ export function ExternalReview({ review, forge }: { review: Round; forge: string
         <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1">
           <span className="inline-flex min-h-7 items-center gap-1.5 text-sm font-medium text-text">
             <StatusIcon state={approved ? "done" : "inReview"} decorative />
-            {approved ? (merged ? "Approved and merged" : "Approved") : "Changes requested"}
+            {needsMeasurement
+              ? "Code approved, measurement needed"
+              : approved
+                ? merged
+                  ? "Approved and merged"
+                  : "Approved"
+                : "Changes requested"}
           </span>
           <span className="text-sm text-muted">{`Round ${review.round} of ${review.round_limit}`}</span>
           {!review.current && (
@@ -62,6 +69,13 @@ export function ExternalReview({ review, forge }: { review: Round; forge: string
           </a>
         )}
       </div>
+      {needsMeasurement && (
+        <p data-testid="measurement-needed" className="m-0 text-sm text-secondary">
+          The code is right, but the measurement the repository asks for is missing. It is not
+          merged. A comment that starts with "## Measurement" from a registered measurer starts the
+          next round.
+        </p>
+      )}
       {review.summary && (
         <p className="m-0 whitespace-pre-line text-base text-text [overflow-wrap:anywhere]">
           {review.summary}

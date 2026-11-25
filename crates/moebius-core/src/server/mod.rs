@@ -12,6 +12,8 @@ pub mod api;
 #[cfg(test)]
 mod commands_tests;
 #[cfg(test)]
+mod factory_tests;
+#[cfg(test)]
 mod fake_forgejo;
 #[cfg(test)]
 mod fake_github;
@@ -307,6 +309,8 @@ impl Server {
             &config.data_dir,
             router_addr.to_string(),
         ));
+        app.set_rules_file(config.rules_path());
+        app.set_day_budget(config.day_tokens);
         let app = Arc::new(app);
         router.set_checker(check::Checker::new(app.clone(), config.rules_path()));
         let runners = Arc::new(Runners::new(config.runners.clone()));

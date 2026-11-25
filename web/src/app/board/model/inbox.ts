@@ -17,6 +17,8 @@ export const DONE_ASKED = "done_asked";
 export const REVIEW_ROUNDS_SPENT = "review_rounds_spent";
 /** A followed pull request could not be given to the Reviewer (too large, a binary file, or git failed): the owner reads it, with the same choices as for the request itself. */
 export const REVIEW_NOT_POSSIBLE = "review_not_possible";
+/** The server's merge gate refused to merge the card's change: the owner merges it, or fixes what is missing. */
+export const MERGE_REFUSED = "merge_refused";
 /** What an outside issue that waits for a person's approval is called, on every row, card and button of the app. */
 export const WAITING_FOR_APPROVAL = "Waiting for approval";
 
@@ -37,6 +39,8 @@ export function waitingWords(kind: string | undefined): string {
       return "Reviewed three times";
     case REVIEW_NOT_POSSIBLE:
       return "Could not be reviewed";
+    case MERGE_REFUSED:
+      return "Merge refused";
     default:
       return "Your turn";
   }
@@ -63,6 +67,8 @@ export function inboxOf(inbox: readonly InboxItem[], card: Card): InboxItem | un
       // A stopped merge only says what is merged; the item that asks for a person's turn stays the card's item. Of
       // several changes to merge, the first in the order they are merged comes first, since a later one is refused.
       if (item.kind === MERGE_STOPPED && held !== undefined) continue;
+      // A refused merge only says why; the item that offers the merge stays the card's item.
+      if (item.kind === MERGE_REFUSED && held !== undefined) continue;
       // The request's own item comes first; this one is about it, and neither hides the other's choices.
       if (
         item.kind === OUTSIDE_CHANGE &&

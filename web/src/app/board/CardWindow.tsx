@@ -24,6 +24,7 @@ import { CardMenu } from "./CardMenu";
 import { cardName, cardPagePath } from "./cardKey";
 import type { Decision } from "./decisions";
 import { FollowedRequest } from "./FollowedRequest";
+import { FrozenNotice } from "./FrozenNotice";
 import { CardThread, EditIssueDialog, ReplyField } from "./IssueSections";
 import {
   type CardStatus,
@@ -256,6 +257,12 @@ export function CardContent({
             />
           </div>
         </div>
+
+        {board.repository.frozen && (
+          <div className="px-6 pb-4">
+            <FrozenNotice frozen={board.repository.frozen} />
+          </div>
+        )}
 
         <FollowedRequest
           board={board}
