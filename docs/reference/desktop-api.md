@@ -182,6 +182,14 @@ keep their rows: the role is checked before the `410`.
 | `DELETE /v1/repositories/{id}` | owner | yes |
 | `POST /v1/repositories/{id}/issues` | viewer | yes |
 | `GET /v1/repositories/{id}/issues` | viewer | yes |
+| `GET /v1/repositories/{id}/upkeep` | viewer | yes |
+| `PUT /v1/repositories/{id}/upkeep` | owner | yes |
+| `GET /v1/projects/{id}/backlog` | viewer | yes |
+| `PUT /v1/projects/{id}/backlog` | owner | yes |
+| `DELETE /v1/projects/{id}/backlog` | owner | yes |
+| `POST /v1/projects/{id}/backlog/sync` | member | yes |
+| `POST /v1/digest` | owner | yes |
+| `POST /v1/digest/{id}/dismiss` | member | yes |
 | `GET /v1/repositories/{id}/settings` | viewer | yes |
 | `PUT /v1/repositories/{id}/settings/{file}` | owner | yes |
 | `DELETE /v1/repositories/{id}/settings/{file}` | owner | yes |
@@ -524,6 +532,7 @@ same change failing again keeps it, another stop replaces it) and
 `outside_change` (`data.change`, `data.pull_request`, `data.author`, `data.repository`: the card follows a pull request someone else opened; resolved when the request is merged or closed; see [Working with people on other servers](#working-with-people-on-other-servers)) and
 `review_rounds_spent` (`data.change`, `data.pull_request`, `data.author`, `data.repository`: the Reviewer read the pull request the card follows three times and its author wrote `/done` again; resolved when the request is merged or closed; see [Reviews of followed pull requests](#reviews-of-followed-pull-requests)) and
 `review_not_possible` (`data.change`, `data.pull_request`, `data.author`, `data.repository`, `data.reason`: the pull request the card follows could not be given to the Reviewer, because it is too large to be read whole, changes a binary file, git could not read it, or the run of a review a person asked for could not start; resolved when the request is merged or closed; the same choices as for `outside_change`) and
+`daily_digest` (`data.day`, `data.repositories`, `data.tokens`, `data.needs_a_person`, `data.text`; no card: the owner's digest of what happened since the last one, see [the factory](factory.md#the-digest); the owner dismisses it) and
 `done_asked` (`data.login`, `data.reason`, `data.repository`: the assignee of the issue, `login`, wrote `/done` in a comment and `reason` is the rest of that comment; resolved by the owner's answer, `POST /v1/cards/{id}/done`, or when the assignee is released; see [Commands in issue comments](#commands-in-issue-comments)) and
 `proposal` (`data.proposal`, `data.branch`, `data.trials`: an array of `{"card", "outcome", "reason"}` for the cards it
 addresses, and `data.regression`: the same for the cards of the regression set, empty when none was tried; its `title` is the
@@ -4551,6 +4560,61 @@ with `run` null from now on, as for a chat. The decision is recorded (kind `dele
 `research`, `repository`, `goal`, `status`, `experiments`, `runs`, `changes`, `branches` and `usage_kept`) and announced
 as `research_deleted`. Request: `{"reason": string}` (optional). Response: the deleted research (as it was stored).
 Errors: `403` for an agent's run token; `404` no such research; `409` as above.
+
+## The software factory
+
+What keeps the owner's work small ([ADR 0031](../adr/0031-the-factory-keeps-the-owners-work-small.md); the contracts are
+on [the factory](factory.md), the steps in [the guide](../guide/software-factory.md)).
+
+### `GET /v1/repositories/{id}/upkeep`
+
+The stale settings of a repository, with the defaults for one that has set none: `{"release_after_days": 14,
+"stale_after_days": 14, "close_after_days": 30}`. Any role that may see the repository.
+
+### `PUT /v1/repositories/{id}/upkeep`
+
+Owner. Request: `{"release_after_days": number, "stale_after_days": number, "close_after_days": number, "reason":
+string}`; each key is optional and stays as it is when left out. A number is from 0 (off) to 365; when both are on,
+`close_after_days` must be more than `stale_after_days`, else `422`. Answers the settings as they are now. Recorded as
+an `edit_upkeep` decision.
+
+### `GET /v1/projects/{id}/backlog`
+
+The project's backlog, or `null` when it has none: `{"project_id", "repository", "path", "pattern", "closed_marker",
+"cap", "difficulty_label", "lane_label"}`.
+
+### `PUT /v1/projects/{id}/backlog`
+
+Owner. Request: `{"repository": string, "path": string, "pattern": string, "closed_marker": string, "cap": number,
+"difficulty_label": string, "lane_label": string, "reason": string}`. A backlog that is new needs `repository` (the name
+of a repository of the project) and `path`; every other key has its default or, for a backlog that exists, stays as it
+is. `422` for a repository that is not the project's, a path outside the repository, a `cap` outside 1 to 100, a label
+that is longer than 50 characters or has a comma or a new line, or a `pattern` that is not a regular expression or has no
+group named `id`. Answers the backlog. Recorded as an `edit_backlog` decision.
+
+### `DELETE /v1/projects/{id}/backlog`
+
+Owner. Takes the project's backlog away; its issues stay. Request: `{"reason": string}`, optional. `404` when it has
+none. Answers `{}`. Recorded as a `remove_backlog` decision.
+
+### `POST /v1/projects/{id}/backlog/sync`
+
+Member. Request: `{"dry_run": bool}`, optional. Makes, updates and closes the issues of the backlog's items as
+[the factory](factory.md#the-backlog) says and answers the report: `{"project", "repository", "path", "dry_run",
+"items", "created": [{"id", "number", "title"}], "updated": [...], "labelled": [...], "closed": [...], "deferred":
+[id], "unchanged", "warnings": [string]}`. `404` for a project with no backlog and for a file that is not on the
+repository's default branch.
+
+### `POST /v1/digest`
+
+Owner. Request: `{"force": bool}`, optional. Makes today's digest now, after the stale handling, when the day has none,
+and answers its inbox item (kind `daily_digest`); answers `null` when the day had one already. With `force` the day's
+claim is dropped first, so a second item is made.
+
+### `POST /v1/digest/{id}/dismiss`
+
+Member. Resolves the open digest item `id` of the inbox once it is read. `404` for an item that is no open digest.
+Answers `{}`.
 
 ## Working with people on other servers
 

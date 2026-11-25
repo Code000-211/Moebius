@@ -32,6 +32,7 @@ const KEYS: &[Key] = &[
     key("token_file", "\"token\"", false),
     key("run_limit", "3", true),
     key("retro_at", "\"23:30\"", true),
+    key("digest_at", "\"07:00\"", true),
     key("rules_file", "\"rules.md\"", false),
     key("harness.mcp_env", "[]", false),
     key("harness.url", "", false),

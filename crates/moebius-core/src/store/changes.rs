@@ -323,6 +323,10 @@ impl Store {
             "UPDATE changes SET state = ?1 WHERE id = ?2",
             params![state, id],
         )?;
+        if state == "merged" {
+            // The digest reports it; failing to note it never fails the merge.
+            let _ = self.note_merge(id);
+        }
         Ok(())
     }
 }

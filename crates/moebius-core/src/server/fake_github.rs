@@ -60,6 +60,10 @@ pub(super) struct FakeGitHub {
     pub(super) unassign_fails: std::sync::atomic::AtomicBool,
     /// The states it was asked to give an issue (`open` or `closed`), as issue number and state.
     pub(super) state_writes: Mutex<Vec<(u64, String)>>,
+    /// The issues it was asked to open, as number, title and body; their numbers start where no issue of a test is.
+    pub(super) created: Mutex<Vec<(u64, String, String)>>,
+    /// Why it was asked to close an issue (`state_reason`), as issue number and reason.
+    pub(super) state_reasons: Mutex<Vec<(u64, String)>>,
     /// The reviews it was asked to write on pull request 7.
     pub(super) review_posts: Mutex<Vec<Value>>,
     /// What it does once, as it is asked for pull request 7 after that many reads: a person changing a setting while a merge is being made.
@@ -179,6 +183,8 @@ pub(super) async fn fake_github() -> (String, Arc<FakeGitHub>) {
         writers: Mutex::new(Vec::new()),
         assignable: std::sync::atomic::AtomicBool::new(true),
         label_writes: Mutex::new(Vec::new()),
+        created: Mutex::new(Vec::new()),
+        state_reasons: Mutex::new(Vec::new()),
         listed_pulls: Mutex::new(Vec::new()),
         threads: Mutex::new(Default::default()),
         posted: Mutex::new(Vec::new()),
@@ -271,6 +277,28 @@ pub(super) async fn fake_github() -> (String, Arc<FakeGitHub>) {
                     }
                     ([("etag", etag)], axum::Json(issues)).into_response()
                 },
+            )
+            .post(
+                |State(fake): State<Arc<FakeGitHub>>, axum::Json(body): axum::Json<Value>| async move {
+                    let title = body["title"].as_str().unwrap_or_default().to_string();
+                    let text = body["body"].as_str().unwrap_or_default().to_string();
+                    let number = {
+                        let mut created = fake.created.lock().unwrap();
+                        let number = 100 + created.len() as u64;
+                        created.push((number, title.clone(), text.clone()));
+                        number
+                    };
+                    let mut made = issue(number, "open", "leon", &text);
+                    made["title"] = json!(title);
+                    let issues = {
+                        let mut issues = fake.issues.lock().unwrap();
+                        issues.0.push('+');
+                        issues.1.push(made);
+                        issues.1.len()
+                    };
+                    let _ = issues;
+                    (StatusCode::CREATED, axum::Json(json!({ "number": number })))
+                },
             ),
         )
         .route(
@@ -283,6 +311,12 @@ pub(super) async fn fake_github() -> (String, Arc<FakeGitHub>) {
                         let state = state.to_string();
                         fake.edit_issue(number, |issue| issue["state"] = json!(state));
                         fake.state_writes.lock().unwrap().push((number, state));
+                    }
+                    if let Some(reason) = body["state_reason"].as_str() {
+                        fake.state_reasons
+                            .lock()
+                            .unwrap()
+                            .push((number, reason.to_string()));
                     }
                     axum::Json(issue(number, "closed", "leon", ""))
                 },

@@ -231,7 +231,12 @@ impl App {
     }
 
     /// Takes `login` off the issue on the forge and in the store, and resolves what was asked about it.
-    fn unassign_taken(&self, repository: &Repository, card: &Card, login: &str) -> Result<()> {
+    pub(in crate::app) fn unassign_taken(
+        &self,
+        repository: &Repository,
+        card: &Card,
+        login: &str,
+    ) -> Result<()> {
         self.forge(repository)?
             .unassign_issue(repository, card.number, login)?;
         let rest: Vec<String> = self

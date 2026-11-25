@@ -21,6 +21,7 @@ mod analytics;
 mod assignees;
 mod attempts;
 mod automations;
+mod backlog;
 mod board;
 mod card_repositories;
 mod cards;
@@ -33,6 +34,7 @@ mod commands;
 mod cycles;
 mod deletions;
 mod diffs;
+mod digest;
 mod intake;
 mod issues;
 mod jira;
@@ -55,12 +57,19 @@ mod runs;
 mod snapshot;
 mod stopping;
 mod taking;
+pub use backlog::{
+    BacklogEdit, BacklogView, Item as BacklogItem, SyncReport, Synced, issue_body, issue_title,
+    parse_items,
+};
 pub use commands::{Command, DONE_ASKED, command_in};
+pub use digest::DIGEST_ITEM;
 pub use reviews::{REVIEW_NOT_POSSIBLE, ROUND_LIMIT, ROUNDS_SPENT};
 pub use taking::{
     OpenRequest, WorkingWithOthers, closing_references, followed_branch, forge_title,
 };
+pub use upkeep::Upkept;
 mod templates;
+mod upkeep;
 mod view_filters;
 mod views;
 mod whereabouts;

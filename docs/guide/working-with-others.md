@@ -153,6 +153,12 @@ If the forge refuses the review, nothing is posted twice: the round fails and th
 approval cannot be merged, the card goes to **Ready to merge** with the reason in the Inbox, and the author's next `/done`
 for the same version tries the merge again. After a review that asked for changes the card says it waits for the author.
 
+## What the owner does not have to do
+
+Issues a helper took and never worked on, and pull requests nobody pushes to after a review asked for changes, are
+released, reminded about and closed by the server itself, and the owner reads one digest a day instead of watching the
+forge; see [Keeping the owner's work small](software-factory.md).
+
 ## How to try it
 
 Run two servers against one test repository, each with a different person and login. On the first, take an issue; the

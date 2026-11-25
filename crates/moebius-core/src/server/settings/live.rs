@@ -360,6 +360,7 @@ impl Live {
         running.round_limit = new.round_limit;
         running.day_tokens = new.day_tokens;
         running.retro_at = new.retro_at;
+        running.digest_at = new.digest_at;
         running.trial_window = new.trial_window;
         running.trial_token_factor = new.trial_token_factor;
         running.regression_size = new.regression_size;
@@ -939,6 +940,7 @@ mod tests {
         match name {
             "run_limit" => (json!(7), field!(run_limit)),
             "retro_at" => (json!("04:15"), field!(retro_at)),
+            "digest_at" => (json!("05:45"), field!(digest_at)),
             "trial_window.start" => (json!("01:10"), field!(trial_window.0)),
             "trial_window.end" => (json!("05:20"), field!(trial_window.1)),
             "trial.token_factor" => (json!(2.5), field!(trial_token_factor)),

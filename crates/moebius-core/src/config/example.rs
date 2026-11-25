@@ -19,6 +19,10 @@ run_limit = 3
 # When the daily Retro runs, as HH:MM in the server's local time.
 retro_at = "23:30"
 
+# When the daily digest for the owner is made, as HH:MM in the server's local time: one inbox item with what happened
+# since the last one.
+digest_at = "07:00"
+
 # Rules every run must follow, as Markdown with one section per rule (a heading `## name` and its text); relative paths
 # are inside this file's directory, and the web app edits the file. A project adds its own in repos/<repository name>/rules.md of
 # the harness configuration repository but cannot replace these. While the file does not exist, only the built-in rules apply. Not allowed together with

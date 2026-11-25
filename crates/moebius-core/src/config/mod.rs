@@ -190,6 +190,8 @@ pub struct Config {
     pub token_file: PathBuf,
     pub run_limit: u32,
     pub retro_at: TimeOfDay,
+    /// When the daily digest is made (see `app::digest`).
+    pub digest_at: TimeOfDay,
     pub trial_window: (TimeOfDay, TimeOfDay),
     /// How many times the tokens of a card's first code run a trial run may use (see `trial::verdict`).
     pub trial_token_factor: f64,
@@ -456,6 +458,7 @@ impl Config {
             token_file,
             run_limit,
             retro_at: TimeOfDay::parse("retro_at", raw.retro_at.as_deref().unwrap_or("23:30"))?,
+            digest_at: TimeOfDay::parse("digest_at", raw.digest_at.as_deref().unwrap_or("07:00"))?,
             trial_window: (
                 TimeOfDay::parse(
                     "trial_window.start",

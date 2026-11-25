@@ -57,6 +57,9 @@ Add `--json` to any command to read fields (`"$MOEBIUS" board --json`). For anyt
 | A grilling's issues made into cards | `"$MOEBIUS" grilling confirm <id>`; or `"$MOEBIUS" grilling dismiss <id>` |
 | A Retro proposal decided | `"$MOEBIUS" proposal merge <id>` or `"$MOEBIUS" proposal dismiss <id>` |
 | Recurring work on a schedule (an automation) | `"$MOEBIUS" automation save --name "..." --schedule "0 8 * * 1-5" --prompt "..." --agent <name> --repository <id>` (cron in the server's local time; `--harness` for the harness configuration, `--id <id>` to replace one, `--off` to keep it off), then `"$MOEBIUS" automation run <id>` to try it once |
+| A project's backlog file made into issues (one for each item that has none, at most the cap a sync; bodies that follow their items; closed items closed as not planned; a difficulty or "lane required" in an item becomes labels). Look first with `--dry-run` | `"$MOEBIUS" backlog show <project>`, `"$MOEBIUS" backlog set <project> --repository <name> --path <file>`, `"$MOEBIUS" backlog sync <project> --dry-run`, then `"$MOEBIUS" backlog sync <project>` |
+| When issues taken and not worked on are released, and followed pull requests nobody pushes to are reminded and closed (days, 0 is off) | `"$MOEBIUS" upkeep <repository>`, `"$MOEBIUS" upkeep <repository> --release-after-days 14 --stale-after-days 14 --close-after-days 30` |
+| Today's digest made now (the inbox item of what happened since the last one) | `"$MOEBIUS" digest` (`--force` for a second) |
 | An automation removed | `"$MOEBIUS" automation delete <id>` |
 | A chat with another agent | `"$MOEBIUS" chat start "<message>" --agent <name> --repository <id>` |
 | Another chat's work offered as a change, the chat going on | `"$MOEBIUS" chat offer <id> --reason "..."` (once its agent has answered) |

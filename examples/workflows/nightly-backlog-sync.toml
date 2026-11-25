@@ -1,0 +1,20 @@
+# Every night, make the issues of the project's backlog file: one for each item that has none, bodies that follow
+# their items, closed items closed as not planned. The project's backlog is set first (Project settings, Backlog, or
+# `moebius backlog set`). The call is made by the server to its own address, so `workflows.http_hosts` must hold
+# "127.0.0.1", and the secret `moebius-token` must hold the token of a member of the project.
+name = "nightly-backlog-sync"
+description = "Sync the project's backlog file into issues each night, a few at a time."
+
+[[trigger]]
+kind = "schedule"
+params = { cron = "30 2 * * *", inputs = { api_base = "http://127.0.0.1:7171", project = 1 } }
+
+[[nodes]]
+id = "sync"
+kind = "http"
+params = { method = "POST", url = "{{ trigger.inputs.api_base }}/v1/projects/{{ trigger.inputs.project }}/backlog/sync", body = { dry_run = false }, secret = "moebius-token" }
+
+[[edges]]
+from = "trigger"
+to = "sync"
+port = "out"

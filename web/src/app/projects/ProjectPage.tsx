@@ -33,6 +33,7 @@ import { FilesPanel } from "./FilesPanel";
 import { forgeTag, holdsRepository, logins, onForge } from "./model";
 import { PluginSettings } from "./PluginSettings";
 import { SettingsPanel } from "./SettingsPanel";
+import { StaleHandling } from "./StaleHandling";
 import { WorkingWithOthers } from "./WorkingWithOthers";
 
 export function ProjectPage() {
@@ -146,6 +147,7 @@ function RepositoryView({ repository, projectId }: { repository: Repository; pro
             repository={repository}
           />
         )}
+        {filesOf === null && onForge(repository) && <StaleHandling repository={repository.id} />}
         <PluginSettings repository={repository.id} />
         <FilesPanel repository={repository.id} />
         <SettingsPanel repository={repository.id} project={projectId} />

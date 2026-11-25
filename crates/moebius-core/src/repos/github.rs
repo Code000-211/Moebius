@@ -594,6 +594,22 @@ impl GitHub {
         .await
     }
 
+    /// Closes issue `number` in `github` as not planned.
+    pub async fn close_issue_not_planned(
+        &self,
+        github: &str,
+        number: i64,
+    ) -> Result<(), GitHubError> {
+        let request = json!({ "state": "closed", "state_reason": "not_planned" });
+        self.repository_do(
+            github,
+            Method::PATCH,
+            &format!("/issues/{number}"),
+            Some(&request),
+        )
+        .await
+    }
+
     /// Replaces the labels of issue `number` in `github`; GitHub makes the ones that do not exist.
     pub async fn set_issue_labels(
         &self,

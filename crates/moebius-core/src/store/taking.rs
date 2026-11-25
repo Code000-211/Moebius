@@ -95,11 +95,16 @@ impl Store {
 
     /// Records the logins the card's issue is assigned to on its forge. Says whether that changed anything.
     pub fn set_forge_assignees(&self, card_id: i64, logins: &[String]) -> Result<bool> {
+        let before = self.forge_assignees(card_id).unwrap_or_default();
         let text = serde_json::to_string(logins)?;
-        Ok(self.conn().execute(
+        let changed = self.conn().execute(
             "UPDATE cards SET forge_assignees = ?1 WHERE id = ?2 AND forge_assignees != ?1",
             params![text, card_id],
-        )? > 0)
+        )? > 0;
+        if changed {
+            self.note_assignees(card_id, &before, logins);
+        }
+        Ok(changed)
     }
 
     /// Records why the card's person could not be assigned on the forge, or that nothing is wrong any more.

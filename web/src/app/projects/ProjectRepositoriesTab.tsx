@@ -20,6 +20,7 @@ import { Button } from "../../ui/components/Button";
 import { useErrorToast } from "../../ui/lib/useErrorToast";
 import { Select } from "../../ui/page/Field";
 import { repositoryPath } from "../pages";
+import { BacklogSettings } from "./BacklogSettings";
 
 export function ProjectRepositoriesTab({
   project,
@@ -137,6 +138,7 @@ export function ProjectRepositoriesTab({
           </Button>
         </div>
       )}
+      {project.repositories.length > 0 && <BacklogSettings project={project} canEdit={canEdit} />}
     </div>
   );
 }

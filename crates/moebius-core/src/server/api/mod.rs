@@ -19,6 +19,7 @@
 //! - `views`: saved filters with a layout and a sort, for a person or for everyone, and the cards each shows.
 //! - `jira`: importing a Jira project into a project, again and again.
 //! - `milestones`: goals of the organisation with a target date, holding cards of any projects, with their progress.
+//! - `factory`: the stale settings of a repository, a project's backlog and its sync, and the daily digest.
 //! - `projects`: the projects, each with a key, a board and its repositories; making and renaming one, and the column
 //!   scripts of its board.
 //! - `runs`: a run and its events, steering and stopping it.
@@ -68,6 +69,7 @@ mod cards;
 mod chats;
 mod cycles;
 mod events;
+mod factory;
 pub(crate) use events::seen as event_is_seen;
 mod extensions;
 mod favourites;
@@ -262,6 +264,7 @@ pub fn router(state: ApiState) -> Router {
         .merge(kinds::routes())
         .merge(repositories::routes())
         .merge(projects::routes())
+        .merge(factory::routes())
         .merge(wiki::routes())
         .merge(intake::routes())
         .merge(templates::routes())

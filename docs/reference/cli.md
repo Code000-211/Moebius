@@ -227,6 +227,12 @@ issues (`--parent`, `--blocked-by`, `blocker`) stay the numbers of their issues 
 | `plugin disable <name> [--unwrap-runs] [--allow-unchecked]` | `PUT /v1/plugins/{plugin}/enabled` | `<name> is off now` (or `was off already`), and a second line saying runs now start unwrapped when it was the last launcher that was on. That needs `--unwrap-runs`, else it is refused; turning off a launcher that leaves some agents wrapped and others not is refused with the agents named. Its entry and settings stay. Turning off `guard` lets tool calls through unchecked, so it needs `--allow-unchecked`, else it is refused, and a second line then says tool calls are no longer checked. A person only. |
 | `repos` | `GET /v1/snapshot` | Table `id name forge default_branch github project`. |
 | `repo add <name> <url> [--github <owner/repo> \| --gitlab <group/project> \| --forgejo <owner/repo>] [--trusted <login>]...` | `POST /v1/repositories` | The repository. `--github` selects the GitHub forge, `--gitlab` the GitLab forge with the project's path, `--forgejo` the Forgejo forge (Codeberg, Gitea) with the repository there. Without it, an absolute path that does not exist, or an empty folder, becomes a new repository. |
+| `backlog show <project>` | `GET /v1/projects/{id}/backlog` | The project's backlog as lines, or `null` when it has none. `<project>` is a name or an id. |
+| `backlog set <project> [--repository <name>] [--path <file>] [--pattern <regex>] [--closed-marker <text>] [--cap <n>] [--difficulty-label <text>] [--lane-label <text>] [--reason <why>]` | `PUT /v1/projects/{id}/backlog` | The backlog. A new one needs `--repository` and `--path`. See [the factory](factory.md#the-backlog). |
+| `backlog sync <project> [--dry-run]` | `POST /v1/projects/{id}/backlog/sync` | What the sync did: a line each for the issues it created, updated, labelled and closed as not planned, the items waiting for the cap, the number unchanged and the warnings. |
+| `backlog remove <project> [--reason <why>]` | `DELETE /v1/projects/{id}/backlog` | `The backlog is taken away; its issues stay.` |
+| `upkeep <repository> [--release-after-days <n>] [--stale-after-days <n>] [--close-after-days <n>]` | `GET` or, with an option, `PUT /v1/repositories/{id}/upkeep` | The stale settings of the repository, in days; 0 is off. |
+| `digest [--force]` | `POST /v1/digest` | The title and text of today's digest, made now; `Today's digest was made already; use --force to make it again.` when it was. |
 | `repo remove <id> [--reason <why>]` | `DELETE /v1/repositories/{id}` | The repository, as it last was. Removes it with its cards, changes and chats, and deletes its clone; `409` while one of its runs is still going. |
 | `issue create <repository> <title> [--body <text>] [--parent <n>] [--label <label>]... [--blocked-by <n>]...` | `POST /v1/repositories/{id}/issues` | The card, and `warnings` when a step after the issue was created failed. `--parent` and `--blocked-by` are issue numbers of the repository, checked before the issue is created. |
 | `issue list <repository> [--parent <n>] [--label <label>] [--state open\|closed] [--claimed \| --unclaimed] [--blocked \| --unblocked]` | `GET /v1/repositories/{id}/issues` | Table `id number state title labels claimed_by blocked_by`. `--blocked` keeps the issues an issue that is not done blocks. The frontier of a map is `--parent <map> --state open --unblocked --unclaimed`. |
@@ -296,6 +302,7 @@ a column script with `moebius.ask`) takes none (use `api`).
 | `takeover` | `merge`, `dismiss` | `POST /v1/takeovers/{data.takeover}/merge`, `/dismiss` |
 | `grilling_issues` | `confirm` (the proposed issues as they are), `dismiss` | `POST /v1/grillings/{data.grilling}/confirm`, `/dismiss` |
 | `grilling_report` | `dismiss` | `POST /v1/grillings/{data.grilling}/dismiss` |
+| `daily_digest` | `dismiss` | `POST /v1/digest/{item}/dismiss` |
 
 An item of the kind `extension_update` (`data.package`, `data.from`, `data.to`, `data.source`) takes no action: `ext update <data.package>` proposes the update, which resolves the item.
 

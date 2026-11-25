@@ -14,6 +14,7 @@ import { type WebSocket, WebSocketServer } from "ws";
 import { type BoardFake, createBoardFake } from "./fake/board";
 import { createFakeChat, type FakeChat } from "./fake/chat";
 import { type CyclesFake, createCyclesFake } from "./fake/cycles";
+import { createFactoryFake, type FactoryFake } from "./fake/factory";
 import { createKindsFake, type KindsFake } from "./fake/kinds";
 import { createMilestonesFake, type MilestonesFake } from "./fake/milestones";
 import { createPackagesFake, type PackagesFake } from "./fake/packages";
@@ -83,6 +84,8 @@ export interface FakeServer {
   cycles: CyclesFake;
   /** The milestones and a card's milestones (e2e/fake/milestones.ts). */
   milestones: MilestonesFake;
+  /** A repository's stale settings and a project's backlog (e2e/fake/factory.ts). */
+  factory: FactoryFake;
   /** The saved views (e2e/fake/views.ts). */
   views: ViewsFake;
   /** The Inbox, Projects, Fleet, Usage, Get started and Settings routes (e2e/fake/pages-a.ts). */
@@ -190,6 +193,7 @@ export async function startFakeServer(): Promise<FakeServer> {
   const pagesA = createPagesAFake(broadcast, board);
   const cycles = createCyclesFake(broadcast);
   const milestones = createMilestonesFake(broadcast);
+  const factory = createFactoryFake();
   const views = createViewsFake();
   const pagesB = createPagesBFake();
   const pagesC = createPagesCFake(broadcast);
@@ -376,6 +380,7 @@ export async function startFakeServer(): Promise<FakeServer> {
     // Answers only once a test of its pages has called use(), so the Settings page's fake keeps /v1/settings otherwise.
     if (await cycles.handle(request, response, path)) return;
     if (await milestones.handle(request, response, path)) return;
+    if (await factory.handle(request, response, path)) return;
     if (await views.handle(request, response, path)) return;
     if (await packages.handle(request, response, path)) return;
     if (await pagesB.handle(request, response, path)) return;
@@ -479,6 +484,7 @@ export async function startFakeServer(): Promise<FakeServer> {
     runs,
     cycles,
     milestones,
+    factory,
     views,
     pagesA,
     pagesB,

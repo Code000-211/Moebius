@@ -32,6 +32,7 @@ mod commands;
 mod cycles;
 mod deletions;
 mod events;
+mod factory;
 mod favourites;
 mod found;
 mod grillings;
@@ -87,6 +88,11 @@ pub use commands::DEFAULT_COMMAND_LIMIT;
 pub use cycles::{Cycle, CycleCard};
 pub use deletions::{ChatRemoved, ResearchRemoved};
 pub use events::Event;
+pub use factory::{
+    Activity, Backlog, DEFAULT_BACKLOG_CAP, DEFAULT_BACKLOG_PATTERN, DEFAULT_CLOSE_AFTER_DAYS,
+    DEFAULT_CLOSED_MARKER, DEFAULT_DIFFICULTY_LABEL, DEFAULT_LANE_LABEL,
+    DEFAULT_RELEASE_AFTER_DAYS, DEFAULT_STALE_AFTER_DAYS, DigestDay, Upkeep,
+};
 pub use favourites::{PLACE_KINDS, Place, RECENT_LIMIT};
 pub use found::Found;
 pub use grillings::{Grilling, GrillingIssue};
@@ -536,6 +542,7 @@ UPDATE cards SET moved_at = COALESCE((SELECT MAX(at) FROM card_moves WHERE card_
     commands::SCHEMA,
     reviews::SCHEMA,
     column_classes::SCHEMA,
+    factory::SCHEMA,
 ];
 
 #[cfg(test)]

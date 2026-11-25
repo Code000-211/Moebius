@@ -1,5 +1,6 @@
 /** What a person can do with an item of the inbox, and the request each is. The words are what the item says while the request is on its way. */
 import { answerDone, approve, type DoneAnswer, merge, reject, retry } from "../../api/calls/board";
+import { dismissDigest } from "../../api/calls/factory";
 import {
   confirmGrilling,
   dismissGrilling,
@@ -24,7 +25,8 @@ export type Action =
   | { kind: "mergeWikiProposal"; item: number }
   | { kind: "dismissWikiProposal"; item: number }
   | { kind: "confirmGrilling"; grilling: number; issues: GrillingIssue[] }
-  | { kind: "dismissGrilling"; grilling: number };
+  | { kind: "dismissGrilling"; grilling: number }
+  | { kind: "dismissDigest"; item: number };
 
 const WORKING: Record<Action["kind"], string> = {
   merge: "Merging…",
@@ -40,6 +42,7 @@ const WORKING: Record<Action["kind"], string> = {
   dismissWikiProposal: "Dismissing…",
   confirmGrilling: "Making the cards…",
   dismissGrilling: "Dismissing…",
+  dismissDigest: "Dismissing…",
 };
 
 /** What the item says while the action's request is on its way. */
@@ -78,5 +81,7 @@ export async function perform(action: Action): Promise<void> {
       return confirmGrilling(action.grilling, action.issues);
     case "dismissGrilling":
       return dismissGrilling(action.grilling);
+    case "dismissDigest":
+      return dismissDigest(action.item);
   }
 }

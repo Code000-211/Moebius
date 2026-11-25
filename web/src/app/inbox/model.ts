@@ -25,6 +25,8 @@ export const TAKEOVER = "takeover";
 export const WIKI_PROPOSAL = "wiki_proposal";
 export const GRILLING_ISSUES = "grilling_issues";
 export const GRILLING_REPORT = "grilling_report";
+/** The owner's digest of what happened since the last one (ADR 0031): no card, dismissed when read. */
+export const DAILY_DIGEST = "daily_digest";
 
 /** The branch of a change that offers the work of a chat is `moebius/chat-<id>`. */
 const CHAT_BRANCH = "moebius/chat-";
@@ -153,6 +155,8 @@ export function kindTag(item: InboxItem): { label: string; mark: StateMark } {
       return { label: "Issues from a grilling", mark: "none" };
     case GRILLING_REPORT:
       return { label: "Report from a grilling", mark: "none" };
+    case DAILY_DIGEST:
+      return { label: "Daily digest", mark: "none" };
     default:
       return { label: sentence(item.kind), mark: "none" };
   }
@@ -225,6 +229,8 @@ export function why(item: InboxItem, about: Found, changes?: string): string | n
       return "The Grilling partner ended in these issues. Edit them, remove what you do not want, and confirm to make a card of each.";
     case GRILLING_REPORT:
       return "The Grilling partner ended in a research report. Read it, then dismiss it.";
+    case DAILY_DIGEST:
+      return "What happened since the last digest, repository by repository, and what needs you. Dismiss it when you have read it.";
     default:
       return reason || null;
   }
@@ -245,7 +251,7 @@ export function meta(item: InboxItem, about: Found): string {
       parts.push(`by ${about.card.author}`);
   } else if (grillingOf(item) !== null) {
     parts.push("Grilling");
-  } else if (item.card_id === null && item.kind !== PROPOSAL) {
+  } else if (item.card_id === null && item.kind !== PROPOSAL && item.kind !== DAILY_DIGEST) {
     parts.push("chat");
   }
   if (about.change?.harness_repository) parts.unshift("Harness configuration");

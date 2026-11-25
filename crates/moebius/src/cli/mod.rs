@@ -20,6 +20,7 @@ mod board;
 mod chats;
 mod client;
 mod ext;
+mod factory;
 mod improve;
 pub mod login;
 mod packages;
@@ -47,6 +48,7 @@ use chats::{ChatCommand, GrillingCommand};
 use client::Request;
 pub use client::{Client, Connection, connect, settings_path};
 use ext::ExtCommand;
+use factory::BacklogCommand;
 use improve::{ProposalCommand, ResearchCommand, RetroCommand, TakeoverCommand};
 use packages::PkgCommand;
 use plugins::PluginCommand;
@@ -157,6 +159,31 @@ pub enum Operate {
         #[command(subcommand)]
         command: PluginCommand,
     },
+    /// A project's backlog file, and the sync that makes issues of its items.
+    Backlog {
+        #[command(subcommand)]
+        command: BacklogCommand,
+    },
+    /// When stale issues and pull requests of a repository are handled: how many days an issue taken without a pull
+    /// request is released after, and a followed pull request is reminded and closed after; with an option, changes it.
+    Upkeep {
+        /// The repository, as `repos` shows it.
+        repository: i64,
+        /// Days after which an issue taken without a followed pull request is released; 0 is off.
+        #[arg(long)]
+        release_after_days: Option<i64>,
+        /// Days without a push, after a review asked for changes, after which the author is reminded; 0 is off.
+        #[arg(long)]
+        stale_after_days: Option<i64>,
+        /// Days without a push after which the pull request is closed; 0 is off.
+        #[arg(long)]
+        close_after_days: Option<i64>,
+    },
+    /// Make today's digest now, when it has none yet; `--force` makes it again.
+    Digest {
+        #[arg(long)]
+        force: bool,
+    },
     /// The repositories.
     Repos,
     /// Add a repository.
@@ -264,6 +291,19 @@ impl Operate {
             Pkg { command } => packages::pkg(command, get),
             Plugin { command } => plugins::plugin(command),
             Ext { command } => ext::ext(command),
+            Backlog { command } => factory::backlog(command, get),
+            Upkeep {
+                repository,
+                release_after_days,
+                stale_after_days,
+                close_after_days,
+            } => factory::upkeep(
+                *repository,
+                *release_after_days,
+                *stale_after_days,
+                *close_after_days,
+            ),
+            Digest { force } => factory::digest(*force),
             Repos => repos::repos(),
             Repo { command } => repos::repo(command),
             Settings { command } => setup::settings(command.as_ref()),
@@ -306,6 +346,10 @@ pub enum Show {
     Packages,
     /// The answer of turning a plugin off or on.
     Plugin,
+    /// What a backlog sync did.
+    Sync,
+    /// An inbox item that is a digest, or null.
+    Digest,
     /// A change offered for a Pi package, or the changes of an update.
     Offered,
     Settings,
@@ -351,6 +395,7 @@ pub fn render(show: &Show, text: &str) -> Result<String, String> {
     Ok(match show {
         Show::Raw => unreachable!("handled above"),
         Show::Done(sentence) => sentence.clone(),
+        Show::Digest => factory::show_digest(&value),
         _ if value.is_null() => "done".into(),
         Show::Board(filter) => board::show_board(&value, filter.as_deref())?,
         Show::Card(id) => board::show_card(&value, *id)?,
@@ -363,6 +408,7 @@ pub fn render(show: &Show, text: &str) -> Result<String, String> {
         Show::Wiki => wiki::show_page(&value),
         Show::Packages => packages::show_packages(&value),
         Show::Plugin => plugins::show_plugin(&value),
+        Show::Sync => factory::show_sync(&value),
         Show::Offered => ext::show_offered(&value),
         Show::Settings => setup::show_settings(&value),
         Show::Retro => improve::show_retro(&value),
