@@ -120,12 +120,29 @@ enum Command {
     Operate(cli::Operate),
 }
 
+/// The stack the command line runs on. The main thread of a Windows program has 1 MB, which an unoptimised build of the
+/// argument parser and the command dispatch (a large enum of commands, each with its own options) can overflow; a
+/// thread of our own has the size we ask for, on every platform, so the commands never depend on the platform's default.
+const STACK: usize = 16 * 1024 * 1024;
+
 fn main() -> ExitCode {
-    let cli = Cli::parse();
-    match run(cli) {
-        Ok(()) => ExitCode::SUCCESS,
-        Err(message) => {
-            eprintln!("moebius: {message}");
+    let thread = std::thread::Builder::new()
+        .name("moebius".into())
+        .stack_size(STACK)
+        .spawn(|| {
+            let cli = Cli::parse();
+            match run(cli) {
+                Ok(()) => ExitCode::SUCCESS,
+                Err(message) => {
+                    eprintln!("moebius: {message}");
+                    ExitCode::FAILURE
+                }
+            }
+        });
+    match thread.map(std::thread::JoinHandle::join) {
+        Ok(Ok(code)) => code,
+        _ => {
+            eprintln!("moebius: could not run the command");
             ExitCode::FAILURE
         }
     }
