@@ -80,6 +80,8 @@ pub(super) struct FakeGitHub {
     pub(super) fail_merges: std::sync::atomic::AtomicBool,
     /// Whether it answers a change of an issue's state (closing a pull request, say) with a server error.
     pub(super) fail_state_writes: std::sync::atomic::AtomicBool,
+    /// Whether it answers a new comment on an issue with a server error.
+    pub(super) fail_comment_writes: std::sync::atomic::AtomicBool,
     /// Whether it refuses a review that approves or asks for changes (422), as GitHub does when the reviewer opened the
     /// pull request; a review that only comments is taken.
     pub(super) refuse_verdicts: std::sync::atomic::AtomicBool,
@@ -209,6 +211,7 @@ pub(super) async fn fake_github() -> (String, Arc<FakeGitHub>) {
         label_removes: Mutex::new(Vec::new()),
         labels_made: Mutex::new(Vec::new()),
         fail_state_writes: std::sync::atomic::AtomicBool::new(false),
+        fail_comment_writes: std::sync::atomic::AtomicBool::new(false),
         created: Mutex::new(Vec::new()),
         state_reasons: Mutex::new(Vec::new()),
         listed_pulls: Mutex::new(Vec::new()),
@@ -370,6 +373,12 @@ pub(super) async fn fake_github() -> (String, Arc<FakeGitHub>) {
                 |State(fake): State<Arc<FakeGitHub>>,
                  UrlPath(number): UrlPath<u64>,
                  axum::Json(body): axum::Json<Value>| async move {
+                    if fake
+                        .fail_comment_writes
+                        .load(std::sync::atomic::Ordering::SeqCst)
+                    {
+                        return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+                    }
                     let text = body["body"].as_str().unwrap_or_default().to_string();
                     let threaded = fake.threads.lock().unwrap().contains_key(&number);
                     let counted = {
@@ -382,7 +391,7 @@ pub(super) async fn fake_github() -> (String, Arc<FakeGitHub>) {
                     } else {
                         counted
                     };
-                    (StatusCode::CREATED, axum::Json(json!({ "id": id })))
+                    (StatusCode::CREATED, axum::Json(json!({ "id": id }))).into_response()
                 },
             ),
         )

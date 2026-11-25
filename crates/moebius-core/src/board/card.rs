@@ -57,7 +57,8 @@ use crate::store::{Card, Change, Run};
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Review {
     pub verdict: &'static str,
-    /// How many blocking findings `findings` holds; 0 for a review that is not along two axes.
+    /// How many findings `findings` holds: the blocking findings of a review along two axes, the comments on lines of a review
+    /// of a pull request someone else opened, and 0 for any other review.
     pub count: usize,
     pub findings: String,
     /// The judgement calls of a two-axis review, for the person who gets the change; empty for another review.
@@ -468,6 +469,17 @@ mod tests {
             verdict(Some("Fine.\nVERDICT: approve_code"), false).verdict,
             "changes"
         );
+    }
+
+    #[test]
+    fn the_count_of_a_review_of_someone_elses_pull_request_is_its_comments_on_lines() {
+        let two = "```json\n{\"verdict\": \"changes\", \"summary\": \"s\", \"comments\": [\
+            {\"path\": \"a.rs\", \"line\": 1, \"body\": \"x\"}, {\"path\": \"b.rs\", \"line\": 2, \"body\": \"y\"}]}\n```\n";
+        assert_eq!(verdict(Some(two), true).count, 2);
+        let none = "```json\n{\"verdict\": \"approve\", \"summary\": \"fine\"}\n```\n";
+        assert_eq!(verdict(Some(none), true).count, 0);
+        // A review of Moebius's own change that is not along two axes counts nothing.
+        assert_eq!(verdict(Some("Bad.\nVERDICT: changes"), false).count, 0);
     }
 
     #[test]

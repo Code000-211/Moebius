@@ -1188,6 +1188,39 @@ async fn the_link_on_the_issue_is_written_when_answers_are_on_and_retried_until_
 }
 
 #[tokio::test(flavor = "multi_thread")]
+async fn a_link_that_could_not_be_written_is_claimed_for_nothing_and_written_at_the_next_tick() {
+    let f = Fixture::new().await;
+    f.answers_on();
+    let card = f.card_in_review().await;
+    f.coder_says(&card, "### What the change does\nAdds it.");
+    f.fake
+        .fail_comment_writes
+        .store(true, std::sync::atomic::Ordering::SeqCst);
+    let engine = f.reviewing_engine();
+    f.tick(&engine, &card).await;
+    assert_eq!(f.fake.pulls.lock().unwrap().opened.len(), 1);
+    assert!(f.on_the_issue().is_empty(), "the write failed");
+    let change = f.own_change(&card);
+    assert!(
+        !f.server
+            .app
+            .store
+            .has_forge_post(change.id, "link", "7")
+            .unwrap(),
+        "nothing is claimed for a write that failed"
+    );
+    // The forge answers again: the next ticks write it, once.
+    f.fake
+        .fail_comment_writes
+        .store(false, std::sync::atomic::Ordering::SeqCst);
+    f.tick(&engine, &card).await;
+    f.tick(&engine, &card).await;
+    let told = f.on_the_issue();
+    assert_eq!(told.len(), 1, "{told:?}");
+    assert_eq!(Reply::parse(&told[0]).unwrap().1["Detail"], "#7");
+}
+
+#[tokio::test(flavor = "multi_thread")]
 async fn the_reviewer_is_given_the_authors_claims_fenced_and_only_the_answer_to_its_last_review() {
     let (f, card) = reported().await;
     let engine = f.reviewing_engine();
