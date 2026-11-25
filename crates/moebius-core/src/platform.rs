@@ -176,6 +176,30 @@ pub fn owner_only(options: &mut OpenOptions) -> &mut OpenOptions {
     }
 }
 
+/// Whether the paths `a` and `b`, which exist, are on the same disk: the same device on Linux, the same volume on Windows.
+/// None when either cannot be read.
+pub fn same_device(a: &Path, b: &Path) -> Option<bool> {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::MetadataExt;
+        Some(std::fs::metadata(a).ok()?.dev() == std::fs::metadata(b).ok()?.dev())
+    }
+    #[cfg(windows)]
+    {
+        let volume = |path: &Path| {
+            std::fs::canonicalize(path)
+                .ok()
+                .and_then(|p| match p.components().next() {
+                    Some(std::path::Component::Prefix(prefix)) => {
+                        Some(prefix.as_os_str().to_ascii_lowercase())
+                    }
+                    _ => None,
+                })
+        };
+        Some(volume(a)? == volume(b)?)
+    }
+}
+
 /// Lets the owner run the existing file `path`, which a downloaded program needs.
 pub fn make_executable(path: &Path) -> std::io::Result<()> {
     #[cfg(unix)]

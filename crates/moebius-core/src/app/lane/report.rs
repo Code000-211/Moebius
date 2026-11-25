@@ -295,6 +295,7 @@ mod tests {
             timeout_seconds: 600,
             memory: "16g".into(),
             cpus: None,
+            shared_disk: false,
             disk: "20g".into(),
             gpus: Some("2x MI300X".into()),
             power_cap: Some("750 W".into()),

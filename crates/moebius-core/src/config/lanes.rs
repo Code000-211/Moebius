@@ -99,6 +99,10 @@ pub struct LaneConfig {
     /// How many processors a container may use (`8`, `2.5`); without it, all of them.
     #[serde(default)]
     pub cpus: Option<String>,
+    /// Lets a lane that is the server itself keep its directory on the disk of the data directory. Without it that is
+    /// refused: a job that fills the disk would stop the server's store. For a machine with one disk, whose owner accepts it.
+    #[serde(default)]
+    pub shared_disk: bool,
     /// The largest file a command of a job may write (`ulimit -f` of the container), and the free space the lane's
     /// directory must have for a job to start (`50g`, `1t`; a number of bytes).
     #[serde(default = "default_disk")]
@@ -161,6 +165,60 @@ pub fn parse_size(text: &str) -> Option<u64> {
         .ok()
         .and_then(|n| n.checked_mul(unit))
         .filter(|bytes| *bytes > 0)
+}
+
+/// The path as it is on the machine now: the part that exists made canonical (links followed), the rest as it is.
+fn canonical(path: &std::path::Path) -> std::path::PathBuf {
+    let mut rest = Vec::new();
+    let mut at = path;
+    loop {
+        if let Ok(found) = std::fs::canonicalize(at) {
+            return rest.iter().rev().fold(found, |p, part| p.join(part));
+        }
+        match (at.parent(), at.file_name()) {
+            (Some(parent), Some(name)) => {
+                rest.push(name.to_owned());
+                at = parent;
+            }
+            _ => return path.to_path_buf(),
+        }
+    }
+}
+
+/// What is wrong with the directory of a lane that is the server itself, or none: it is inside the data directory
+/// (links followed, so a link does not hide it), or, with `disks`, it is on the same disk as the data directory, where a
+/// job that fills it would stop the store. A lane on a runner is the runner's machine's, not this one's.
+pub fn work_dir_problem(
+    lane: &LaneConfig,
+    data_dir: &std::path::Path,
+    disks: bool,
+) -> Option<String> {
+    if lane.runner.is_some() {
+        return None;
+    }
+    let work = canonical(std::path::Path::new(lane.work_dir.as_deref()?));
+    let data = canonical(data_dir);
+    if work.starts_with(&data) {
+        return Some(
+            "work_dir must be outside the data directory: a job that fills the disk would stop the store".into(),
+        );
+    }
+    if disks && !lane.shared_disk {
+        let near = |path: &std::path::Path| {
+            path.ancestors()
+                .find(|p| p.exists())
+                .map(std::path::Path::to_path_buf)
+        };
+        if let (Some(work), Some(data)) = (near(&work), near(&data))
+            && crate::platform::same_device(&work, &data) == Some(true)
+        {
+            return Some(format!(
+                "work_dir is on the same disk as the data directory ({}): a job that fills it would stop the store; put it on a disk of its own, or set shared_disk = true on a machine with one disk",
+                data_dir.display()
+            ));
+        }
+    }
+    None
 }
 
 impl LaneConfig {
@@ -252,10 +310,10 @@ pub(super) fn lanes(
                     "is the server itself, so it needs a work_dir, on a disk a full job cannot hurt the server with",
                 ));
             }
-            (None, Some(dir)) if std::path::Path::new(dir).starts_with(data_dir) => {
-                return Err(bad(
-                    "work_dir must be outside the data directory: a job that fills the disk would stop the store",
-                ));
+            (None, Some(_)) => {
+                if let Some(why) = work_dir_problem(lane, data_dir, false) {
+                    return Err(bad(&why));
+                }
             }
             _ => {}
         }
@@ -392,5 +450,61 @@ mod tests {
         for text in ["", "0", "g", "-1g", "1.5g", "lots"] {
             assert_eq!(parse_size(text), None, "{text}");
         }
+    }
+}
+
+#[cfg(all(test, unix))] // makes links and reads the devices of directories
+mod disk_tests {
+    use super::*;
+
+    fn lane(work_dir: &std::path::Path) -> LaneConfig {
+        LaneConfig {
+            name: "here".into(),
+            runner: None,
+            work_dir: Some(work_dir.to_string_lossy().into_owned()),
+            isolation: Isolation::Off,
+            runtime: "podman".into(),
+            image: None,
+            devices: vec![],
+            groups: vec![],
+            user: "65534:65534".into(),
+            timeout_seconds: 600,
+            memory: "16g".into(),
+            cpus: None,
+            shared_disk: false,
+            disk: "20g".into(),
+            gpus: None,
+            power_cap: None,
+            rocm: None,
+            driver: None,
+        }
+    }
+
+    #[test]
+    fn a_sibling_directory_on_the_same_disk_is_refused_unless_the_owner_says_it_is_one_disk() {
+        let dir = tempfile::tempdir().unwrap();
+        let data = dir.path().join("data");
+        std::fs::create_dir_all(&data).unwrap();
+        let sibling = dir.path().join("lanes");
+        let mut lane = lane(&sibling);
+        // Not under the data directory, so the config is fine; the disks are looked at when the server starts and per job.
+        assert_eq!(work_dir_problem(&lane, &data, false), None);
+        let why = work_dir_problem(&lane, &data, true).expect("the same disk");
+        assert!(why.contains("same disk"), "{why}");
+        lane.shared_disk = true;
+        assert_eq!(work_dir_problem(&lane, &data, true), None);
+    }
+
+    #[test]
+    fn a_link_into_the_data_directory_does_not_hide_it() {
+        let dir = tempfile::tempdir().unwrap();
+        let data = dir.path().join("data");
+        std::fs::create_dir_all(data.join("inner")).unwrap();
+        let link = dir.path().join("link");
+        std::os::unix::fs::symlink(data.join("inner"), &link).unwrap();
+        let why = work_dir_problem(&lane(&link.join("jobs")), &data, false).expect("inside");
+        assert!(why.contains("outside the data directory"), "{why}");
+        // A directory that is not there yet is looked at by where it will be.
+        assert!(work_dir_problem(&lane(&data.join("lanes/x")), &data, false).is_some());
     }
 }

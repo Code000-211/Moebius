@@ -212,8 +212,8 @@ pub(super) fn sees_inbox_item(app: &App, sight: &Sight, item: &InboxItem) -> Res
 }
 
 /// The lists of a digest's section that name a card.
-const DIGEST_LISTS: [&str; 8] = [
-    "merged", "refused", "reverts", "rounds", "taken", "released", "upkeep", "frozen",
+const DIGEST_LISTS: [&str; 9] = [
+    "merged", "refused", "reverts", "rounds", "taken", "released", "upkeep", "frozen", "lane",
 ];
 
 /// A digest as `sight` may read it (ADR 0032): the sections of the repositories it sees, in them only the lines about

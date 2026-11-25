@@ -161,10 +161,32 @@ impl App {
             .chain(owners)
             .chain(harness.iter().map(String::as_str))
             .chain(brief.iter().map(String::as_str));
-        files.iter().find_map(|file| {
+        let hit = files.iter().find_map(|file| {
             paths::locked_by(locked.clone(), file)
                 .map(|pattern| (file.clone(), pattern.to_string()))
+        });
+        // A file at the place of a directory above a harness path (a link `ci` for `ci/bench`) is a change of the harness too.
+        hit.or_else(|| {
+            files.iter().find_map(|file| {
+                harness
+                    .iter()
+                    .find(|pattern| {
+                        let path = pattern.trim_matches('/');
+                        path.starts_with(&format!("{}/", file.trim_matches('/')))
+                    })
+                    .map(|pattern| (file.clone(), pattern.clone()))
+            })
         })
+    }
+
+    /// [`App::locked_hit`], for the tests of other modules (which need a Unix program to run).
+    #[cfg(all(test, unix))]
+    pub(crate) fn locked_hit_for_test(
+        repository: &Repository,
+        files: &[String],
+        harness: &[String],
+    ) -> Option<(String, String)> {
+        Self::locked_hit(repository, files, harness)
     }
 
     /// Whether a measurement is accepted for the change's current head.

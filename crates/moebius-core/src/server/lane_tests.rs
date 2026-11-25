@@ -68,6 +68,7 @@ fn lane_config(isolation: Isolation, runtime: &str) -> LaneConfig {
         timeout_seconds: 120,
         memory: "16g".into(),
         cpus: None,
+        shared_disk: false,
         disk: "1m".into(),
         gpus: Some("2x MI300X".into()),
         power_cap: Some("750 W".into()),
@@ -196,7 +197,10 @@ impl Lane {
         self.container_calls()
             .into_iter()
             .filter(|c| {
-                c.first().map(String::as_str) == Some("run") && c.iter().any(|a| a == "--name")
+                c.first().map(String::as_str) == Some("run")
+                    && c.iter().any(|a| a == "--name")
+                    // Not the probe of the limits, nor the cleanup.
+                    && !c.iter().any(|a| a.ends_with("-probe") || a.contains("-clean-"))
             })
             .collect()
     }
@@ -1254,7 +1258,13 @@ fn pull_writes(f: &Fixture, files: &[(&str, &str)]) -> String {
     let work = f._dir.path().join("pull-work");
     for (path, text) in files {
         std::fs::create_dir_all(work.join(path).parent().unwrap()).unwrap();
-        std::fs::write(work.join(path), text).unwrap();
+        // `->target` makes the path a link to `target`, in place of what was there.
+        if let Some(target) = text.strip_prefix("->") {
+            let _ = std::fs::remove_dir_all(work.join(path));
+            std::os::unix::fs::symlink(target, work.join(path)).unwrap();
+        } else {
+            std::fs::write(work.join(path), text).unwrap();
+        }
     }
     git(&work, &["add", "-A"]).unwrap();
     git(
@@ -1561,9 +1571,11 @@ async fn a_merge_base_that_runs_out_of_the_jobs_total_time_is_the_lanes() {
         "{}",
         job.summary
     );
+    // A pull request of someone else's that ran out of the time through the lane's fault is not counted towards pausing it.
+    assert_eq!(job.failed_step.as_deref(), Some("total time"));
     assert_eq!(
         lane.app().store.lane_infrastructure_streak("gpu1").unwrap(),
-        1
+        0
     );
     // The change is not blamed: no reply, and the card stays where it was.
     assert!(lane.replies_on_the_pull_request().is_empty());
@@ -1781,7 +1793,13 @@ fn commit_files(f: &Fixture, parent: &str, files: &[(&str, &str)]) -> String {
     git(&work, &["checkout", "--quiet", "--detach", parent]).unwrap();
     for (path, text) in files {
         std::fs::create_dir_all(work.join(path).parent().unwrap()).unwrap();
-        std::fs::write(work.join(path), text).unwrap();
+        // `->target` makes the path a link to `target`, in place of what was there.
+        if let Some(target) = text.strip_prefix("->") {
+            let _ = std::fs::remove_dir_all(work.join(path));
+            std::os::unix::fs::symlink(target, work.join(path)).unwrap();
+        } else {
+            std::fs::write(work.join(path), text).unwrap();
+        }
     }
     git(&work, &["add", "-A"]).unwrap();
     git(
@@ -2214,4 +2232,230 @@ async fn the_reason_a_lane_paused_names_a_card_only_to_those_who_see_it() {
     app.resume_lane(&owner(), "gpu1", "").unwrap();
     app.pause_lane_for_test("gpu1", "the runner went away", None);
     assert_eq!(pause(&hidden).reason, "the runner went away");
+}
+
+const TOOLS: &str = "harness = [\"tools/kbench/\"]\n\
+[[step]]\nname = \"measure\"\ncommand = \'\'\'\n\
+if [ \"$LANE_SIDE\" = after ]; then mv tools t0; mkdir -p tools/kbench; echo 'echo \"MEASURE tps 999\"' > tools/kbench/run.sh; fi\n\
+sh tools/kbench/run.sh\n\'\'\'\n\
+[step.measure]\nruns = 3\nprefix = \"MEASURE \"\n";
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_harness_that_a_step_renamed_away_and_planted_again_is_not_a_measurement() {
+    let lane = Lane::new(Isolation::Always, TOOLS).await;
+    let base = commit_files(
+        &lane.f,
+        &lane.base,
+        &[("tools/kbench/run.sh", "echo \"MEASURE tps 100\"\n")],
+    );
+    let head = commit_files(&lane.f, &base, &[("app.txt", "x\n")]);
+    let job = lane.run_job_for(&head, &base, false).await;
+    // In a container the rename of `tools` cannot be done at all (it is a mount point); and what was planted anyway is
+    // found by the hash of the harness that is checked after every run.
+    assert_eq!(job.state, "failed", "{job:?}");
+    assert!(job.summary.contains("harness"), "{}", job.summary);
+    // The directory above the harness path is mounted over itself, before the read-only mount of the path.
+    let call = lane.runs_in_containers().pop().expect("a container ran");
+    let mounts: Vec<&String> = call
+        .iter()
+        .enumerate()
+        .filter(|(at, _)| *at > 0 && call[*at - 1] == "-v")
+        .map(|(_, a)| a)
+        .collect();
+    assert!(
+        mounts[1].ends_with("/after/tools:/work/tools:rw"),
+        "{mounts:?}"
+    );
+    assert!(
+        mounts[2].ends_with("/harness/tools/kbench:/work/tools/kbench:ro"),
+        "{mounts:?}"
+    );
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_link_where_a_directory_above_the_harness_is_makes_the_machine_touch_nothing_outside_the_job()
+ {
+    let definition = "harness = [\"ci/bench/\"]\n[[step]]\nname = \"check\"\ncommand = \"true\"\n";
+    let lane = Lane::new(Isolation::Off, definition).await;
+    let outside = lane.f._dir.path().join("outside");
+    std::fs::create_dir_all(outside.join("bench")).unwrap();
+    std::fs::write(outside.join("bench/victim.txt"), "keep me").unwrap();
+    let base = commit_files(&lane.f, &lane.base, &[("ci/bench/run.sh", "true\n")]);
+    let head = commit_files(
+        &lane.f,
+        &base,
+        &[("ci", &format!("->{}", outside.display()))],
+    );
+    let job = lane.run_job_for(&head, &base, false).await;
+    assert_eq!(job.state, "failed", "{job:?}");
+    assert!(
+        job.summary
+            .contains("a link or a file where the directory ci"),
+        "{}",
+        job.summary
+    );
+    assert_eq!(
+        std::fs::read_to_string(outside.join("bench/victim.txt")).unwrap(),
+        "keep me",
+        "the harness was removed or written through the link"
+    );
+    assert!(!outside.join("bench/run.sh").exists());
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_change_to_a_directory_above_the_harness_is_a_change_to_the_harness() {
+    let harness = "harness = [\"src/kbench/\"]\n[[step]]\nname = \"check\"\ncommand = \"true\"\n";
+    let lane = Lane::new(Isolation::Off, harness).await;
+    // The pull request adds src/lib.rs: a file `src` would be the directory above src/kbench, here a file under it.
+    let app = lane.app();
+    let repository = app.repository(lane.f.repository.id).unwrap();
+    let hit = |files: &[&str]| {
+        let files: Vec<String> = files.iter().map(|f| f.to_string()).collect();
+        crate::app::App::locked_hit_for_test(&repository, &files, &["/src/kbench/".to_string()])
+    };
+    assert!(
+        hit(&["src"]).is_some(),
+        "a file in the place of the directory above"
+    );
+    assert!(hit(&["src/other.rs"]).is_none());
+    assert!(hit(&["src/kbench/run.sh"]).is_some());
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_row_joined_to_a_partial_line_or_lost_in_a_long_one_fails_the_step() {
+    let joined = measured_with("echo 'MEASURE a 1 x'\nprintf X\necho 'MEASURE a 2 x'\n").await;
+    assert_eq!(joined.state, "failed", "{joined:?}");
+    assert!(joined.summary.contains("middle"), "{}", joined.summary);
+    let long = measured_with("head -c 5000 /dev/zero | tr '\\0' y\necho 'MEASURE a 1 x'\n").await;
+    assert_eq!(long.state, "failed", "{long:?}");
+    assert!(long.summary.contains("too long"), "{}", long.summary);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_head_that_uses_the_total_time_up_is_blamed_when_the_merge_base_runs_out_after_it() {
+    let measure = "[[step]]\nname = \"measure\"\ncommand = \'\'\'\n\
+if [ \"$LANE_SIDE\" = after ]; then sleep 8; elif [ \"$LANE_RUN\" = 2 ]; then sleep 30; fi\n\
+echo \"MEASURE tps 1\"\n\'\'\'\n[step.measure]\nruns = 3\nprefix = \"MEASURE \"\n";
+    let lane = short_lane(measure, 12).await;
+    lane.code_approved().await;
+    lane.pass().await;
+    let job = lane.the_job();
+    assert_eq!(job.state, "failed", "{job:?}");
+    assert!(job.summary.contains("12 seconds"), "{}", job.summary);
+    assert_eq!(
+        lane.app().store.lane_infrastructure_streak("gpu1").unwrap(),
+        0
+    );
+}
+
+async fn fills_the_disk(isolation: Isolation) {
+    let step = one_step(
+        "i=0; while [ $i -lt 600 ]; do head -c 20000 /dev/zero > f$i; i=$((i+1)); done; sleep 40",
+    );
+    let lane = Lane::new(isolation, &step).await;
+    let mut config = lane_config(isolation, lane.podman.to_str().unwrap());
+    config.disk = "2m".into();
+    lane.app()
+        .lanes
+        .configure(vec![config], vec![lane.runner()]);
+    lane.code_approved().await;
+    let began = Instant::now();
+    lane.pass().await;
+    // Many small files, none over a limit of its own: the watcher of the script stopped it long before the sleep ended.
+    assert!(
+        began.elapsed() < Duration::from_secs(35),
+        "{:?}",
+        began.elapsed()
+    );
+    let job = lane.the_job();
+    assert_eq!(job.state, "failed", "{job:?}");
+    assert!(job.summary.contains("wrote more than"), "{}", job.summary);
+    let left = std::fs::read_dir(lane.machine.join("lanes/gpu1/jobs"))
+        .map(|d| d.count())
+        .unwrap_or(0);
+    assert_eq!(left, 0, "the files went with the job's directory");
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_step_that_writes_many_small_files_is_stopped_in_a_container() {
+    fills_the_disk(Isolation::Always).await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_step_that_writes_many_small_files_is_stopped_on_the_machine() {
+    fills_the_disk(Isolation::Off).await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_runtime_that_ignores_the_limits_is_refused_before_anything_runs() {
+    let lane = Lane::new(Isolation::Always, &one_step("echo ran > @DIR@/ran")).await;
+    std::fs::write(format!("{}.nolimits", lane.podman.display()), "").unwrap();
+    lane.code_approved().await;
+    lane.pass().await;
+    let job = lane.the_job();
+    assert_eq!(job.state, "errored", "{job:?}");
+    assert!(
+        job.summary.contains("does not enforce the limits"),
+        "{}",
+        job.summary
+    );
+    assert!(job.summary.contains("memory.max"), "{}", job.summary);
+    assert!(!lane.f._dir.path().join("ran").exists());
+    // And with the limits in force the same job runs: the probe is told what the flags say.
+    std::fs::remove_file(format!("{}.nolimits", lane.podman.display())).unwrap();
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn what_a_stopped_server_left_in_a_directory_of_a_side_is_removed_by_a_limited_container() {
+    let lane = Lane::new(Isolation::Always, &one_step("true")).await;
+    denying_rm(&lane);
+    let app = lane.app();
+    let change = app.followed_change(&lane.card).unwrap().unwrap();
+    let id = app
+        .store
+        .add_lane_job(
+            lane.f.repository.id,
+            lane.card.id,
+            change.id,
+            "gpu1",
+            &lane.head,
+            &lane.base,
+            true,
+            0,
+        )
+        .unwrap()
+        .unwrap();
+    assert!(app.store.claim_lane_job(id).unwrap());
+    let job_dir = lane.machine.join(format!("lanes/gpu1/jobs/{id}"));
+    for hidden in ["after/keep", "after/..keep"] {
+        std::fs::create_dir_all(job_dir.join(hidden)).unwrap();
+        std::fs::write(job_dir.join(hidden).join("file"), "x").unwrap();
+    }
+    std::fs::set_permissions(
+        job_dir.join("after/keep"),
+        std::os::unix::fs::PermissionsExt::from_mode(0o000),
+    )
+    .unwrap();
+    let app2 = app.clone();
+    tokio::task::spawn_blocking(move || app2.recover_lane_jobs())
+        .await
+        .unwrap();
+    assert!(!job_dir.exists(), "the directory is still there");
+    assert!(app.store.lane_pause("gpu1").unwrap().is_none());
+    assert_eq!(app.store.lane_job(id).unwrap().unwrap().state, "queued");
+    let clean = lane
+        .container_calls()
+        .into_iter()
+        .find(|c| c.iter().any(|a| a.contains("-clean-after")))
+        .expect("a cleanup container");
+    let text = clean.join(" ");
+    for part in [
+        format!("--label moebius-lane-job={id}"),
+        "--pids-limit 256".to_string(),
+        "--memory 16g".to_string(),
+        "--network none".to_string(),
+        "--cap-drop ALL".to_string(),
+    ] {
+        assert!(text.contains(&part), "{part} in {text}");
+    }
 }

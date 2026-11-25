@@ -67,8 +67,14 @@ network is the opposite of what the merge gate is for, so most of this record is
   lines, more rows or a name twice than a run may give fail the step, so that the code under review cannot crowd the
   harness's own rows out. A container has a memory, a processor and a file-size limit and the lane's directory a minimum of
   free space, on a disk that is not the server's own; what a container made that the machine cannot remove is removed
-  by a container, and a directory that stays pauses the lane. A head that uses up the job's total time fails; the merge
-  base doing so is the lane's.
+  by a container, and a directory that stays pauses the lane. The time of a job is blamed on the side that used it: a
+  head that uses it up fails, the merge base doing so is the lane's (and, for a pull request of someone else's, does not
+  count towards pausing it). Every directory above a harness path is mounted over itself so that it cannot be renamed
+  away, and the harness is hashed after every run. A line with the prefix in its middle, or too long to read, fails the
+  step, as a partial line of the code under test would hide the harness's row. The disk of a job is watched while it runs
+  (its size, the blocks and the inodes left), the cgroup limits are read by a container before the first step, a
+  lane that is the server itself needs a disk of its own, and a pause that a card's job made is told in the Inbox and the
+  log without its reason.
 - **The harness that measures is the owner's, not the pull request's.** `lane.toml` can name `harness` paths (the bench
   scripts and tools). For the head they come from the merge base, a change that touches one is not measured but looked at
   by a person, and the paths count as locked paths for the merge gate. `lane.toml` is changed by a person only, as the

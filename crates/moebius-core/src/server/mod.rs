@@ -323,6 +323,12 @@ impl Server {
         app.set_rules_file(config.rules_path());
         app.set_day_budget(config.day_tokens);
         let app = Arc::new(app);
+        // A lane that is the server itself keeps its jobs on a disk of its own, or the server does not start with it.
+        for lane in &config.lanes {
+            if let Some(why) = crate::config::work_dir_problem(lane, &config.data_dir, true) {
+                return Err(format!("the lane {}: {why}", lane.name));
+            }
+        }
         app.lanes
             .configure(config.lanes.clone(), config.runners.clone());
         // A job a stopped server left running is not running: it waits its turn again.

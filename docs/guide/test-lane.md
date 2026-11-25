@@ -198,7 +198,9 @@ change back to its coder with the failure as the note; the script does not have 
   by itself when a command or the directory of a job could not be removed; look at the machine, then resume.
 - A step that prints more than 500 rows, more than 20000 lines with its prefix, or a name twice **fails**; nothing is cut
   to make it fit, since the lines that were cut might have been the harness's.
-- A lane that is the server itself needs `work_dir` outside the data directory, on a disk of its own; `memory`, `cpus` and
+- A lane that is the server itself needs `work_dir` outside the data directory and **on a disk of its own** (the server
+  refuses to start with it on the same device as `data_dir`, unless `shared_disk = true`); rootless podman needs the cgroup
+  v2 controllers delegated to the user, or the lane refuses the job (`does not enforce the limits`); `memory`, `cpus` and
   `disk` of the lane bound what a container may use, and a job does not start with less than `disk` free.
 - A job that **failed** names its step. The same step on the merge base is shown as `errored` ("the merge base itself
   fails"), since that is not the change's doing.

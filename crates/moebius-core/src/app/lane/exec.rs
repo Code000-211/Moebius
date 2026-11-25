@@ -76,6 +76,8 @@ pub struct Ran {
     /// Whether there were more such lines than [`PREFIXED_AT_MOST`]: the rest was dropped, so the lines are not to be
     /// trusted (the code under test can print as many as it likes before the real ones).
     pub prefixed_cut: bool,
+    /// Whether a line had the prefix in the middle, or was too long to be read: see [`Captured`].
+    pub prefixed_ambiguous: bool,
 }
 
 impl Ran {
@@ -85,6 +87,7 @@ impl Ran {
             output: String::new(),
             prefixed: Vec::new(),
             prefixed_cut: false,
+            prefixed_ambiguous: false,
         }
     }
 }
@@ -98,6 +101,9 @@ pub enum Finish {
     TimedOut,
     /// There is no container: the runtime could not start it.
     Gone,
+    /// The watcher of the script stopped it: the job wrote more than the lane's `disk`, or left the disk less free than
+    /// its reserve.
+    DiskFull,
 }
 
 /// `text` as one word of a shell command.
@@ -121,6 +127,25 @@ pub struct Isolated<'a> {
 /// A path of the harness as the checkout and the job's copy have it: no slash at either end.
 pub fn harness_path(path: &str) -> &str {
     path.trim_matches('/')
+}
+
+/// The directories above the harness paths, each once, the shallowest first: `tools` for `tools/kbench` and
+/// `tools/sub/bench`, and `tools/sub` after it.
+pub fn harness_ancestors(harness: &[String]) -> Vec<String> {
+    let mut found: Vec<String> = Vec::new();
+    for path in harness {
+        let path = harness_path(path);
+        let mut at = 0;
+        while let Some(next) = path[at..].find('/') {
+            let ancestor = &path[..at + next];
+            if !found.iter().any(|f| f == ancestor) {
+                found.push(ancestor.to_string());
+            }
+            at += next + 1;
+        }
+    }
+    found.sort_by_key(|a| a.matches('/').count());
+    found
 }
 
 /// The arguments the container program is given to run `command` of a job in a fresh, isolated container: no network,
@@ -188,6 +213,15 @@ pub fn container_args(lane: &LaneConfig, container: &Isolated, command: &str) ->
         args.extend(["--group-add".into(), group.clone()]);
     }
     args.extend(["-v".into(), format!("{job_dir}/{side}:/work:rw")]);
+    // Every directory above a harness path is mounted over itself, shallowest first, so that none can be renamed or
+    // removed (`EBUSY`): renaming `tools` away and making a new `tools/kbench` would plant a harness otherwise, since the
+    // read-only mount of the leaf goes along with the directory it is in.
+    for ancestor in harness_ancestors(harness) {
+        args.extend([
+            "-v".into(),
+            format!("{job_dir}/{side}/{ancestor}:/work/{ancestor}:rw"),
+        ]);
+    }
     // After the mount of the checkout, so that they lie over it.
     for path in *harness {
         let path = harness_path(path);
@@ -207,9 +241,38 @@ pub fn container_args(lane: &LaneConfig, container: &Isolated, command: &str) ->
     args
 }
 
+/// What a command's script watches while it runs: the disk (ADR 0035). Every few seconds the size of the job's directory and
+/// what the disk of the lane has left (blocks and inodes) are read; past `disk_kib` of the first or under a 5 % reserve of
+/// the others, the command is killed and its script says `disk`.
+pub struct Watch<'a> {
+    pub work_dir: &'a str,
+    pub disk_kib: u64,
+}
+
+/// The marker a watcher leaves when it stopped a command, in the job's directory.
+fn marker(job_dir: &str) -> String {
+    quote(&format!("{job_dir}/disk-exceeded"))
+}
+
+/// The commands of a script that start the watcher of `watch` in the background, with `kill` to stop the command.
+fn watcher(watch: &Watch, job_dir: &str, kill: &str) -> String {
+    format!(
+        "rm -f {marker}; ( while :; do sleep 2; used=$(du -sk {job} 2>/dev/null | cut -f1); \
+         set -- $(df -Pk {work} 2>/dev/null | awk 'NR==2 {{print $2, $4}}'); tk=$1; ak=$2; \
+         set -- $(df -Pi {work} 2>/dev/null | awk 'NR==2 {{print $2, $4}}'); ti=$1; ai=$2; \
+         if [ \"${{used:-0}}\" -gt {limit} ] || [ \"${{ak:-0}}\" -lt $((${{tk:-0}} / 20)) ] \
+            || [ \"${{ai:-0}}\" -lt $((${{ti:-0}} / 20)) ]; then : > {marker}; {kill}; exit 0; fi; done ) >/dev/null 2>&1 & w=$!; ",
+        marker = marker(job_dir),
+        job = quote(job_dir),
+        work = quote(watch.work_dir),
+        limit = watch.disk_kib,
+    )
+}
+
 /// The shell script that runs `command` directly on the machine, in the checkout `side` of the job's directory, in a
 /// process group of its own (`timeout` makes one) whose id is written to `pid_file`, and kills what is left of that
 /// group when the command has ended. Its last line is `<token> direct <exit code> <seconds it took>`.
+#[allow(clippy::too_many_arguments)]
 pub fn direct_script(
     job_dir: &str,
     side: &str,
@@ -218,7 +281,25 @@ pub fn direct_script(
     seconds: u64,
     pid_file: &str,
     token: &str,
+    watch: Option<&Watch>,
 ) -> String {
+    let (start, stop) = match watch {
+        Some(watch) => (
+            watcher(
+                watch,
+                job_dir,
+                &format!(
+                    "kill -KILL -$(cat {} 2>/dev/null) 2>/dev/null",
+                    quote(pid_file)
+                ),
+            ),
+            format!(
+                "kill $w 2>/dev/null; if [ -e {} ]; then echo \"{token} disk\"; exit 0; fi; ",
+                marker(job_dir)
+            ),
+        ),
+        None => (String::new(), String::new()),
+    };
     let exports: String = environment
         .iter()
         .map(|(name, value)| format!("export {name}={}; ", quote(value)))
@@ -229,8 +310,8 @@ pub fn direct_script(
         quote(command)
     );
     format!(
-        "unset SSH_AUTH_SOCK SSH_AGENT_PID; cd {dir}/{side} && export HOME={dir}/home && {exports}s=$(date +%s); \
-         sh -c {inner} 2>&1; c=$?; kill -KILL -$(cat {pid} 2>/dev/null) 2>/dev/null; e=$(date +%s); \
+        "unset SSH_AUTH_SOCK SSH_AGENT_PID; cd {dir}/{side} && export HOME={dir}/home && {exports}{start}s=$(date +%s); \
+         sh -c {inner} 2>&1; c=$?; kill -KILL -$(cat {pid} 2>/dev/null) 2>/dev/null; e=$(date +%s); {stop}\
          echo \"{token} direct $c $((e-s))\"",
         dir = quote(job_dir),
         inner = quote(&inner),
@@ -248,6 +329,7 @@ pub fn contained_script(
     command: &str,
     seconds: u64,
     token: &str,
+    watch: Option<&Watch>,
 ) -> String {
     let name = container.name;
     let mut args = container_args(lane, container, command);
@@ -258,11 +340,25 @@ pub fn contained_script(
     let words: String = args.iter().map(|w| format!(" {}", quote(w))).collect();
     let runtime = quote(&lane.runtime);
     let name = quote(name);
+    let (start, stop) = match watch {
+        Some(watch) => (
+            watcher(
+                watch,
+                container.job_dir,
+                &format!("{runtime} rm -f {name} >/dev/null 2>&1"),
+            ),
+            format!(
+                "kill $w 2>/dev/null; if [ -e {} ]; then {runtime} rm -f {name} >/dev/null 2>&1; echo \"{token} disk\"; exit 0; fi; ",
+                marker(container.job_dir)
+            ),
+        ),
+        None => (String::new(), String::new()),
+    };
     format!(
-        "unset SSH_AUTH_SOCK SSH_AGENT_PID; {runtime} rm -f {name} >/dev/null 2>&1; \
+        "unset SSH_AUTH_SOCK SSH_AGENT_PID; {runtime} rm -f {name} >/dev/null 2>&1; {start}\
          timeout -k 10 {seconds} {runtime}{words} 2>&1; \
          st=$({runtime} inspect -f '{{{{.State.Running}}}} {{{{.State.ExitCode}}}}' {name} 2>/dev/null) || st=gone; \
-         {runtime} rm -f {name} >/dev/null 2>&1; echo \"{token} $st\""
+         {stop}{runtime} rm -f {name} >/dev/null 2>&1; echo \"{token} $st\""
     )
 }
 
@@ -281,6 +377,7 @@ pub fn read_status(output: &str, token: &str, seconds: u64) -> (String, Option<F
             _ => None,
         },
         ["gone"] => Some(Finish::Gone),
+        ["disk"] => Some(Finish::DiskFull),
         ["true", _] => Some(Finish::TimedOut),
         ["false", code] => code.parse().ok().map(Finish::Exit),
         _ => None,
@@ -448,8 +545,8 @@ impl Machine {
         }
         let _ = child.wait();
         // A process that got out of the group may still hold the pipes: they are read for a few seconds, then let go.
-        let (output, prefixed, prefixed_cut) = out_receiver.recv_timeout(PIPES).unwrap_or_default();
-        let (said, _, _) = err_receiver.recv_timeout(PIPES).unwrap_or_default();
+        let out = out_receiver.recv_timeout(PIPES).unwrap_or_default();
+        let said = err_receiver.recv_timeout(PIPES).unwrap_or_default().text;
         let ended = match (status, ended) {
             (Some(status), _) => match status.code() {
                 Some(255) if self.runner.is_some() => {
@@ -463,9 +560,10 @@ impl Machine {
         };
         Ran {
             ended,
-            output,
-            prefixed,
-            prefixed_cut,
+            output: out.text,
+            prefixed: out.prefixed,
+            prefixed_cut: out.cut,
+            prefixed_ambiguous: out.ambiguous,
         }
     }
 
@@ -555,25 +653,50 @@ pub fn describe(ran: &Ran) -> String {
     }
 }
 
+/// What [`capture`] read of a stream.
+#[derive(Debug, Default)]
+struct Captured {
+    text: String,
+    prefixed: Vec<String>,
+    /// More lines had the prefix than are read.
+    cut: bool,
+    /// A line had the prefix somewhere but at its start (code under test can print a part of a line and leave the rest
+    /// to the harness, so that the harness's row is joined to its own and lost), or was longer than a line is read.
+    ambiguous: bool,
+}
+
+/// The longest a line is read to be a row.
+const LINE_AT_MOST: usize = 4096;
+
 /// Reads a stream to its end, keeping the end of it up to [`OUTPUT_AT_MOST`] bytes and the lines that start with
-/// `prefix`, up to [`PREFIXED_AT_MOST`] of them; whether there were more is the last of the three.
-fn capture(mut stream: impl Read, prefix: Option<&str>) -> (String, Vec<String>, bool) {
+/// `prefix`, up to [`PREFIXED_AT_MOST`] of them. A stream that has the prefix in the middle of a line, or a line too long
+/// to be read, is [`Captured::ambiguous`] when a prefix is asked for: which rows it held is not known.
+fn capture(mut stream: impl Read, prefix: Option<&str>) -> Captured {
     let mut kept: Vec<u8> = Vec::new();
-    let mut prefixed = Vec::new();
-    let mut cut = false;
+    let mut found = Captured::default();
     let mut line: Vec<u8> = Vec::new();
+    let mut overflow = false;
     let mut buffer = [0u8; 16 * 1024];
-    let note = |line: &mut Vec<u8>, prefixed: &mut Vec<String>, cut: &mut bool| {
-        if let Some(prefix) = prefix
-            && line.starts_with(prefix.as_bytes())
-        {
-            if prefixed.len() < PREFIXED_AT_MOST {
-                prefixed.push(String::from_utf8_lossy(line).trim_end().to_string());
-            } else {
-                *cut = true;
+    let note = |line: &mut Vec<u8>, overflow: &mut bool, found: &mut Captured| {
+        if let Some(prefix) = prefix {
+            let prefix = prefix.as_bytes();
+            if line.starts_with(prefix) {
+                if found.prefixed.len() < PREFIXED_AT_MOST {
+                    found
+                        .prefixed
+                        .push(String::from_utf8_lossy(line).trim_end().to_string());
+                } else {
+                    found.cut = true;
+                }
+            }
+            if *overflow
+                || (!prefix.is_empty() && line.windows(prefix.len()).skip(1).any(|w| w == prefix))
+            {
+                found.ambiguous = true;
             }
         }
         line.clear();
+        *overflow = false;
     };
     while let Ok(n) = stream.read(&mut buffer) {
         if n == 0 {
@@ -581,9 +704,11 @@ fn capture(mut stream: impl Read, prefix: Option<&str>) -> (String, Vec<String>,
         }
         for &byte in &buffer[..n] {
             if byte == b'\n' {
-                note(&mut line, &mut prefixed, &mut cut);
-            } else if line.len() < 4096 {
+                note(&mut line, &mut overflow, &mut found);
+            } else if line.len() < LINE_AT_MOST {
                 line.push(byte);
+            } else {
+                overflow = true;
             }
         }
         kept.extend_from_slice(&buffer[..n]);
@@ -591,11 +716,12 @@ fn capture(mut stream: impl Read, prefix: Option<&str>) -> (String, Vec<String>,
             kept.drain(..kept.len() - OUTPUT_AT_MOST);
         }
     }
-    note(&mut line, &mut prefixed, &mut cut);
+    note(&mut line, &mut overflow, &mut found);
     if kept.len() > OUTPUT_AT_MOST {
         kept.drain(..kept.len() - OUTPUT_AT_MOST);
     }
-    (String::from_utf8_lossy(&kept).into_owned(), prefixed, cut)
+    found.text = String::from_utf8_lossy(&kept).into_owned();
+    found
 }
 
 #[cfg(test)]
@@ -617,6 +743,7 @@ mod tests {
             timeout_seconds: 600,
             memory: "16g".into(),
             cpus: None,
+            shared_disk: false,
             disk: "20g".into(),
             gpus: None,
             power_cap: None,
@@ -676,6 +803,8 @@ mod tests {
             mounts,
             [
                 "/jobs/7/after:/work:rw",
+                // The directory above a harness path, over itself, so that it cannot be renamed away.
+                "/jobs/7/after/tools:/work/tools:rw",
                 "/jobs/7/harness/bench:/work/bench:ro",
                 "/jobs/7/harness/tools/kbench:/work/tools/kbench:ro",
             ]
@@ -684,7 +813,7 @@ mod tests {
 
     #[test]
     fn a_container_of_the_same_name_is_removed_before_a_command_starts() {
-        let script = contained_script(&lane(), &isolated("after", &[]), "true", 90, "T");
+        let script = contained_script(&lane(), &isolated("after", &[]), "true", 90, "T", None);
         let removal = script
             .find("'rm' '-f' 'n'")
             .or_else(|| script.find("rm -f 'n'"));
@@ -707,18 +836,26 @@ mod tests {
             "ROW real 2
 ",
         );
-        let (_, rows, cut) = capture(text.as_bytes(), Some("ROW "));
-        assert!(cut);
-        assert_eq!(rows.len(), PREFIXED_AT_MOST);
-        let (_, rows, cut) = capture(
-            "ROW a 1
-ROW b 2
-"
-            .as_bytes(),
-            Some("ROW "),
-        );
-        assert!(!cut);
-        assert_eq!(rows.len(), 2);
+        let read = capture(text.as_bytes(), Some("ROW "));
+        assert!(read.cut);
+        assert_eq!(read.prefixed.len(), PREFIXED_AT_MOST);
+        let read = capture("ROW a 1\nROW b 2\n".as_bytes(), Some("ROW "));
+        assert!(!read.cut && !read.ambiguous);
+        assert_eq!(read.prefixed.len(), 2);
+    }
+
+    #[test]
+    fn a_line_with_the_prefix_in_the_middle_or_too_long_to_read_is_ambiguous() {
+        // The code printed `X` and no newline, so the harness's row is joined to it and does not start a line.
+        let joined = capture("ROW a 1 x\nXROW a 2 x\n".as_bytes(), Some("ROW "));
+        assert!(joined.ambiguous);
+        let long = format!("{}\nROW a 2 x\n", "y".repeat(5000));
+        assert!(capture(long.as_bytes(), Some("ROW ")).ambiguous);
+        // Nothing is ambiguous without a prefix, nor with the prefix only at the start of a line.
+        assert!(!capture(long.as_bytes(), None).ambiguous);
+        // "plain ROW" has the prefix's word at its end only, without the space: not the prefix.
+        assert!(!capture("ROW a 1\nplain ROW\n".as_bytes(), Some("ROW ")).ambiguous);
+        assert!(!capture("ROW a 1\nROW b 2\nnothing\n".as_bytes(), Some("ROW ")).ambiguous);
     }
 
     #[test]
@@ -772,11 +909,11 @@ ROW b 2
 
     #[test]
     fn a_podman_container_is_given_the_runtimes_own_time_limit() {
-        let script = contained_script(&lane(), &isolated("after", &[]), "true", 90, "T");
+        let script = contained_script(&lane(), &isolated("after", &[]), "true", 90, "T", None);
         assert!(script.contains("'--timeout' '90'"), "{script}");
         let mut docker = lane();
         docker.runtime = "docker".into();
-        let script = contained_script(&docker, &isolated("after", &[]), "true", 90, "T");
+        let script = contained_script(&docker, &isolated("after", &[]), "true", 90, "T", None);
         assert!(!script.contains("--timeout"), "{script}");
         assert!(
             script.contains("rm -f"),
@@ -814,10 +951,13 @@ ROW b 2
     #[test]
     fn the_end_of_the_output_and_the_rows_are_kept() {
         let text = format!("{}ROW a 1\nnoise\nROW b 2", "x\n".repeat(OUTPUT_AT_MOST));
-        let (kept, rows, _) = capture(text.as_bytes(), Some("ROW "));
-        assert!(kept.len() <= OUTPUT_AT_MOST + 8);
-        assert!(kept.ends_with("ROW b 2"));
-        assert_eq!(rows, vec!["ROW a 1".to_string(), "ROW b 2".to_string()]);
+        let read = capture(text.as_bytes(), Some("ROW "));
+        assert!(read.text.len() <= OUTPUT_AT_MOST + 8);
+        assert!(read.text.ends_with("ROW b 2"));
+        assert_eq!(
+            read.prefixed,
+            vec!["ROW a 1".to_string(), "ROW b 2".to_string()]
+        );
     }
 
     #[test]

@@ -97,11 +97,17 @@ impl App {
         {
             return;
         }
+        // The reason of a pause that a card's job made may quote what that job printed: it stays in the pause record, which
+        // is shown by the card's own sight, and the Inbox and the log say only that the lane stopped.
+        let said = match card_id {
+            Some(_) => format!("Test lane {lane} stopped itself; open the lane to see why"),
+            None => reason.to_string(),
+        };
         let _ = self.store.add_inbox_item(
             LANE_PAUSED,
             None,
             &format!("Test lane {lane} paused itself"),
-            &json!({ "lane": lane, "reason": reason }),
+            &json!({ "lane": lane, "reason": said }),
         );
         for repository in self.store.lane_repositories(lane).unwrap_or_default() {
             let _ = self.store.note_activity(
@@ -109,8 +115,8 @@ impl App {
                 Some(repository),
                 None,
                 Some(lane),
-                reason,
-                &json!({ "lane": lane }),
+                &said,
+                &json!({ "lane": lane, "card": card_id }),
             );
         }
     }

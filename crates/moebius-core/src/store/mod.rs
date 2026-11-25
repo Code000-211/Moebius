@@ -553,8 +553,9 @@ UPDATE cards SET moved_at = COALESCE((SELECT MAX(at) FROM card_moves WHERE card_
     factory::SCHEMA,
     tending::SCHEMA,
     flow::SCHEMA,
-    lane::SCHEMA,
+    // Migrations are numbered by their place: a store that main already migrated has `forms` and gets what comes after.
     forms::SCHEMA,
+    lane::SCHEMA,
 ];
 
 #[cfg(test)]
@@ -897,6 +898,29 @@ mod tests {
                 ("Not started".to_string(), "In progress".to_string())
             ]
         );
+    }
+
+    /// A store that was migrated up to the forms (what main had before the test lane) gets the lane's tables when it opens.
+    #[test]
+    fn a_store_migrated_before_the_test_lane_gets_its_tables() {
+        let dir = tempfile::tempdir().unwrap();
+        {
+            let conn = Connection::open(dir.path().join("moebius.sqlite")).unwrap();
+            let forms = MIGRATIONS
+                .iter()
+                .position(|sql| *sql == forms::SCHEMA)
+                .expect("a migration is the forms'");
+            for sql in &MIGRATIONS[..=forms] {
+                conn.execute_batch(sql).unwrap();
+            }
+            conn.pragma_update(None, "user_version", (forms + 1) as i64)
+                .unwrap();
+        }
+        let s = Store::open(dir.path()).unwrap();
+        assert_eq!(s.schema_version().unwrap(), MIGRATIONS.len());
+        assert!(s.repository_lane(1).unwrap().is_none());
+        assert!(s.lane_active().unwrap().is_empty());
+        assert!(s.lane_pause("gpu1").unwrap().is_none());
     }
 
     /// Holding a card and remembering deleted ones came after cards were stored: the cards already there are not held,

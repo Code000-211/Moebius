@@ -25,7 +25,7 @@ use crate::harness::mcp::valid_variable;
 use crate::router::{Classes, ModelThinking, check_class};
 
 pub use example::EXAMPLE;
-pub use lanes::{Isolation, LANE_TIMEOUT_AT_MOST, LaneConfig};
+pub use lanes::{Isolation, LANE_TIMEOUT_AT_MOST, LaneConfig, work_dir_problem};
 pub use registries::{DEFAULT_REGISTRY, DEFAULT_REGISTRY_URL, RegistryConfig};
 pub(crate) use sections::default_protocol;
 pub use sections::{

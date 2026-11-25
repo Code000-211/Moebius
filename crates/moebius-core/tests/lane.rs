@@ -111,6 +111,7 @@ fn world(definition: &str, approved: bool) -> World {
             timeout_seconds: 120,
             memory: "16g".into(),
             cpus: None,
+            shared_disk: false,
             disk: "1m".into(),
             gpus: Some("1x test".into()),
             power_cap: None,

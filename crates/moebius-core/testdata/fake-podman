@@ -3,12 +3,14 @@
 # line in the file of its own name with `.log` added. `run` runs the command in the directory the container's `-v
 # HOST:/work` names, as the container would see it, with the `-e` variables; a container that has a `--name` is "there"
 # while it runs (`<this file>.running.<name>`, holding the pid) and keeps its exit code after it (`.exit.<name>`), as a
-# runtime that is not told `--rm` does. `inspect -f FORMAT NAME` answers `{{.State.Running}}` and `{{.State.ExitCode}}`
+# runtime that is not told `--rm` does. The command runs in a session of its own, which `rm -f` kills as a whole. `inspect -f FORMAT NAME` answers `{{.State.Running}}` and `{{.State.ExitCode}}`
 # from those files and fails for a container that is not there. `rm -f NAME` kills the process of a running container
 # and forgets it. `ps -aq --filter label=moebius-lane-job=N` lists the names of the containers made with that label, running or
 # not. A `-v HOST:PATH:ro` over a path of the checkout is, while the command runs, a copy of HOST in the checkout's place,
 # which is what a command that writes there sees of a read-only mount: it can write, and nothing of it is kept. `--version` does nothing. A file `<this file>.fail` makes `run` exit 125 and make no
 # container, as a runtime does that cannot start one; a file `<this file>.fail-cleanup` does so for a `run --rm` only.
+# A command that reads `/sys/fs/cgroup/` (the probe of the limits) is answered from the flags given instead, as a runtime
+# that enforces them would show them; with a file `<this file>.nolimits` it says `max` for all, as one that ignores them does.
 # The directory `denying-rm` is taken out of the `PATH` of a container's command.
 import json
 import os
@@ -55,7 +57,11 @@ if args[:1] == ["rm"]:
             os.kill(int(open(running).read().strip()), signal.SIGKILL)
         except (OSError, ValueError):
             pass
-    for each in (running, exited, here + ".job." + name):
+    try:
+        os.killpg(int(open(here + ".child." + name).read().strip()), signal.SIGKILL)
+    except (OSError, ValueError):
+        pass
+    for each in (running, exited, here + ".job." + name, here + ".child." + name):
         if os.path.exists(each):
             os.remove(each)
     sys.exit(0)
@@ -77,6 +83,7 @@ if os.path.exists(here + ".fail") or ("--rm" in args and os.path.exists(here + "
 WITH_VALUE = {"--name", "--label", "--network", "--cap-drop", "--security-opt", "--user", "--pids-limit", "--tmpfs",
               "-e", "--device", "--group-add", "-v", "-w", "--timeout", "--memory", "--memory-swap", "--oom-score-adj",
               "--ulimit", "--cpus"}
+flags = {}
 mounts = []  # (host path, container path)
 readonly = []  # the same, for a `:ro` mount, which lies over the others
 workdir = "/work"
@@ -87,6 +94,7 @@ i = 1
 while i < len(args) and args[i].startswith("-"):
     if args[i] in WITH_VALUE:
         value = args[i + 1]
+        flags[args[i]] = value
         if args[i] == "-v":
             host, inside, *mode = value.split(":")
             if mode == ["ro"]:
@@ -137,6 +145,8 @@ def lay_over():
 
 def lift(swapped):
     for target, aside in swapped:
+        if not os.path.lexists(aside):
+            continue  # the command moved the directory away, aside included
         if os.path.isdir(target) and not os.path.islink(target):
             shutil.rmtree(target, ignore_errors=True)
         elif os.path.lexists(target):
@@ -145,6 +155,22 @@ def lift(swapped):
 
 
 text = outside(command[-1])
+if "/sys/fs/cgroup/" in text:
+    def size(text):
+        units = {"k": 1 << 10, "m": 1 << 20, "g": 1 << 30, "t": 1 << 40}
+        return int(text[:-1]) * units[text[-1]] if text[-1] in units else int(text)
+
+    if os.path.exists(here + ".nolimits"):
+        shown = {"memory.max": "max", "memory.swap.max": "max", "pids.max": "max", "cpu.max": "max 100000"}
+    else:
+        memory = size(flags["--memory"])
+        shown = {
+            "memory.max": str(memory),
+            "memory.swap.max": str(size(flags["--memory-swap"]) - memory),
+            "pids.max": flags["--pids-limit"],
+            "cpu.max": "%d 100000" % int(float(flags["--cpus"]) * 100000) if "--cpus" in flags else "max 100000",
+        }
+    text = "; ".join("echo 'LIMIT %s %s'" % item for item in shown.items())
 cwd = outside(workdir) if mounts else None
 if name:
     running, exited = files(name)
@@ -154,7 +180,11 @@ if name:
         with open(here + ".job." + name, "w") as marker:
             marker.write(job)
 swapped = lay_over()
-process = subprocess.Popen(["sh", "-c", text], cwd=cwd, env=environment)
+# In a session of its own, so that removing the container ends everything the command started, as a runtime does.
+process = subprocess.Popen(["sh", "-c", text], cwd=cwd, env=environment, start_new_session=True)
+if name:
+    with open(here + ".child." + name, "w") as marker:
+        marker.write(str(process.pid))
 code = process.wait()
 lift(swapped)
 if name:
