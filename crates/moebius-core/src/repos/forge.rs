@@ -191,6 +191,16 @@ impl ReviewPost<'_> {
         }
     }
 
+    /// The summary as it is written on a forge that has a review with a verdict: a review that only comments starts with the
+    /// verdict in words, since the forge does not hold it.
+    pub fn summary(&self) -> String {
+        if self.comment_only {
+            format!("**{}**\n\n{}", self.verdict(), self.body.trim())
+        } else {
+            self.body.to_string()
+        }
+    }
+
     /// The review as one comment, for a forge that cannot hold a review with comments on lines: the verdict, the
     /// summary and each comment under the file and line it is about.
     pub fn as_comment(&self) -> String {

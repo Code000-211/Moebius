@@ -141,11 +141,16 @@ forge has drafts (GitHub, GitLab and Forgejo):
 
 | Step | What is written |
 |---|---|
-| The first successful `code` run | `moebius.publish_change()` opens the pull request, as a draft (GitHub's `draft` flag, `Draft: ` before a GitLab title, `WIP: ` before a Forgejo title), on the card's branch, with the body of the template. One pull request for all the rounds. The issue gets one `## Posted` reply with `Kind: Pull request` and the number. |
+| The first successful `code` run | `moebius.publish_change()` opens the pull request, as a draft (GitHub's `draft` flag, `Draft: ` before a GitLab title, `WIP: ` before a Forgejo title), on the card's branch, with the body of the template. One pull request for all the rounds. The issue gets one `## Posted` reply with `Kind: Pull request` and the number, written where the repository answers on the forge and tried again at the next tick until it is. |
 | Each later round | The branch is pushed and the title and body are written again. |
-| The review | `moebius.post_review(card.review)` writes the verdict as a review of the pull request: `REQUEST_CHANGES` with a comment on each line `card.review.comments` names, or `APPROVE`, tied to the head that was read. Comments on lines the diff does not have go into the summary. Once for each round (the number of successful `code` runs) and head. A forge that refuses a verdict on the request of its own user takes it as a review that only comments (`COMMENT`), whose body starts with `Approved.` or `Changes requested.`; one that refuses the lines takes it without them, in the summary. |
-| The round after a review that asked for changes | The Coder's `## Review answer` section is written as a `## Review answer` comment on the pull request, one numbered line for each finding, `(finding N was not answered)` for one it gave no line; once for each head. The Reviewer's next prompt gets it, fenced. |
+| The review | `moebius.post_review(card.review)` writes the verdict as a review of the pull request: `REQUEST_CHANGES` with a comment on each line `card.review.comments` names, or `APPROVE`, tied to the head that was read. Comments on lines the diff does not have go into the summary. A review written without a verdict starts its body with `**Approved.**` or `**Changes requested.**` on every forge. On GitLab the approval is made first, so a refused one has written nothing before the retry. Once for each round (the number of successful `code` runs) and head. A forge that refuses a verdict on the request of its own user takes it as a review that only comments (`COMMENT`), whose body starts with `Approved.` or `Changes requested.`; one that refuses the lines takes it without them, in the summary. |
+| The round after a review that asked for changes | The Coder's `## Review answer` section is written as a `## Review answer` comment on the pull request, one numbered line for each finding (as many as `card.review.count`), `(finding N was not answered)` for one it gave no line; once for each head. The Reviewer's next prompt gets it, fenced. |
 | Approval | `moebius.offer_change` takes the pull request out of draft (GitHub `markPullRequestReadyForReview`, the prefix of a title taken off) and offers it as before; it merges through [the merge gate](desktop-api.md#the-merge-gate) as before. |
+
+**What the Reviewer is given.** The review prompts of a pull request (Moebius's own and one someone else opened) get the
+parsed fields, fenced as data and labelled as the author's claims, with what the body lacks, to check against the diff. The
+review of a round after an answer is given the answer to its last review, and only that: once a later review has no answer to
+be read, an older one is not shown.
 
 **Fields are claims, never decisions.** What the author of a pull request writes (the `Measurement` state, the tests, any
 section) is data for the Reviewer. It never satisfies [the merge gate](desktop-api.md#the-merge-gate), lifts

@@ -41,6 +41,8 @@ pub struct AxisReview {
     pub findings: String,
     pub judgements: String,
     pub dropped: usize,
+    /// How many blocking findings the axis has.
+    pub blocking: usize,
     /// The findings of the axis that name a line, blocking ones and judgement calls.
     pub comments: Vec<LineComment>,
 }
@@ -182,6 +184,7 @@ fn axis(name: &'static str, summary: Option<&str>) -> AxisReview {
         findings,
         judgements: render(&judgements),
         dropped,
+        blocking: blocking.len(),
         comments,
     }
 }
@@ -201,7 +204,9 @@ pub(super) fn two_axes(standards: Option<&str>, spec: Option<&str>) -> Review {
     let judgements = section(|a| &a.judgements);
     let changes = axes.iter().any(|a| a.verdict == "changes");
     let comments = axes.iter().flat_map(|a| a.comments.clone()).collect();
+    let count = axes.iter().map(|a| a.blocking).sum();
     Review {
+        count,
         verdict: if changes { "changes" } else { "approve" },
         findings,
         judgements,

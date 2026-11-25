@@ -567,6 +567,15 @@ async fn a_forge_that_refuses_a_verdict_on_its_own_request_takes_a_review_that_o
     let posts = f.review_posts();
     assert_eq!(posts.len(), 1);
     assert_eq!(posts[0]["event"], "COMMENT");
+    // The forge holds no verdict, so the review says it itself, first.
+    assert!(
+        posts[0]["body"]
+            .as_str()
+            .unwrap()
+            .starts_with("**Changes requested.**\n\n"),
+        "{}",
+        posts[0]["body"]
+    );
     assert_eq!(
         posts[0]["comments"].as_array().unwrap().len(),
         1,
@@ -1112,4 +1121,116 @@ async fn a_card_waiting_to_merge_is_not_reopened_as_a_draft() {
     assert_eq!(f.fake.pulls.lock().unwrap().opened.len(), 1);
     assert!(f.fake.pulls.lock().unwrap().ready.is_empty());
     assert_eq!(f.card(1).unwrap().column, "Ready to merge");
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// Findings counted from the review, the link on the issue and what the Reviewer is told
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_quoted_removed_line_in_the_evidence_is_no_finding_to_answer() {
+    let (f, card) = reported().await;
+    let engine = f.reviewing_engine();
+    f.published(&engine, &card).await;
+    f.axis_says(&card, "review-standards", "VERDICT: approve");
+    // One finding whose evidence quotes two lines of the diff, one of them a removed line.
+    f.axis_says(
+        &card,
+        "review-spec",
+        "FINDING blocking: The retry was dropped.\nEVIDENCE: > context\n- if retries > 3 {\nVERDICT: changes",
+    );
+    f.tick(&engine, &card).await;
+    f.code(&card, "retry.txt").await;
+    f.coder_says(
+        &card,
+        "### What the change does\nRestores the retry.\n\n## Review answer\n1. Restored the retry in retry.txt.\n",
+    );
+    f.server.app.store.move_card(card.id, "In review").unwrap();
+    f.tick(&engine, &f.card(1).unwrap()).await;
+    let answers: Vec<String> = f
+        .on_pull()
+        .into_iter()
+        .filter(|t| t.starts_with("## Review answer"))
+        .collect();
+    assert_eq!(answers.len(), 1);
+    assert!(!answers[0].contains("was not answered"), "{}", answers[0]);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn the_link_on_the_issue_is_written_when_answers_are_on_and_retried_until_it_is() {
+    let f = Fixture::new().await;
+    // Answers are off while the pull request opens.
+    f.server
+        .app
+        .store
+        .set_repository_commands(f.repository.id, true, 3, false)
+        .unwrap();
+    f.fake.threads.lock().unwrap().insert(1, Vec::new());
+    let card = f.card_in_review().await;
+    f.coder_says(&card, "### What the change does\nAdds it.");
+    let engine = f.reviewing_engine();
+    f.tick(&engine, &card).await;
+    assert_eq!(f.fake.pulls.lock().unwrap().opened.len(), 1);
+    assert!(
+        f.on_the_issue().is_empty(),
+        "nothing is written where answers are off"
+    );
+    // Answers go on: the next tick, with no new commit, writes the link, and only once.
+    f.server
+        .app
+        .store
+        .set_repository_commands(f.repository.id, true, 3, true)
+        .unwrap();
+    f.tick(&engine, &card).await;
+    f.tick(&engine, &card).await;
+    let told = f.on_the_issue();
+    assert_eq!(told.len(), 1, "{told:?}");
+    assert_eq!(Reply::parse(&told[0]).unwrap().1["Detail"], "#7");
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn the_reviewer_is_given_the_authors_claims_fenced_and_only_the_answer_to_its_last_review() {
+    let (f, card) = reported().await;
+    let engine = f.reviewing_engine();
+    f.published(&engine, &card).await;
+    let prompt = |f: &Fixture| {
+        crate::harness::run::prompts::prompt_for(
+            &f.server.app,
+            &f.card(1).unwrap(),
+            "review-spec",
+            None,
+        )
+    };
+    let first = prompt(&f);
+    assert!(first.contains("claims of the author"), "{first}");
+    assert!(
+        first.contains("### tests_i_ran\n- [x] `cargo test`: 3 passed"),
+        "{first}"
+    );
+    assert!(
+        first.contains("### measurement\nnot needed: no hot path"),
+        "{first}"
+    );
+    assert!(!first.contains("answer to your last review"));
+
+    f.axis_says(&card, "review-standards", "VERDICT: approve");
+    f.axis_says(&card, "review-spec", CHANGES);
+    f.tick(&engine, &card).await;
+    f.code(&card, "two.txt").await;
+    f.coder_says(
+        &card,
+        "### What the change does\nMore.\n\n## Review answer\n1. Added two.txt.\n2. Expanded the summary.\n",
+    );
+    f.server.app.store.move_card(card.id, "In review").unwrap();
+    f.published(&engine, &f.card(1).unwrap()).await;
+    assert!(prompt(&f).contains("Added two.txt."));
+
+    // The next review gives no answer to be read: the old one is not shown as an answer to it.
+    f.axis_says(&card, "review-standards", "VERDICT: approve");
+    f.axis_says(&card, "review-spec", CHANGES);
+    f.tick(&engine, &f.card(1).unwrap()).await;
+    assert!(
+        !prompt(&f).contains("answer to your last review"),
+        "{}",
+        prompt(&f)
+    );
 }

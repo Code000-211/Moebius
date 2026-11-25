@@ -18,6 +18,7 @@ CREATE TABLE forge_posts (
     key TEXT NOT NULL,
     text TEXT NOT NULL DEFAULT '',
     url TEXT,
+    count INTEGER NOT NULL DEFAULT 0,
     at INTEGER NOT NULL,
     PRIMARY KEY (change_id, kind, key)
 );
@@ -31,6 +32,8 @@ pub struct ForgePost {
     pub key: String,
     pub text: String,
     pub url: Option<String>,
+    /// For a review, how many findings it gave.
+    pub count: i64,
     pub at: i64,
 }
 
@@ -92,10 +95,49 @@ impl Store {
         Ok(())
     }
 
+    /// Says how many findings a claimed review post gave.
+    pub fn set_forge_post_count(
+        &self,
+        change_id: i64,
+        kind: &str,
+        key: &str,
+        count: i64,
+    ) -> Result<()> {
+        self.conn().execute(
+            "UPDATE forge_posts SET count = ?4 WHERE change_id = ?1 AND kind = ?2 AND key = ?3",
+            params![change_id, kind, key, count],
+        )?;
+        Ok(())
+    }
+
+    /// The newest answer to a review that was written after the newest review of the change: what the next review is
+    /// told. None once a later review gave no answer to be read.
+    pub fn pending_answer(&self, change_id: i64) -> Result<Option<ForgePost>> {
+        Ok(self
+            .read()
+            .query_row(
+                "SELECT kind, key, text, url, count, at FROM forge_posts WHERE change_id = ?1 AND kind = 'answer' \
+                 AND rowid > COALESCE((SELECT MAX(rowid) FROM forge_posts WHERE change_id = ?1 AND kind = 'review'), 0) \
+                 ORDER BY rowid DESC LIMIT 1",
+                [change_id],
+                |r| {
+                    Ok(ForgePost {
+                        kind: r.get(0)?,
+                        key: r.get(1)?,
+                        text: r.get(2)?,
+                        url: r.get(3)?,
+                        count: r.get(4)?,
+                        at: r.get(5)?,
+                    })
+                },
+            )
+            .optional()?)
+    }
+
     /// The posts of the change of `kind`, oldest first.
     pub fn forge_posts(&self, change_id: i64, kind: &str) -> Result<Vec<ForgePost>> {
         self.rows(
-            "SELECT kind, key, text, url, at FROM forge_posts WHERE change_id = ?1 AND kind = ?2 ORDER BY at, rowid",
+            "SELECT kind, key, text, url, count, at FROM forge_posts WHERE change_id = ?1 AND kind = ?2 ORDER BY at, rowid",
             params![change_id, kind],
             |r| {
                 Ok(ForgePost {
@@ -103,7 +145,8 @@ impl Store {
                     key: r.get(1)?,
                     text: r.get(2)?,
                     url: r.get(3)?,
-                    at: r.get(4)?,
+                    count: r.get(4)?,
+                    at: r.get(5)?,
                 })
             },
         )

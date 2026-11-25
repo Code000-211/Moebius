@@ -778,6 +778,17 @@ impl GitLab {
         } else {
             "Changes requested."
         };
+        // The approval comes first: a forge that refuses it (the author's own request) has had nothing written yet, so
+        // a retry as a review that only comments does not write the note and the discussions twice.
+        if review.approve && !review.comment_only {
+            self.project_do(
+                project,
+                Method::POST,
+                &format!("/merge_requests/{number}/approve"),
+                Some(&json!({ "sha": review.head })),
+            )
+            .await?;
+        }
         self.project_do(
             project,
             Method::POST,
@@ -796,15 +807,6 @@ impl GitLab {
                 Method::POST,
                 &format!("/merge_requests/{number}/discussions"),
                 Some(&json!({ "body": comment.body, "position": position })),
-            )
-            .await?;
-        }
-        if review.approve && !review.comment_only {
-            self.project_do(
-                project,
-                Method::POST,
-                &format!("/merge_requests/{number}/approve"),
-                Some(&json!({ "sha": review.head })),
             )
             .await?;
         }
@@ -1075,5 +1077,85 @@ mod tests {
         assert_eq!(request(Some("m"), Some("s")).merged_commit(), "m");
         assert_eq!(request(None, Some("s")).merged_commit(), "s");
         assert_eq!(request(None, None).merged_commit(), "head");
+    }
+
+    /// What a refused self-approval does to a review: nothing is written before the approval, so the retry as a review
+    /// that only comments writes the note and each discussion once.
+    #[tokio::test]
+    async fn a_refused_approval_leaves_nothing_to_write_twice() {
+        use crate::repos::forge::ReviewPost;
+        use crate::store::ReviewComment;
+        let calls: Arc<Mutex<Vec<String>>> = Arc::default();
+        let app = Router::new()
+            .route(
+                "/api/v4/projects/{project}/merge_requests/{n}",
+                get(|| async {
+                    axum::Json(
+                        json!({ "diff_refs": { "base_sha": "b", "start_sha": "s", "head_sha": "h" },
+                                                  "web_url": "https://gitlab.test/mr/7" }),
+                    )
+                }),
+            )
+            .route(
+                "/api/v4/projects/{project}/merge_requests/{n}/approve",
+                axum::routing::post(|State(calls): State<Arc<Mutex<Vec<String>>>>| async move {
+                    calls.lock().unwrap().push("approve".into());
+                    StatusCode::UNAUTHORIZED
+                }),
+            )
+            .route(
+                "/api/v4/projects/{project}/merge_requests/{n}/notes",
+                axum::routing::post(|State(calls): State<Arc<Mutex<Vec<String>>>>| async move {
+                    calls.lock().unwrap().push("note".into());
+                    axum::Json(json!({}))
+                }),
+            )
+            .route(
+                "/api/v4/projects/{project}/merge_requests/{n}/discussions",
+                axum::routing::post(|State(calls): State<Arc<Mutex<Vec<String>>>>| async move {
+                    calls.lock().unwrap().push("discussion".into());
+                    axum::Json(json!({}))
+                }),
+            )
+            .with_state(calls.clone());
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let url = format!("http://{}", listener.local_addr().unwrap());
+        tokio::spawn(async move { axum::serve(listener, app).await });
+        let gitlab = GitLab::new(&url, "glpat-test");
+        let lines = [ReviewComment {
+            path: "a.rs".into(),
+            line: 1,
+            body: "one".into(),
+        }];
+        let post = ReviewPost {
+            approve: true,
+            head: "h",
+            body: "Fine.",
+            comments: &lines,
+            comment_only: false,
+        };
+        assert!(
+            gitlab
+                .review_merge_request("acme/widgets", 7, &post)
+                .await
+                .is_err()
+        );
+        assert_eq!(
+            *calls.lock().unwrap(),
+            vec!["approve"],
+            "nothing was written before the approval"
+        );
+        let only_comments = ReviewPost {
+            comment_only: true,
+            ..post
+        };
+        gitlab
+            .review_merge_request("acme/widgets", 7, &only_comments)
+            .await
+            .unwrap();
+        assert_eq!(
+            *calls.lock().unwrap(),
+            vec!["approve", "note", "discussion"]
+        );
     }
 }

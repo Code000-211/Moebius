@@ -639,7 +639,7 @@ impl Forgejo {
             .collect();
         let request = json!({
             "commit_id": review.head,
-            "body": review.body,
+            "body": review.summary(),
             "event": if review.comment_only { "COMMENT" } else if review.approve { "APPROVED" } else { "REQUEST_CHANGES" },
             "comments": comments,
         });

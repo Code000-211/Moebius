@@ -31,6 +31,9 @@ pub struct OwnReview {
     pub verdict: String,
     /// What sends the card back, as the review wrote it.
     pub findings: String,
+    /// How many blocking findings `findings` holds, from the review itself.
+    #[serde(default)]
+    pub count: i64,
     /// The judgement calls for the person who gets the change.
     #[serde(default)]
     pub judgements: String,
@@ -174,12 +177,7 @@ impl App {
     /// asked for changes, or the Coder reported no answer.
     fn review_answer_text(&self, change: &Change, report: &str) -> Option<String> {
         let findings = self.store.latest_forge_post(change.id, "review").ok()??;
-        let count = findings
-            .text
-            .lines()
-            .filter(|l| l.trim_start().starts_with("- "))
-            .count()
-            .max(1);
+        let count = (findings.count.max(1)) as usize;
         let sections = comments::sections(report);
         let (_, text) = sections
             .iter()
@@ -300,6 +298,8 @@ impl App {
         {
             return Ok(Posted::Already);
         }
+        self.store
+            .set_forge_post_count(change.id, "review", &key, review.count)?;
         let (fit, rest) = self.split_comments(&repository, &head, &review.comments);
         let summary = if approve {
             let judgements = review.judgements.trim();
@@ -393,7 +393,8 @@ impl App {
     }
 
     /// Tells the issue where the work is, once: the link to the pull request, in the form of the server's replies. The
-    /// issue holds nothing else of the work.
+    /// issue holds nothing else of the work. It is remembered only once it is written: where the repository does not answer
+    /// on the forge nothing is claimed, and a write that fails is tried again at the next publish.
     pub(crate) fn link_pull_request(
         &self,
         card: &Card,
@@ -403,14 +404,16 @@ impl App {
         let Some(number) = change.pull_request else {
             return Ok(());
         };
-        if !self
-            .store
-            .claim_forge_post(change.id, "link", &number.to_string(), "")?
-        {
+        let key = number.to_string();
+        if !repository.answer_on_forge || self.store.has_forge_post(change.id, "link", &key)? {
             return Ok(());
         }
         let reply = Reply::posted("issue", "Pull request", &format!("#{number}"), "");
-        self.answer(repository, card.id, &reply.render());
+        let by = crate::decide::Actor::Script {
+            column: "commands".into(),
+        };
+        self.comment_issue(&by, card.id, &reply.render())?;
+        self.store.claim_forge_post(change.id, "link", &key, "")?;
         Ok(())
     }
 }

@@ -152,6 +152,13 @@ impl App {
             .as_ref()
             .filter(|c| c.head.as_deref() == Some(head) && opened(c))
         {
+            // The link on the issue that a write which was skipped or failed left out is tried again.
+            if draft_mode && let Err(e) = self.link_pull_request(card, repository, change) {
+                self.bus.publish(Event::ForgeError {
+                    repository: repository.name.clone(),
+                    message: format!("#{}: the link to the pull request: {e}", card.number),
+                });
+            }
             return Ok(change.clone());
         }
         let forge = self.forge(repository)?;

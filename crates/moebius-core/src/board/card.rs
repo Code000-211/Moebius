@@ -57,6 +57,8 @@ use crate::store::{Card, Change, Run};
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Review {
     pub verdict: &'static str,
+    /// How many blocking findings `findings` holds; 0 for a review that is not along two axes.
+    pub count: usize,
     pub findings: String,
     /// The judgement calls of a two-axis review, for the person who gets the change; empty for another review.
     pub judgements: String,
@@ -82,6 +84,7 @@ fn verdict(summary: Option<&str>, restricted: bool) -> Review {
         }
         return Review {
             verdict: said.verdict,
+            count: said.comments.len(),
             findings: findings.trim().to_string(),
             judgements: String::new(),
             axes: Vec::new(),
@@ -105,6 +108,7 @@ fn verdict(summary: Option<&str>, restricted: bool) -> Review {
     };
     Review {
         verdict,
+        count: 0,
         findings: findings.into(),
         judgements: String::new(),
         axes: Vec::new(),
@@ -267,6 +271,7 @@ impl Engine {
             let v = lua.create_table()?;
             v.set("verdict", review.verdict)?;
             v.set("findings", review.findings)?;
+            v.set("count", review.count)?;
             v.set("judgements", review.judgements)?;
             let lines = lua.create_table()?;
             for comment in &review.comments {

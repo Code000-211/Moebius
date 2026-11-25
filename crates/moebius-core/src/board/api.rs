@@ -327,6 +327,7 @@ impl Engine {
                     findings: review
                         .get::<Option<String>>("findings")?
                         .unwrap_or_default(),
+                    count: review.get::<Option<i64>>("count")?.unwrap_or_default(),
                     judgements: review
                         .get::<Option<String>>("judgements")?
                         .unwrap_or_default(),
