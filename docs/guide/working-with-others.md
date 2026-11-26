@@ -190,7 +190,7 @@ says why.
   the author a measurement is needed, how a measurer posts one and the form it must have. The round counts toward the
   three.
 - **Measurers.** The logins whose `## Measurement` comments the server reads. One per line, forge logins; the author of a
-  pull request is never its measurer.
+  pull request is never its measurer. Write `*` to let anyone measure, for a repository whose helpers measure each other's changes.
 - **Review flow.** The box below it, **Review flow**, has the settings that save you the rest of the clicks; see
   [Measurements without a click](#measurements-without-a-click), [Review when the checks are
   green](#review-when-the-checks-are-green) and [Pull requests that name no issue](#pull-requests-that-name-no-issue).

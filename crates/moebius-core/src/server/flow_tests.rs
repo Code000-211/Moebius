@@ -251,6 +251,31 @@ async fn a_comment_of_somebody_who_is_no_measurer_is_not_read() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
+async fn with_anyone_as_measurer_a_stranger_measures_and_the_author_still_does_not() {
+    let (f, card, head) = awaiting().await;
+    f.measurers(&["*"]);
+    // The author is refused, as with a list of logins.
+    f.fake.comment(1, "alice", &f.measurement(&head));
+    f.server.poll_github().await;
+    assert_eq!(f.reviews_of(&card).len(), 1);
+    assert!(f.reports(&card).is_empty());
+    assert!(
+        f.told()
+            .iter()
+            .any(|t| t.contains("you opened this pull request")),
+        "{:?}",
+        f.told()
+    );
+    // Anybody else's measurement is read and starts the round.
+    f.fake.comment(1, "mallory", &f.measurement(&head));
+    f.server.poll_github().await;
+    assert_eq!(f.reviews_of(&card).len(), 2, "a round started by itself");
+    let reports = f.reports(&card);
+    assert_eq!(reports.len(), 1);
+    assert_eq!(reports[0].measurer, "mallory");
+}
+
+#[tokio::test(flavor = "multi_thread")]
 async fn a_wrong_or_missing_commit_is_refused_and_says_what_is_wrong() {
     let (f, card, head) = awaiting().await;
     let base = f.merge_base(&head);

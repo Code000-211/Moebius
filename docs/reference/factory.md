@@ -180,7 +180,7 @@ With `dry_run` nothing is written and `created` entries have `number` 0.
 On an issue whose followed pull request waits for a measurement, a comment of a registered measurer is read at the poll
 ([ADR 0033](../adr/0033-measurements-and-reviews-flow-without-the-owners-clicks.md)).
 
-**Which comments.** All of these: the repository lists the comment's author in `measurers` (any case); the comment's
+**Which comments.** All of these: the repository lists the comment's author in `measurers` (any case), or `measurers` holds `*`, which is anyone; the comment's
 first non-blank line is the heading `## Measurement` (any case, more words after it are fine, `### Measurement` and
 `## Measurements` are not); and the latest round of the Reviewer on the followed pull request, a person's review apart,
 ended `approve_code` (state `awaiting_measurement`). Anything else is not read and not answered. Each comment is read once,

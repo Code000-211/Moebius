@@ -110,7 +110,13 @@ pub fn edited(current: &FactorySettings, edit: &FactoryEdit) -> Result<FactorySe
         None => current.review_brief.clone(),
     };
     let measurers = match &edit.measurers {
-        Some(logins) => clean_list("measurers", logins, is_login)?,
+        Some(logins) => clean_list("measurers", logins, |l| {
+            if l == crate::app::flow::measure::ANYONE {
+                Ok(())
+            } else {
+                is_login(l)
+            }
+        })?,
         None => current.measurers.clone(),
     };
     Ok(FactorySettings {
@@ -208,6 +214,29 @@ mod tests {
         assert_eq!(after.locked_paths, vec!["kernels/**".to_string()]);
         assert_eq!(after.review_brief.len(), 2);
         assert_eq!(after.measurers, vec!["ada".to_string()]);
+    }
+
+    #[test]
+    fn anyone_is_a_measurer_entry_and_other_patterns_are_not() {
+        let edit = |logins: &[&str]| FactoryEdit {
+            measurers: Some(logins.iter().map(|l| l.to_string()).collect()),
+            ..Default::default()
+        };
+        let after = edited(&defaults(), &edit(&["*", "ada"])).unwrap();
+        assert_eq!(after.measurers, vec!["*".to_string(), "ada".to_string()]);
+        assert!(edited(&defaults(), &edit(&["a*"])).is_err());
+        assert!(crate::app::flow::measure::is_measurer(
+            &after.measurers,
+            "Somebody"
+        ));
+        assert!(crate::app::flow::measure::is_measurer(
+            &["Ada".into()],
+            "ada"
+        ));
+        assert!(!crate::app::flow::measure::is_measurer(
+            &["ada".into()],
+            "bob"
+        ));
     }
 
     #[test]

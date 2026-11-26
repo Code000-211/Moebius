@@ -64,6 +64,17 @@ static FIELDS: LazyLock<[(&str, Regex); 4]> = LazyLock::new(|| {
     ]
 });
 
+/// The entry of a repository's `measurers` that lets anyone measure: every login but the pull request's author.
+pub(crate) const ANYONE: &str = "*";
+
+/// Whether `login` may post measurements for the repository whose `measurers` these are: it is listed (in any case),
+/// or the list holds [`ANYONE`]. The author of a pull request is refused separately, whatever the list says.
+pub(crate) fn is_measurer(measurers: &[String], login: &str) -> bool {
+    measurers
+        .iter()
+        .any(|m| m == ANYONE || m.eq_ignore_ascii_case(login))
+}
+
 /// Whether a comment is a measurement: its first line is the heading `## Measurement`, in any case, optionally followed by
 /// more words.
 pub fn is_measurement(body: &str) -> bool {
@@ -192,12 +203,7 @@ impl App {
         card: &Card,
         comment: &Comment,
     ) -> Result<Option<String>> {
-        if !is_measurement(&comment.body)
-            || !repository
-                .measurers
-                .iter()
-                .any(|m| m.eq_ignore_ascii_case(&comment.author))
-        {
+        if !is_measurement(&comment.body) || !is_measurer(&repository.measurers, &comment.author) {
             return Ok(None);
         }
         let Some(change) = self.followed_change(card)? else {
@@ -336,6 +342,10 @@ impl App {
             .unwrap_or_else(|| "<the merge base with the default branch>".into());
         let who = if repository.measurers.is_empty() {
             "No measurer is registered for this repository, so the owner accepts the measurement and merges the pull request."
+                .to_string()
+        } else if repository.measurers.iter().any(|m| m == ANYONE) {
+            "Anyone but the author of the pull request posts the numbers in a comment on this issue. The server checks it \
+             and has the Reviewer read it with the pull request; nobody needs to write /done."
                 .to_string()
         } else {
             format!(

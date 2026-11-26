@@ -1738,7 +1738,7 @@ every key is optional, and a key left out stays as it is. `reason` is kept with 
   the settings of [the software factory](#the-software-factory), which say what the merge gate refuses, what the
   Reviewer is told and who may measure. Each list is trimmed, without blanks and repeats, at most 100 entries of at most
   200 characters. `locked_paths` are globs added to the built-in ones. `review_brief` entries are paths inside the
-  repository (not absolute, no `..` part). `measurers` are logins (letters, digits, `-_.`). `testing_label` is a label name as `ready_label` is. Only a person changes them: a request
+  repository (not absolute, no `..` part). `measurers` are logins (letters, digits, `-_.`), or `*` for anyone; the author of a pull request never measures it. `testing_label` is a label name as `ready_label` is. Only a person changes them: a request
   of an agent's token that names one is refused with `403`.
 
 The decision is recorded (kind `edit_repository`, decider `person` or `agent:Moebius`; its context has `repository`,
