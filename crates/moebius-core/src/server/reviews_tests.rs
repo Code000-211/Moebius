@@ -283,7 +283,7 @@ async fn changes_requested_are_a_review_with_comments_on_lines_and_the_rest_in_t
     );
     assert!(body.contains("`elsewhere.rs` line 1"), "{body}");
     assert!(f.merged_requests().is_empty());
-    assert_eq!(f.card(1).unwrap().column, columns::IN_REVIEW);
+    assert_eq!(f.card(1).unwrap().column, columns::IN_PROGRESS);
 
     let change = f.server.app.followed_change(&card).unwrap().unwrap();
     let round = &f.server.app.store.external_reviews(change.id).unwrap()[0];
@@ -322,6 +322,69 @@ async fn changes_requested_are_a_review_with_comments_on_lines_and_the_rest_in_t
     assert_eq!(posts.len(), 1);
     assert!(posts[0]["comments"].as_array().unwrap().is_empty());
     assert!(posts[0]["body"].as_str().unwrap().contains("line 2: Hm."));
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn changes_are_the_authors_turn_and_the_next_done_the_reviewers() {
+    let (f, card, _) = ready().await;
+    f.author_says_done().await;
+    assert_eq!(f.card(1).unwrap().column, columns::IN_REVIEW);
+    let run = f.reviews_of(&card).remove(0);
+    f.reviewer_ends(&card, &run, &said("changes", "Two problems.", json!([])))
+        .await;
+    // The author is to act: the card waits in In progress with the round's summary as its note.
+    let waiting = f.card(1).unwrap();
+    assert_eq!(waiting.column, columns::IN_PROGRESS);
+    assert_eq!(waiting.note.as_deref(), Some("Two problems."));
+    let moves = f.server.app.store.moves_for_card(card.id).unwrap();
+    let last = moves.last().unwrap();
+    assert_eq!(
+        (last.from.as_str(), last.to.as_str()),
+        (columns::IN_REVIEW, columns::IN_PROGRESS)
+    );
+
+    // The author pushes and says done: the round starts and the card is the Reviewer's again.
+    push_to_the_pull_request(&f);
+    f.checks_are("completed", "success");
+    f.server.poll_github().await;
+    assert_eq!(
+        f.card(1).unwrap().column,
+        columns::IN_PROGRESS,
+        "a push alone"
+    );
+    f.author_says_done().await;
+    assert_eq!(f.reviews_of(&card).len(), 2);
+    let reviewed = f.card(1).unwrap();
+    assert_eq!(reviewed.column, columns::IN_REVIEW);
+    assert_eq!(reviewed.note, None);
+
+    // An approval of the new head ends where it always did.
+    let run = f.reviews_of(&card).remove(1);
+    f.reviewer_ends(&card, &run, &said("approve", "Right now.", json!([])))
+        .await;
+    assert_eq!(f.card(1).unwrap().column, columns::DONE);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn closing_a_pull_request_that_waits_for_its_author_sends_the_card_back() {
+    let (f, card, _) = ready().await;
+    let change = f.server.app.followed_change(&card).unwrap().unwrap();
+    f.server
+        .app
+        .store
+        .set_change_outside(change.id, "alice", columns::NOT_STARTED)
+        .unwrap();
+    f.author_says_done().await;
+    let run = f.reviews_of(&card).remove(0);
+    f.reviewer_ends(&card, &run, &said("changes", "Two problems.", json!([])))
+        .await;
+    assert_eq!(f.card(1).unwrap().column, columns::IN_PROGRESS);
+    f.fake.set_pull("closed", false);
+    *f.fake.listed_pulls.lock().unwrap() = Vec::new();
+    f.server.poll_github().await;
+    let back = f.card(1).unwrap();
+    assert_eq!(back.column, columns::NOT_STARTED);
+    assert_eq!(back.note, None);
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -1318,8 +1381,19 @@ async fn a_review_a_person_asks_for_is_written_on_the_pull_request() {
         told.iter().any(|t| t.contains("changes are requested")),
         "{told:?}"
     );
-    // The person merges the pull request where they asked for the review.
+    // The person merges the pull request where they asked for the review; the author is to act first.
     assert!(f.merged_requests().is_empty());
+    assert_eq!(f.card(1).unwrap().column, columns::IN_PROGRESS);
+    // A review the person asks for again is the Reviewer's turn.
+    push_to_the_pull_request(&f);
+    f.server.poll_github().await;
+    let (app, id) = (f.server.app.clone(), change.id);
+    tokio::task::spawn_blocking(move || {
+        app.review_outside_change(&Actor::first_owner(), &ReviewerRuns, id, "")
+    })
+    .await
+    .unwrap()
+    .unwrap();
     assert_eq!(f.card(1).unwrap().column, columns::IN_REVIEW);
 }
 

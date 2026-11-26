@@ -4937,8 +4937,13 @@ by the Reviewer when its author says so. The steps are in [the guide](../guide/w
 - **Changes requested.** The server writes a review that asks for changes, tied to the head that was read, with the summary
   as its body. A comment whose file and line are in the diff of the request (the lines of its hunks, three lines of
   context included) is a comment on that line; the others are appended to the body as `` `path` line N: text``. A forge
-  that refuses the review with lines gets it again with every comment in the body. The card stays in `In review`, and the
-  issue gets "Reviewed pull request #7: changes are requested...".
+  that refuses the review with lines gets it again with every comment in the body. It is the author's turn: the card
+  moves to `In progress` with the round's summary as its note (a card already there or done stays), the status label
+  stays `status:changes-requested`, and the issue gets "Reviewed pull request #7: changes are requested...". When the
+  next round starts (the author's `/done`, with `review_on_green` a new head whose checks are green, or a review a
+  person asks for), a card in `In progress` moves back to `In review` and loses that note. These moves are the
+  server's own, as the move to `In review` on following is: no column script runs for a followed pull request. A
+  pull request closed while its card waits in `In progress` sends the card back as it does from `In review`.
   GitHub `POST /repos/{repo}/pulls/{n}/reviews` with `event` `REQUEST_CHANGES` and `comments` of `path`, `line`, `side`
   `RIGHT`; Forgejo the same route with `event` `REQUEST_CHANGES` and `comments` of `path`, `new_position`; GitLab, which has
   no review that asks for changes, a note that starts "Changes requested." and one discussion on the diff per comment

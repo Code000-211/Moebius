@@ -718,6 +718,7 @@ impl App {
                 .map_err(|e| AppError::Conflict(e.to_string()))?;
             self.store
                 .start_external_review(round, run.id, 0, (&head, &base))?;
+            self.reviewers_turn(&card)?;
             Ok(run)
         })();
         if let Err(e) = &started {
@@ -782,9 +783,19 @@ impl App {
                 })
             })
             .unwrap_or(columns::NOT_STARTED);
-        // It leaves the column it is in, which counts as In review but need not be called so.
-        if board.class_of(&card.column) == Some(columns::IN_REVIEW) {
-            self.move_card_from(card_id, &card.column, back, None, None)?;
+        // It leaves the column it is in, which counts as In review but need not be called so, or as In progress while
+        // the author was to act after a review; the note that review left goes with it.
+        match board.class_of(&card.column) {
+            Some(columns::IN_REVIEW) => {
+                self.move_card_from(card_id, &card.column, back, None, None)?;
+            }
+            Some(columns::IN_PROGRESS) => {
+                self.store.clear_card_note(card_id)?;
+                if back != card.column {
+                    self.move_card_from(card_id, &card.column, back, None, None)?;
+                }
+            }
+            _ => {}
         }
         Ok(())
     }
