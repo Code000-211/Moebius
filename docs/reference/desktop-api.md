@@ -252,6 +252,7 @@ keep their rows: the role is checked before the `410`.
 | `POST /v1/cards/{id}/block` | member | yes |
 | `POST /v1/cards/{id}/unblock` | member | yes |
 | `POST /v1/cards/{id}/retry` | member | yes |
+| `POST /v1/cards/{id}/move` | member | no |
 | `GET /v1/cards/{id}/runs` | viewer | yes |
 | `GET /v1/cards/{id}/history` | viewer | yes |
 | `POST /v1/changes/{id}/merge` | member | yes |
@@ -2503,6 +2504,23 @@ without a merge.`; the closed change stays closed and the next publish opens a n
 Request: `{"reason": "..."}`; `reason` is optional, but send `{}` without one.
 
 Response: the `Card`. Errors: `404` no such card; `422` the card has neither an open `stuck` nor an open `change_closed` inbox item.
+
+### `POST /v1/cards/{id}/move`
+
+A person moves a card to another column of its board, as a column script moves it: the move is recorded with the card's
+moves, `card_moved` is sent, the new column's script takes the card up on the board's next tick, and a `lane = true`
+column queues the lane. It is a fresh start, as a retry is: the card's `retried_after` is set to its latest run, so a run
+that was stopped no longer holds it (`card.stopped` is false) and its `rounds`, `reviews` and `tokens` count from the runs
+after it, and its open `stuck` inbox item is resolved. The card's note is kept, replaced or cleared. The decision is
+recorded (kind `move_card`, decider `person:<handle>`; its context has `title`, `from`, `to` and `note`, which is `kept`,
+`replaced` or `cleared`). Only a person moves a card: an agent's or a script's token is refused.
+
+Request: `{"column": string, "note": string?, "clear_note": bool?, "reason": string?}`. `note` replaces the card's note,
+`clear_note: true` takes it away; with neither the note stays as it is. `reason` is kept with the decision.
+
+Response: the `Card`. Errors: `403` the caller is not a person; `404` no such card; `409` a run of the card is going (stop
+it first); `422` the board has no such column, the card is in it already, both `note` and `clear_note` are given, or the
+board's `kanban.toml` cannot be read.
 
 ### `POST /v1/cards/{id}/done`
 

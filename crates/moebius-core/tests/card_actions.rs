@@ -557,3 +557,147 @@ fn deleting_a_card_stops_its_run_and_takes_its_records_worktrees_and_branches() 
     let again = app.delete_card(&Actor::first_owner(), &*s.runs, doomed.id, "");
     assert!(matches!(again, Err(AppError::NotFound(_))));
 }
+
+#[test]
+fn a_person_moves_a_card_whose_run_was_stopped_to_review_with_its_note_cleared() {
+    let s = setup();
+    let app = &s.app;
+    let card = app
+        .create_issue(s.repository, "Work", "", OWNER_AUTHOR)
+        .unwrap();
+    s.engine.settle(card.id).unwrap();
+    let run = app.store.runs_for_card(card.id).unwrap().pop().unwrap();
+    app.store
+        .set_card_note(card.id, "The test lane failed.")
+        .unwrap();
+    let to_review = moebius_core::app::NoteChange::Clear;
+
+    // Refused while the run is going.
+    let going = app.move_card_by(
+        &Actor::first_owner(),
+        card.id,
+        "In review",
+        to_review.clone(),
+        "",
+    );
+    assert!(matches!(going, Err(AppError::Conflict(_))), "{going:?}");
+
+    app.stop_run(&Actor::first_owner(), &*s.runs, run.id, "")
+        .unwrap();
+    while app.store.run(run.id).unwrap().unwrap().ended_at.is_none() {
+        std::thread::yield_now();
+    }
+    let step = s.engine.settle(card.id).unwrap();
+    assert_eq!(step.waiting.as_deref(), Some("stopped by a person"));
+    assert!(app.store.has_open_inbox_item(card.id, "stuck").unwrap());
+
+    // Never an agent's or a script's word, never a column the board lacks, never the column the card is in.
+    let chat = app.store.add_run(None, "Moebius", "fake", "chat").unwrap();
+    let agent = Actor::Agent {
+        name: "Moebius".into(),
+        run: chat.id,
+    };
+    let script = Actor::Script {
+        column: "In progress".into(),
+    };
+    for by in [&agent, &script] {
+        let refused = app.move_card_by(by, card.id, "In review", to_review.clone(), "");
+        assert!(
+            matches!(refused, Err(AppError::Forbidden(_))),
+            "{refused:?}"
+        );
+    }
+    let nowhere = app.move_card_by(
+        &Actor::first_owner(),
+        card.id,
+        "Limbo",
+        to_review.clone(),
+        "",
+    );
+    assert!(matches!(nowhere, Err(AppError::Invalid(_))), "{nowhere:?}");
+    let same = app.move_card_by(
+        &Actor::first_owner(),
+        card.id,
+        "In progress",
+        to_review.clone(),
+        "",
+    );
+    assert!(matches!(same, Err(AppError::Invalid(_))), "{same:?}");
+    assert_eq!(
+        app.card(card.id).unwrap().note.as_deref(),
+        Some("The test lane failed.")
+    );
+
+    let mut events = app.bus.subscribe();
+    let moved = app
+        .move_card_by(
+            &Actor::first_owner(),
+            card.id,
+            "In review",
+            to_review,
+            "the lane's image was wrong",
+        )
+        .unwrap();
+    assert_eq!(
+        (moved.column.as_str(), moved.note.as_deref()),
+        ("In review", None)
+    );
+    assert_eq!(moved.retried_after, Some(run.id));
+    assert!(!app.store.has_open_inbox_item(card.id, "stuck").unwrap());
+    assert_eq!(
+        judgement_kinds(app, "move_card"),
+        [("person:owner".to_string(), Some(card.id))]
+    );
+    let decided = context(app, "move_card");
+    assert_eq!(
+        (
+            decided["from"].as_str(),
+            decided["to"].as_str(),
+            decided["note"].as_str(),
+        ),
+        (Some("In progress"), Some("In review"), Some("cleared"))
+    );
+    let judgement = app.store.judgements("move_card").unwrap().remove(0);
+    assert_eq!(judgement.reason, "the lane's image was wrong");
+    assert!(kinds_published(&mut events).contains(&"card_moved".to_string()));
+
+    // The stopped run no longer holds the card: the review column's script takes it up, and as the change was never
+    // coded to the end it sends the card on to coding, without the wrong note.
+    let step = s.engine.settle(card.id).unwrap();
+    assert_ne!(step.waiting.as_deref(), Some("stopped by a person"));
+    assert!(!app.store.has_open_inbox_item(card.id, "stuck").unwrap());
+    let last = app.store.runs_for_card(card.id).unwrap().pop().unwrap();
+    assert!(last.id > run.id, "a new run started");
+    assert_eq!(app.card(card.id).unwrap().note, None);
+}
+
+#[test]
+fn a_person_moving_a_card_keeps_or_replaces_its_note() {
+    let s = setup();
+    let app = &s.app;
+    let card = app
+        .create_issue(s.repository, "Work", "", OWNER_AUTHOR)
+        .unwrap();
+    app.store.set_card_note(card.id, "first").unwrap();
+    let owner = Actor::first_owner();
+    let moved = app
+        .move_card_by(
+            &owner,
+            card.id,
+            "Not started",
+            moebius_core::app::NoteChange::Keep,
+            "",
+        )
+        .unwrap();
+    assert_eq!(moved.note.as_deref(), Some("first"));
+    let moved = app
+        .move_card_by(
+            &owner,
+            card.id,
+            "Backlog",
+            moebius_core::app::NoteChange::Set("second".into()),
+            "",
+        )
+        .unwrap();
+    assert_eq!(moved.note.as_deref(), Some("second"));
+}

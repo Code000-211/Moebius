@@ -588,6 +588,7 @@ At the top:
 | `app/issues/sync.rs` | What the poll copies besides an issue's text, acting only on what the forge changed; which sub-issues count; the graph of what waits for what. |
 | `app/issues/text.rs` | The lines of a description that hold a parent ("Part of #n") or a blocker ("Blocked by #n") where the forge has none. |
 | `app/snapshot.rs` | What the snapshot needs to know about each card (repositories, people, approvals, dependencies, open changes), read once for all cards. |
+| `app/moving.rs` | A person moving a card to another column, as a script moves it: a fresh start that keeps, replaces or clears its note. |
 | `app/stopping.rs` | Holding (blocking), releasing and deleting a card, which stops its runs and, for a delete, removes what it left in the clone. |
 | `app/backlog.rs` | Backlog sync ([ADR 0032](adr/0032-the-factory-keeps-the-owners-work-small.md)): a project's backlog file read as items, and the issues made, updated, labelled and closed as not planned from them, a few at a time. |
 | `app/digest.rs` | The owner's daily digest ([ADR 0032](adr/0032-the-factory-keeps-the-owners-work-small.md)): one inbox item a day with what merged, was refused, reverted, reviewed, taken and released, what the stale handling did, the tokens spent, what is held and what needs a person. |

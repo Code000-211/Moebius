@@ -1001,6 +1001,13 @@ impl Store {
         Ok(())
     }
 
+    /// Takes the card's note away.
+    pub fn clear_card_note(&self, id: i64) -> Result<()> {
+        self.conn()
+            .execute("UPDATE cards SET note = NULL WHERE id = ?1", [id])?;
+        Ok(())
+    }
+
     /// Gives the card a fresh start: the runs it has now no longer count toward its limits.
     pub fn set_card_retried(&self, id: i64) -> Result<()> {
         self.conn().execute(

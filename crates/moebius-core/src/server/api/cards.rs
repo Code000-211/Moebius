@@ -63,6 +63,7 @@ pub(super) fn routes() -> Router<ApiState> {
         .route("/v1/cards/{id}/block", post(block_card))
         .route("/v1/cards/{id}/unblock", post(unblock_card))
         .route("/v1/cards/{id}/retry", post(retry_card))
+        .route("/v1/cards/{id}/move", post(move_card))
         .route("/v1/cards/{id}/done", post(answer_done))
         .route("/v1/cards/{id}/release-taken", post(release_taken))
         .route("/v1/changes/{id}/merge", post(merge_change))
@@ -704,6 +705,40 @@ async fn retry_card(
 ) -> Result<axum::Json<Card>, ApiError> {
     blocking(&state.app, move |app| {
         app.retry_card(&by, id, &retry.reason)
+    })
+    .await
+}
+
+/// The body of a person's move of a card: the column it goes to, and what becomes of its note.
+#[derive(Deserialize)]
+struct Move {
+    column: String,
+    /// The card's note from now on; kept as it is when neither this nor `clear_note` is given.
+    note: Option<String>,
+    #[serde(default)]
+    clear_note: bool,
+    #[serde(default)]
+    reason: String,
+}
+
+async fn move_card(
+    State(state): State<ApiState>,
+    Extension(by): Extension<Actor>,
+    UrlPath(id): UrlPath<i64>,
+    axum::Json(to): axum::Json<Move>,
+) -> Result<axum::Json<Card>, ApiError> {
+    let note = match (to.note, to.clear_note) {
+        (Some(_), true) => {
+            return Err(ApiError::from(crate::app::AppError::Invalid(
+                "give a note or clear it, not both".into(),
+            )));
+        }
+        (Some(text), false) => crate::app::NoteChange::Set(text),
+        (None, true) => crate::app::NoteChange::Clear,
+        (None, false) => crate::app::NoteChange::Keep,
+    };
+    blocking(&state.app, move |app| {
+        app.move_card_by(&by, id, &to.column, note, &to.reason)
     })
     .await
 }
@@ -1743,6 +1778,70 @@ mod tests {
             request = request.json(&body);
         }
         async move { request.send().await.unwrap() }
+    }
+
+    #[tokio::test]
+    async fn only_a_person_moves_a_card_and_says_what_becomes_of_its_note() {
+        let (_dir, state, addr) = start().await;
+        let app = &state.app;
+        let card = app.store.cards(1).unwrap().pop().unwrap();
+        app.store.set_card_note(card.id, "wrong").unwrap();
+        let path = format!("/v1/cards/{}/move", card.id);
+        let agent = crate::server::api::testing::agent_token(&state);
+        let by_agent = reqwest::Client::new()
+            .post(format!("http://{addr}{path}"))
+            .bearer_auth(agent)
+            .json(&serde_json::json!({ "column": "In review", "clear_note": true }))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(by_agent.status(), 403);
+        let both = request(
+            &state,
+            &addr,
+            reqwest::Method::POST,
+            path.clone(),
+            Some(serde_json::json!({ "column": "In review", "note": "x", "clear_note": true })),
+        )
+        .await;
+        assert_eq!(both.status(), 422);
+        let nowhere = request(
+            &state,
+            &addr,
+            reqwest::Method::POST,
+            path.clone(),
+            Some(serde_json::json!({ "column": "Limbo" })),
+        )
+        .await;
+        assert_eq!(nowhere.status(), 422);
+        assert_eq!(app.card(card.id).unwrap().column, card.column);
+
+        let moved = request(
+            &state,
+            &addr,
+            reqwest::Method::POST,
+            path,
+            Some(serde_json::json!({
+                "column": "In review",
+                "clear_note": true,
+                "reason": "a false alarm"
+            })),
+        )
+        .await;
+        assert_eq!(moved.status(), 200);
+        let moved: Card = moved.json().await.unwrap();
+        assert_eq!(
+            (moved.column.as_str(), moved.note.as_deref()),
+            ("In review", None)
+        );
+        let judgements = app.store.judgements("move_card").unwrap();
+        assert_eq!(
+            (
+                judgements[0].decider.as_str(),
+                judgements[0].reason.as_str()
+            ),
+            ("person:owner", "a false alarm")
+        );
     }
 
     #[tokio::test]
