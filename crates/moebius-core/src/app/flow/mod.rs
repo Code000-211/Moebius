@@ -26,6 +26,8 @@ use crate::store::{Card, Change, Flow, now};
 pub const GREEN_WAIT_AT_MOST: i64 = 120;
 /// The most days a pull request that names no issue may stay open.
 pub const UNBOUND_DAYS_AT_MOST: i64 = 365;
+/// The most rounds of the Reviewer a repository may give a followed pull request, short of no limit (0).
+pub const ROUND_LIMIT_AT_MOST: i64 = 100;
 /// The label a pull request that names no issue gets.
 pub const UNBOUND_LABEL: &str = "unbound";
 
@@ -62,6 +64,7 @@ impl App {
                 .as_deref()
                 .map_or(before.status_prefix.clone(), |p| p.trim().to_string()),
             work_on_forge: edit.work_on_forge.unwrap_or(before.work_on_forge),
+            review_round_limit: edit.review_round_limit.unwrap_or(before.review_round_limit),
         };
         let prefix = &after.status_prefix;
         if prefix.is_empty() || prefix.len() > 30 || prefix.contains([',', '\n', '\r']) {
@@ -81,6 +84,12 @@ impl App {
                 after.unbound_close_days
             )));
         }
+        if !(0..=ROUND_LIMIT_AT_MOST).contains(&after.review_round_limit) {
+            return Err(AppError::Invalid(format!(
+                "review_round_limit is a number from 0 (no limit) to {ROUND_LIMIT_AT_MOST}, not {}",
+                after.review_round_limit
+            )));
+        }
         if after == before {
             return Ok(after);
         }
@@ -98,6 +107,10 @@ impl App {
             ("status_labels".into(), after.status_labels.to_string()),
             ("status_prefix".into(), after.status_prefix.clone()),
             ("work_on_forge".into(), after.work_on_forge.to_string()),
+            (
+                "review_round_limit".into(),
+                after.review_round_limit.to_string(),
+            ),
         ]);
         self.record_action(by, "edit_flow", None, None, context, reason)?;
         self.store.set_flow(repository_id, &after)?;
@@ -156,7 +169,7 @@ impl App {
         if !self.store.ask_green_review(change.id, head)? {
             return Ok(());
         }
-        if self.store.external_review_rounds(change.id)? >= super::ROUND_LIMIT {
+        if flow.rounds_spent(self.store.external_review_rounds(change.id)?) {
             return self.ask_owner_to_look(card, change);
         }
         self.store.add_external_review(change.id, head)?;
@@ -222,4 +235,5 @@ pub struct FlowEdit {
     pub status_labels: Option<bool>,
     pub status_prefix: Option<String>,
     pub work_on_forge: Option<bool>,
+    pub review_round_limit: Option<i64>,
 }

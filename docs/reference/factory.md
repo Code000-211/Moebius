@@ -227,7 +227,7 @@ starting no round), and doing nothing at all where it says nothing:
 | the comment is by a measurer, the pull request is followed, and it awaits a measurement | not read, no reply |
 | the measurer is not the pull request's author | reply: you opened this pull request |
 | the repository is not frozen | reply: frozen, post it again once lifted |
-| the pull request was read fewer than 3 times (`ROUND_LIMIT`) | reply: a person will look, and the `review_rounds_spent` inbox item |
+| the pull request was read fewer times than the repository's `review_round_limit` (3 by default; 0 is no limit) | reply: a person will look, and the `review_rounds_spent` inbox item |
 | the head is known and is the head the code was approved at | reply: a new commit, post it once the new version is approved |
 | no round of the pull request is going | reply: a review is going on, post it again when it is over |
 | `after` is the head, `before` the merge base with the default branch (`git merge-base <default branch> <head>`), the four fields are there, and at least 3 runs each side | reply: a list of what is wrong, and the form with the two commits filled in |
@@ -270,6 +270,7 @@ without its author's `/done`:
 | `unbound_close_days` | 14 | See [pull requests that name no issue](#pull-requests-that-name-no-issue); 0 to 365. |
 | `status_labels` | `false` | Turns on [status labels](#status-labels-on-the-forge). |
 | `status_prefix` | `status:` | What a status label starts with. |
+| `review_round_limit` | 3 | How many rounds of the Reviewer a followed pull request gets before the owner is asked to look (`review_rounds_spent`), 0 to 100; 0 is no limit. Rounds a person asks for (`POST /v1/changes/{id}/review`) do not count. |
 
 The wait starts at the first poll that finds the checks of the head `success` for that head (`green_heads.since`); pending,
 red or no checks do not count (a repository with none is left to `/done`), and a push is another head with its own wait.

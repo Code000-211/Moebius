@@ -117,8 +117,9 @@ pull request reviewed ([ADR 0029](../adr/0029-the-reviewer-reads-a-pull-request-
   "Merged, thank you @alice!". If the owner turned **Merge external pull requests the reviewer approves** off, it is
   approved and waits for the owner to merge.
 - **Limits.** A version of your pull request is read once ("This version of the pull request was reviewed already; push
-  your changes, then write /done again."), at most three times in all. The fourth `/done` is answered "a person will look" and
-  the owner gets an Inbox item. A push while the review runs drops its verdict: write `/done` again.
+  your changes, then write /done again."), at most three times in all, or as many as the owner set in **Review rounds per pull request** of the **Review flow**
+  box (`review_round_limit`, 0 for no limit). The `/done` after that is answered "a person will look" and the owner gets an
+  Inbox item. Rounds the owner asks for themselves do not count. A push while the review runs drops its verdict: write `/done` again.
 
 For the owner: **Working with others**, **Pull requests of others**, **Merge external pull requests the reviewer
 approves** (`merge_reviewed`, on by default). Turned on, an approved pull request lands without a person looking, so
@@ -254,7 +255,7 @@ posted.
 By default the author writes `/done` to have a pull request reviewed. Turn on **Review when the checks are green** in the
 **Review flow** box (or `"$MOEBIUS" api PUT /v1/repositories/1/flow --body '{"review_on_green": true}'`) and the round
 starts by itself once the checks of the head have been green for **Green for (minutes)** (default 5) with no push; a push
-is a new head with its own wait. One round for each head, the three-round limit holds, and a freeze, a hold or Pause all
+is a new head with its own wait. One round for each head, the round limit holds, and a freeze, a hold or Pause all
 stops it. `/done` still works, and whichever comes first starts the round.
 
 ## Pull requests that name no issue
