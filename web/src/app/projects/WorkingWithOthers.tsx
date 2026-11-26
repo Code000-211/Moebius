@@ -327,7 +327,7 @@ export function WorkingWithOthers({ repository }: { repository: Repository }) {
           </Field>
           <Field
             label="Measurers"
-            hint={`One login on ${forge} per line. Stored and shown here; their "## Measurement" comments start a review round in a later release.`}
+            hint={`One login on ${forge} per line, or * for anyone. Their "## Measurement" comments start a review round; the author of a pull request never measures it.`}
           >
             <TextArea
               mono

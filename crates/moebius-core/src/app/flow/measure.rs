@@ -193,10 +193,7 @@ impl App {
         comment: &Comment,
     ) -> Result<Option<String>> {
         if !is_measurement(&comment.body)
-            || !repository
-                .measurers
-                .iter()
-                .any(|m| m.eq_ignore_ascii_case(&comment.author))
+            || !crate::app::factory::may_measure(&repository.measurers, &comment.author)
         {
             return Ok(None);
         }
@@ -214,7 +211,7 @@ impl App {
         {
             return Ok(Some(format!(
                 "@{who}, the measurement was not read: you opened this pull request, and a measurement of a change must be \
-                 written by someone else on the repository's list of measurers."
+                 written by someone else."
             )));
         }
         if self.frozen(repository.id)?.is_some() {
@@ -336,6 +333,14 @@ impl App {
             .unwrap_or_else(|| "<the merge base with the default branch>".into());
         let who = if repository.measurers.is_empty() {
             "No measurer is registered for this repository, so the owner accepts the measurement and merges the pull request."
+                .to_string()
+        } else if repository
+            .measurers
+            .iter()
+            .any(|m| m == crate::app::factory::ANYONE)
+        {
+            "Anyone but the author of the pull request posts the numbers in a comment on this issue. The server checks it \
+             and has the Reviewer read it with the pull request; nobody needs to write /done."
                 .to_string()
         } else {
             format!(

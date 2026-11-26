@@ -209,7 +209,8 @@ calls.
 
 [ADR 0033](../adr/0033-measurements-and-reviews-flow-without-the-owners-clicks.md). When the Reviewer answers
 `approve_code`, the issue is told how a measurement is posted. A **measurer** (a login you listed under **Measurers**, who
-did not open the pull request) writes a comment on the issue that starts with the heading `## Measurement`:
+did not open the pull request; list `*` to let anyone but the author measure, so that a new helper's measurement counts
+without you adding their login) writes a comment on the issue that starts with the heading `## Measurement`:
 
 ```text
 ## Measurement
