@@ -73,6 +73,10 @@ pub struct Repository {
     /// The logins on the forge whose `## Measurement` comments count.
     #[serde(default)]
     pub measurers: Vec<String>,
+    /// The owner's path globs whose changes need no measurement: a change that touches only such paths merges without
+    /// one where `require_measurement` is on.
+    #[serde(default)]
+    pub measurement_free_paths: Vec<String>,
     /// Why the repository is frozen; none when it is not.
     #[serde(default)]
     pub frozen: Option<super::factory::Frozen>,
@@ -272,7 +276,7 @@ fn card_records_last(runs: &str, changes: &str, cards: &str) -> Vec<String> {
 
 fn repository_columns() -> String {
     format!(
-        "id, name, path, forge, default_branch, github, trusted, project, home_project_id, files_of, mark_ready, ready_label, agents_take, commands, command_limit, answer_on_forge, merge_reviewed, require_measurement, locked_paths, review_brief, testing_label, measurers, {}",
+        "id, name, path, forge, default_branch, github, trusted, project, home_project_id, files_of, mark_ready, ready_label, agents_take, commands, command_limit, answer_on_forge, merge_reviewed, require_measurement, locked_paths, review_brief, testing_label, measurers, measurement_free_paths, {}",
         super::factory::FROZEN_COLUMNS
     )
 }
@@ -305,6 +309,7 @@ fn repository_from_row(r: &rusqlite::Row) -> rusqlite::Result<Repository> {
         review_brief: factory.review_brief,
         testing_label: factory.testing_label,
         measurers: factory.measurers,
+        measurement_free_paths: factory.measurement_free_paths,
         frozen,
     })
 }
@@ -407,6 +412,7 @@ impl Store {
             review_brief: default_review_brief(),
             testing_label: default_testing_label(),
             measurers: Vec::new(),
+            measurement_free_paths: Vec::new(),
             frozen: None,
         })
     }

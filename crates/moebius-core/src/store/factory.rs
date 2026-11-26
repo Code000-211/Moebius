@@ -52,6 +52,11 @@ CREATE TABLE reverts (
 );
 "#;
 
+/// A later column of the factory settings: the owner's globs of paths whose changes need no measurement.
+pub(super) const MEASUREMENT_FREE_SCHEMA: &str = r#"
+ALTER TABLE repositories ADD COLUMN measurement_free_paths TEXT NOT NULL DEFAULT '[]';
+"#;
+
 /// Why a repository is frozen, and since when. A frozen repository starts no review round, merges nothing and starts no
 /// agent run.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -73,6 +78,7 @@ pub struct FactorySettings {
     pub review_brief: Vec<String>,
     pub testing_label: String,
     pub measurers: Vec<String>,
+    pub measurement_free_paths: Vec<String>,
 }
 
 /// The three columns of a repository select that say why it is frozen: all the causes' reasons together, the first
@@ -101,10 +107,11 @@ pub(super) fn read_factory(
         review_brief: list(r.get(at + 2)?),
         testing_label: r.get(at + 3)?,
         measurers: list(r.get(at + 4)?),
+        measurement_free_paths: list(r.get(at + 5)?),
     };
-    let reason: Option<String> = r.get(at + 5)?;
-    let source: Option<String> = r.get(at + 6)?;
-    let since: Option<i64> = r.get(at + 7)?;
+    let reason: Option<String> = r.get(at + 6)?;
+    let source: Option<String> = r.get(at + 7)?;
+    let since: Option<i64> = r.get(at + 8)?;
     let frozen = reason.map(|reason| Frozen {
         reason,
         source: source.unwrap_or_else(|| "manual".into()),
@@ -118,13 +125,14 @@ impl Store {
     pub fn set_repository_factory(&self, id: i64, settings: &FactorySettings) -> Result<()> {
         self.conn().execute(
             "UPDATE repositories SET require_measurement = ?1, locked_paths = ?2, \
-             review_brief = ?3, testing_label = ?4, measurers = ?5 WHERE id = ?6",
+             review_brief = ?3, testing_label = ?4, measurers = ?5, measurement_free_paths = ?6 WHERE id = ?7",
             params![
                 settings.require_measurement,
                 serde_json::to_string(&settings.locked_paths)?,
                 serde_json::to_string(&settings.review_brief)?,
                 settings.testing_label,
                 serde_json::to_string(&settings.measurers)?,
+                serde_json::to_string(&settings.measurement_free_paths)?,
                 id
             ],
         )?;

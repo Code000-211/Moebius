@@ -230,6 +230,36 @@ async fn a_measurement_is_of_one_head_and_the_label_no_measurement_stands_in_for
 }
 
 #[tokio::test(flavor = "multi_thread")]
+async fn a_change_of_measurement_free_paths_only_needs_no_measurement() {
+    let (f, card, _) = ready().await;
+    // The pull request changes src/lib.rs, which is not among these: the measurement is still required.
+    f.factory(FactoryEdit {
+        require_measurement: Some(true),
+        measurement_free_paths: Some(vec!["notes/**".into()]),
+        ..Default::default()
+    });
+    let change = f.approved_for_the_owner(&card).await;
+    let error = f.merge(&owner(), change.id, "").await.unwrap_err();
+    assert!(f.refused(error).contains("requires a measurement"));
+
+    // Every path it changes is free: it merges without one, and nothing was accepted for it.
+    f.factory(FactoryEdit {
+        measurement_free_paths: Some(vec!["src/**".into()]),
+        ..Default::default()
+    });
+    f.merge(&owner(), change.id, "notes only").await.unwrap();
+    assert_eq!(f.merged_requests().len(), 1);
+    let head = change.head.clone().unwrap();
+    assert!(
+        !f.server
+            .app
+            .store
+            .has_measurement(change.id, &head)
+            .unwrap()
+    );
+}
+
+#[tokio::test(flavor = "multi_thread")]
 async fn a_locked_path_is_left_for_a_person_and_the_defaults_cannot_be_unlocked() {
     // The owner's own glob.
     let (f, card, _) = ready().await;

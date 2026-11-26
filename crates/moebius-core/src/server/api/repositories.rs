@@ -123,6 +123,9 @@ pub struct EditedRepository {
     /// The files of the default branch that are the repository's rules for the Reviewer; left out, they stay.
     #[serde(default)]
     pub review_brief: Option<Vec<String>>,
+    /// The path globs whose changes need no measurement; left out, they stay.
+    #[serde(default)]
+    pub measurement_free_paths: Option<Vec<String>>,
     /// The label of an issue whose code is right and whose measurement is missing; left out, it stays.
     #[serde(default)]
     pub testing_label: Option<String>,
@@ -188,6 +191,7 @@ async fn edit_repository(
                 review_brief: edited.review_brief,
                 testing_label: edited.testing_label,
                 measurers: edited.measurers,
+                measurement_free_paths: edited.measurement_free_paths,
             },
         };
         if edit.mark_ready.is_some()
@@ -202,6 +206,7 @@ async fn edit_repository(
             || edit.factory.review_brief.is_some()
             || edit.factory.testing_label.is_some()
             || edit.factory.measurers.is_some()
+            || edit.factory.measurement_free_paths.is_some()
         {
             repository = app.edit_working_with_others(&by, id, &edit, &edited.reason)?;
         }

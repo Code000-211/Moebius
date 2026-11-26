@@ -172,7 +172,9 @@ says why.
   them yourself. Add your own globs under **Locked paths**; the built-in ones stay.
 - **Require a measurement.** For a repository whose merge bar is a measurement (before and after on one machine, output
   parity), turn this on. A change then merges only when a measurement is accepted for its current head, or its issue
-  carries the label `no-measurement`. A registered measurer's comment gets one accepted without you (see [Measurements
+  carries the label `no-measurement`, or it changes only paths the owner listed under `measurement_free_paths`
+  (for a GPU engine `notes/backlog/closed/**`, `notes/backlog/measurements/**` and `notes/backlog/design/**`: an item
+  closed with its numbers, a measurement record, a design note). A registered measurer's comment gets one accepted without you (see [Measurements
   without a click](#measurements-without-a-click)); you can still accept one yourself with
   `POST /v1/changes/{id}/measurement`, or from the `moebius` command line:
 

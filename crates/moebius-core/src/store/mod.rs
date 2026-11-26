@@ -556,6 +556,7 @@ UPDATE cards SET moved_at = COALESCE((SELECT MAX(at) FROM card_moves WHERE card_
     // Migrations are numbered by their place: a store that main already migrated has `forms` and gets what comes after.
     forms::SCHEMA,
     lane::SCHEMA,
+    factory::MEASUREMENT_FREE_SCHEMA,
 ];
 
 #[cfg(test)]

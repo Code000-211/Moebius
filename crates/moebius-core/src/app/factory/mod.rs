@@ -40,6 +40,7 @@ pub fn settings_of(repository: &Repository) -> FactorySettings {
         review_brief: repository.review_brief.clone(),
         testing_label: repository.testing_label.clone(),
         measurers: repository.measurers.clone(),
+        measurement_free_paths: repository.measurement_free_paths.clone(),
     }
 }
 
@@ -113,6 +114,10 @@ pub fn edited(current: &FactorySettings, edit: &FactoryEdit) -> Result<FactorySe
         Some(logins) => clean_list("measurers", logins, is_login)?,
         None => current.measurers.clone(),
     };
+    let free = match &edit.measurement_free_paths {
+        Some(paths) => clean_list("measurement_free_paths", paths, is_repository_path)?,
+        None => current.measurement_free_paths.clone(),
+    };
     Ok(FactorySettings {
         require_measurement: edit
             .require_measurement
@@ -121,6 +126,7 @@ pub fn edited(current: &FactorySettings, edit: &FactoryEdit) -> Result<FactorySe
         review_brief: brief,
         testing_label: label,
         measurers,
+        measurement_free_paths: free,
     })
 }
 
@@ -178,6 +184,7 @@ pub struct FactoryEdit {
     pub review_brief: Option<Vec<String>>,
     pub testing_label: Option<String>,
     pub measurers: Option<Vec<String>>,
+    pub measurement_free_paths: Option<Vec<String>>,
 }
 
 #[cfg(test)]
@@ -191,6 +198,7 @@ mod tests {
             review_brief: vec!["REVIEW.md".into()],
             testing_label: "ready-for-testing".into(),
             measurers: Vec::new(),
+            measurement_free_paths: Vec::new(),
         }
     }
 

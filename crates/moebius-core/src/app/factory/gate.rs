@@ -9,7 +9,8 @@
 //! 2. for what the server does on its own account (a script or an agent; a person's own Merge is their decision): all
 //!    agents are not paused and the card is not held;
 //! 3. the checks of the head have passed;
-//! 4. a measurement is accepted for the head, or the issue carries `no-measurement`, when the repository requires one;
+//! 4. a measurement is accepted for the head, or the issue carries `no-measurement`, or every path the merge changes is
+//!    one of the repository's `measurement_free_paths`, when the repository requires one;
 //! 5. for the same actors: no path the change touches is locked (see `paths`), which only a person merges;
 //! 6. the repository's rules, as a decision of the kind `merge_check`, decided like a tool call.
 //!
@@ -104,7 +105,7 @@ impl App {
                     .iter()
                     .any(|label| label.eq_ignore_ascii_case(NO_MEASUREMENT_LABEL))
             });
-            if !labelled {
+            if !labelled && !self.measurement_free(repository, change) {
                 return Ok(Err(format!(
                     "this repository requires a measurement, and none is accepted for this version of the change; \
                      accept one, or label the issue {NO_MEASUREMENT_LABEL}"
@@ -187,6 +188,25 @@ impl App {
         harness: &[String],
     ) -> Option<(String, String)> {
         Self::locked_hit(repository, files, harness)
+    }
+
+    /// Whether every path merging the change changes is one of the repository's `measurement_free_paths` (notes that
+    /// close an item with its numbers, a measurement record, a design note): such a change needs no measurement. A change
+    /// whose paths cannot be read, or that changes none, is not.
+    fn measurement_free(&self, repository: &Repository, change: &Change) -> bool {
+        if repository.measurement_free_paths.is_empty() {
+            return false;
+        }
+        let patterns = || repository.measurement_free_paths.iter().map(String::as_str);
+        match self.merge_paths(repository, change) {
+            Ok(files) => {
+                !files.is_empty()
+                    && files
+                        .iter()
+                        .all(|file| paths::locked_by(patterns(), file).is_some())
+            }
+            Err(_) => false,
+        }
     }
 
     /// Whether a measurement is accepted for the change's current head.

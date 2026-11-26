@@ -546,6 +546,7 @@ mod tests {
             review_brief: vec!["REVIEW.md".into()],
             testing_label: "ready-for-testing".into(),
             measurers: Vec::new(),
+            measurement_free_paths: Vec::new(),
             frozen: None,
         }
     }
