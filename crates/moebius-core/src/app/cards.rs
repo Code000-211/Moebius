@@ -343,6 +343,87 @@ impl App {
         self.card(card_id)
     }
 
+    /// A person puts a card in another column of its board, as only the column scripts do otherwise: the decision is
+    /// recorded (kind `move_card`), the note is kept, replaced or, with `Some(None)`, taken away, and the card is moved
+    /// as a script moves it, so that the script of its new column takes it up at the next tick (a column marked
+    /// `lane = true` queues its change for the test lane). Like a retry it is a fresh start: the card's runs so far no
+    /// longer count toward its limits, a run a person stopped does not hold it, and its `stuck` item is resolved. Refused for an agent's or a script's actor, for a column the
+    /// card's board does not have, for a closed or archived card and while a run of the card is going.
+    pub fn move_card_by_person(
+        &self,
+        by: &Actor,
+        card_id: i64,
+        column: &str,
+        note: Option<Option<&str>>,
+        reason: &str,
+    ) -> Result<Card> {
+        if !by.is_person() {
+            return Err(AppError::Forbidden(
+                "only a person moves a card; agents and scripts move cards with the column scripts"
+                    .into(),
+            ));
+        }
+        let card = self.card(card_id)?;
+        if card.closed || card.archived_at.is_some() {
+            return Err(AppError::Invalid(format!(
+                "card {card_id} is closed or archived: reopen it first"
+            )));
+        }
+        let board = self.project_columns_of(card.project_id)?;
+        let Some(target) = board.column(column) else {
+            return Err(AppError::Invalid(format!(
+                "the board of card {card_id} has no column {column:?}"
+            )));
+        };
+        let to = target.name.clone();
+        if self
+            .store
+            .runs_for_card(card_id)?
+            .iter()
+            .any(|run| run.ended_at.is_none())
+        {
+            return Err(AppError::Conflict(format!(
+                "a run of card {card_id} is going: stop it or hold the card first"
+            )));
+        }
+        let from = card.column.to_string();
+        let mut context = BTreeMap::from([
+            ("title".into(), card.title.clone()),
+            ("from".into(), from.clone()),
+            ("to".into(), to.clone()),
+        ]);
+        match note {
+            None => {}
+            Some(None) => {
+                context.insert("note".into(), "cleared".into());
+            }
+            Some(Some(text)) => {
+                context.insert("note".into(), text.to_string());
+            }
+        }
+        self.record_action(by, "move_card", Some(card_id), None, context, reason)?;
+        // A person's move is a fresh start, as a retry is: a run they stopped or a limit already reached no longer
+        // holds the card in its new column, and its `stuck` item is resolved.
+        self.store.set_card_retried(card_id)?;
+        self.store.resolve_inbox_kind_for_card(card_id, "stuck")?;
+        match note {
+            None => {}
+            Some(None) => self.store.clear_card_note(card_id)?,
+            Some(Some(text)) => self.store.set_card_note(card_id, text)?,
+        }
+        if from == to {
+            self.set_waiting(card_id, None);
+            self.bus.publish(Event::CardUpdated(self.card(card_id)?));
+            return self.card(card_id);
+        }
+        match self.move_card_from(card_id, &from, &to, None, Some(by))? {
+            Some(card) => Ok(card),
+            None => Err(AppError::Conflict(format!(
+                "card {card_id} moved while it was being moved: look at it again"
+            ))),
+        }
+    }
+
     /// What happened to a card, oldest first: its moves (since they were recorded), its runs starting and ending, how
     /// each of its attempts fared and which was picked, the decisions made for it and its inbox items.
     pub fn card_history(&self, card_id: i64) -> Result<Vec<HistoryEntry>> {

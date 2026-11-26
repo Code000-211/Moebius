@@ -20,6 +20,8 @@
 //! - `POST /v1/changes/{id}/review` `{reason}`: a person has the Reviewer read a pull request someone else opened that a
 //!   card follows.
 //! - `GET /v1/changes/{id}/diff`: what a change changes, as a unified diff.
+//! - `POST /v1/cards/{id}/move` `{column, note?, clear_note?, reason}`: a person puts a card in another column of its
+//!   board, keeping, replacing or clearing its note.
 //! - `POST /v1/cards/{id}/retry` `{reason}`: a person retries a stuck card or one whose pull request was closed, which
 //!   gets a fresh start.
 //! - `POST /v1/cards/{id}/done` `{answer, reason}`: a person answers the question an assignee's `/done` comment asked
@@ -63,6 +65,7 @@ pub(super) fn routes() -> Router<ApiState> {
         .route("/v1/cards/{id}/block", post(block_card))
         .route("/v1/cards/{id}/unblock", post(unblock_card))
         .route("/v1/cards/{id}/retry", post(retry_card))
+        .route("/v1/cards/{id}/move", post(move_card))
         .route("/v1/cards/{id}/done", post(answer_done))
         .route("/v1/cards/{id}/release-taken", post(release_taken))
         .route("/v1/changes/{id}/merge", post(merge_change))
@@ -694,6 +697,40 @@ async fn release_taken(
 ) -> Result<axum::Json<Card>, ApiError> {
     let reason = body.map(|body| body.0.reason).unwrap_or_default();
     blocking(&state.app, move |app| app.release_taken(&by, id, &reason)).await
+}
+
+/// The request of `POST /v1/cards/{id}/move`.
+#[derive(serde::Deserialize)]
+struct MoveCard {
+    column: String,
+    #[serde(default)]
+    note: Option<String>,
+    #[serde(default)]
+    clear_note: bool,
+    #[serde(default)]
+    reason: String,
+}
+
+async fn move_card(
+    State(state): State<ApiState>,
+    Extension(by): Extension<Actor>,
+    UrlPath(id): UrlPath<i64>,
+    axum::Json(body): axum::Json<MoveCard>,
+) -> Result<axum::Json<Card>, ApiError> {
+    blocking(&state.app, move |app| {
+        let note = match (&body.note, body.clear_note) {
+            (Some(_), true) => {
+                return Err(crate::app::AppError::Invalid(
+                    "give a note or clear_note, not both".into(),
+                ));
+            }
+            (Some(text), false) => Some(Some(text.as_str())),
+            (None, true) => Some(None),
+            (None, false) => None,
+        };
+        app.move_card_by_person(&by, id, &body.column, note, &body.reason)
+    })
+    .await
 }
 
 async fn retry_card(

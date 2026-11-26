@@ -251,7 +251,8 @@ finds the server again by that directory: it answers, or it is started again wit
     `App::stop_run` (a run still starting is tried again for a few seconds; `board::may_start` makes every starter,
     and the harness once the run is recorded, refuse a card held meanwhile); `Engine::tick` returns at once for a held card, before its script is found or called, so nothing
     moves it or starts a run until `POST /v1/cards/{id}/unblock` (`App::unblock_card`) clears the columns (and, when the block stopped the card's latest run, starts it afresh as a retry does). Both are
-    decisions (`block_card`, `unblock_card`) and publish `card_updated`. `DELETE /v1/cards/{id}` (`App::delete_card`,
+    decisions (`block_card`, `unblock_card`) and publish `card_updated`. `POST /v1/cards/{id}/move` (`App::move_card_by_person`) is how a
+    person puts a card in another column, keeping, replacing or clearing its note, with the fresh start of a retry (decision `move_card`). `DELETE /v1/cards/{id}` (`App::delete_card`,
     for a person only) holds the card, stops its runs and waits for them to end, removes its worktrees and `moebius/`
     branches from the clone (`Repos::remove_card_work`), then `Store::delete_card` removes every record of the card in
     one transaction (the statements it shares with `Store::delete_repository`). On a forge the card's number goes

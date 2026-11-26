@@ -38,7 +38,7 @@ mod tests {
     use std::sync::Arc;
 
     use super::*;
-    use crate::app::{App, OWNER_AUTHOR};
+    use crate::app::{App, AppError, OWNER_AUTHOR};
     use crate::board::testing::{FakeHarness, column, engine_with, setup, setup_with_harness};
     use crate::board::{Engine, Kanban};
     use crate::store::{Card, Run};
@@ -390,6 +390,66 @@ mod tests {
         }
         assert_eq!(runs_of(&app, &card), 1);
         assert_eq!(stuck_items(&app), ["stopped by a person"]);
+    }
+
+    #[test]
+    fn a_person_moves_a_card_with_its_note_cleared_and_nobody_else_may() {
+        let (_dir, app, engine, repo) = setup();
+        let (card, _) = card_after_a_run(&app, repo, "stopped");
+        app.store
+            .set_card_note(card.id, "The test lane stopped at the step build.")
+            .unwrap();
+        let owner = crate::decide::Actor::first_owner();
+
+        // A script moves cards with its own calls, never with this one.
+        let script = crate::decide::Actor::Script {
+            column: "review".into(),
+        };
+        let refused = app
+            .move_card_by_person(&script, card.id, "In review", Some(None), "")
+            .unwrap_err();
+        assert!(matches!(refused, AppError::Forbidden(_)), "{refused}");
+        let refused = app
+            .move_card_by_person(&owner, card.id, "Nowhere", None, "")
+            .unwrap_err();
+        assert!(matches!(refused, AppError::Invalid(_)), "{refused}");
+
+        // While a run of the card is going it stays where it is.
+        let going = app
+            .store
+            .add_run(Some(card.id), "Coder", "fake", "code")
+            .unwrap();
+        app.store.set_run_status(going.id, "running").unwrap();
+        let refused = app
+            .move_card_by_person(&owner, card.id, "In review", Some(None), "")
+            .unwrap_err();
+        assert!(matches!(refused, AppError::Conflict(_)), "{refused}");
+        app.store.set_run_status(going.id, "stopped").unwrap();
+
+        // The column's name is taken in any case; the note goes, the decision is recorded.
+        let moved = app
+            .move_card_by_person(
+                &owner,
+                card.id,
+                "in review",
+                Some(None),
+                "The note was a false alarm.",
+            )
+            .unwrap();
+        assert_eq!(moved.column, "In review");
+        assert_eq!(moved.note, None);
+        let judgements = app.store.judgements("move_card").unwrap();
+        assert_eq!(
+            (judgements.len(), judgements[0].decider.as_str()),
+            (1, "person:owner")
+        );
+        // The script of its new column takes it up, not the one it came from.
+        let step = engine.settle(card.id).unwrap();
+        assert_ne!(
+            step.waiting.as_deref(),
+            Some("stopped by a person"),
+            "{step:?}"
+        );
     }
 
     #[test]

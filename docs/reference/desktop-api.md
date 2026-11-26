@@ -252,6 +252,7 @@ keep their rows: the role is checked before the `410`.
 | `POST /v1/cards/{id}/block` | member | yes |
 | `POST /v1/cards/{id}/unblock` | member | yes |
 | `POST /v1/cards/{id}/retry` | member | yes |
+| `POST /v1/cards/{id}/move` | member | yes |
 | `GET /v1/cards/{id}/runs` | viewer | yes |
 | `GET /v1/cards/{id}/history` | viewer | yes |
 | `POST /v1/changes/{id}/merge` | member | yes |
@@ -2503,6 +2504,21 @@ without a merge.`; the closed change stays closed and the next publish opens a n
 Request: `{"reason": "..."}`; `reason` is optional, but send `{}` without one.
 
 Response: the `Card`. Errors: `404` no such card; `422` the card has neither an open `stuck` nor an open `change_closed` inbox item.
+
+### `POST /v1/cards/{id}/move`
+
+A person puts a card in another column of its board, which otherwise only the column scripts do: for a card whose note
+is a false alarm, say, or one a script left where it should not be. Request: `{"column": string, "note": string,
+"clear_note": bool, "reason": string}`; `column` is a column of the card's board (in any case; `Ready` is `Not started`),
+the others are optional: `note` replaces the card's note, `clear_note` takes it away (not both), and without either the
+note stays. The decision is recorded (kind `move_card`, decider `person`; its context has `title`, `from`, `to` and, when
+the note changes, `note`, `cleared` for one taken away). Like a retry (`POST /v1/cards/{id}/retry`) the move is a fresh
+start: the card's runs so far no longer count toward its limits, a run a person stopped does not hold it, and its `stuck`
+inbox item is resolved. The card is then moved as a script moves it (`card_moved`, its followers told, a column marked
+`lane = true` asked for a test lane job), and the script of its new column takes it up at the next tick. A move to the
+column it is in changes only the note and the fresh start. Response: the `Card`. Errors: `403` for an agent's or a
+script's token; `404` no such card; `422` a column the board does not have, a closed or archived card, or both `note` and
+`clear_note`; `409` while a run of the card is going (stop it or hold the card first).
 
 ### `POST /v1/cards/{id}/done`
 
