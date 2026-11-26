@@ -115,9 +115,10 @@ fn git_command() -> Command {
     }
 }
 
-/// Runs git in `clone` on objects only (no attributes file, no external diff, no pager, never a prompt, a file over a
-/// megabyte never diffed or merged as text), reads at most `cap` bytes of what it prints and stops it when there is
-/// more, and kills it after [`GIT_TIME`].
+/// Runs git in `clone` on objects only (no attributes file, no external diff, no pager, never a prompt), reads at most
+/// `cap` bytes of what it prints and stops it when there is more, and kills it after [`GIT_TIME`]. A file is binary
+/// when git's content check finds it so, whatever its size: a large source file is text, and the review's own limits
+/// (`review.file_limit`, `review.diff_limit`, [`GIT_OUTPUT_AT_MOST`]) bound what of it is read.
 fn run_git(clone: &Path, args: &[&str], cap: usize) -> Result<Out, String> {
     let cap = cap.min(GIT_OUTPUT_AT_MOST);
     let mut child = git_command()
@@ -128,8 +129,6 @@ fn run_git(clone: &Path, args: &[&str], cap: usize) -> Result<Out, String> {
             &format!("core.attributesFile={NO_ATTRIBUTES}"),
             "-c",
             "core.pager=cat",
-            "-c",
-            "core.bigFileThreshold=1m",
             "-c",
             "core.packedGitLimit=256m",
         ])
@@ -1377,6 +1376,32 @@ mod tests {
         let error = p.app.review_context(&p.card).unwrap_err();
         assert!(matches!(error, ContextError::Unreadable(_)), "{error}");
         assert!(error.to_string().contains("blob.bin"), "{error}");
+    }
+
+    #[test]
+    fn a_text_file_over_a_megabyte_is_text_and_its_change_is_reviewed() {
+        // A selftest of a kernel library, as some repositories keep them: well over a megabyte of source.
+        let (dir, clone) = repository();
+        let mut body: String = (0..40_000)
+            .map(|i| format!("    check_case({i}); // a case of the selftest\n"))
+            .collect();
+        assert!(body.len() > 1 << 20);
+        std::fs::write(clone.join("selftest.cpp"), &body).unwrap();
+        git(&clone, &["add", "."]).unwrap();
+        commit(&clone, "a large selftest");
+        git(&clone, &["checkout", "--quiet", "-b", "moebius/pr-7"]).unwrap();
+        body.push_str("    check_new_kernel();\n");
+        std::fs::write(clone.join("selftest.cpp"), &body).unwrap();
+        git(&clone, &["add", "."]).unwrap();
+        commit(&clone, "a test of the new kernel");
+        let head = git(&clone, &["rev-parse", "HEAD"]).unwrap();
+        git(&clone, &["checkout", "--quiet", "main"]).unwrap();
+        let p = follow(dir, clone, head);
+        let text = p.app.review_context(&p.card).unwrap();
+        // Not refused as binary: its line is in the diff, and the file is given as its part of the diff.
+        assert!(text.contains("+    check_new_kernel();"), "{text}");
+        assert!(text.contains("selftest.cpp ("), "{text}");
+        assert!(!text.contains("binary"), "{text}");
     }
 
     #[test]

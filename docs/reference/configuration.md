@@ -197,7 +197,8 @@ optional; a change needs a restart.
 | `review.files_at_most` | integer | `60` | How many files the pull request may change; one that changes more is not reviewed. At least 1. |
 
 A diff over `review.diff_limit` and a binary file are still refused, with a `review_not_possible` item in the Inbox: an
-approval of what the Reviewer did not read could be merged.
+approval of what the Reviewer did not read could be merged. A file is binary when git's content check finds it so (a NUL byte), whatever its size: a
+source file over a megabyte is text, and over `review.file_limit` it is given as its part of the diff.
 
 ## `[guard]`
 
