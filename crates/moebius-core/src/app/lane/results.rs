@@ -16,7 +16,7 @@ use serde_json::{Value, json};
 
 use super::report::failure_reply;
 use super::{LANE_PAUSED, MEASURER_PREFIX};
-use crate::app::{App, ROUND_LIMIT, Result, columns};
+use crate::app::{App, Result, columns};
 use crate::decide::Actor;
 use crate::store::{Card, Change, INFRASTRUCTURE_FAILURES, LaneJob, Repository};
 
@@ -301,7 +301,7 @@ impl App {
         if going {
             return Ok(false);
         }
-        if self.store.external_review_rounds(change.id)? >= ROUND_LIMIT {
+        if self.review_rounds_spent(card, change)? {
             self.ask_owner_to_look(card, change)?;
             return Ok(true);
         }
