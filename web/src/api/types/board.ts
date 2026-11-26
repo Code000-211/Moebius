@@ -45,6 +45,10 @@ export interface Repository {
   measurers?: string[];
   /** The path globs whose changes need no measurement: a change of only these merges without one. */
   measurement_free_paths?: string[];
+  /** Whether an approval of the Reviewer accepts the measurement the author committed under `author_measurement_paths`. */
+  trust_author_measurement?: boolean;
+  /** The path globs where authors commit the record of their measurement. */
+  author_measurement_paths?: string[];
   /** Why the repository is frozen (nothing is reviewed, merged or started), and since when; none when it is not. */
   frozen?: Frozen | null;
 }
@@ -83,6 +87,8 @@ export interface CardChange {
   external_review?: ExternalReview;
   /** The latest measurement a registered measurer posted on that pull request (ADR 0033); absent while there is none. */
   measurement?: Measurement;
+  /** The author's login when the measurement accepted for the pull request as it is now is the one they committed with it, approved by the Reviewer (`trust_author_measurement`); absent otherwise. */
+  author_measurement?: string;
   /** True while the pull request is a draft (ADR 0034); absent otherwise. */
   draft?: boolean;
   /** What the pull request's body says, read by the repository's pull request template (ADR 0034); absent until it was read. */

@@ -92,7 +92,9 @@ pub use commands::DEFAULT_COMMAND_LIMIT;
 pub use cycles::{Cycle, CycleCard};
 pub use deletions::{ChatRemoved, ResearchRemoved};
 pub use events::Event;
-pub use factory::{DEFAULT_REVIEW_BRIEF, DEFAULT_TESTING_LABEL, FactorySettings, Frozen};
+pub use factory::{
+    AUTHOR_REVIEWED, DEFAULT_REVIEW_BRIEF, DEFAULT_TESTING_LABEL, FactorySettings, Frozen,
+};
 pub use favourites::{PLACE_KINDS, Place, RECENT_LIMIT};
 pub use flow::{DEFAULT_STATUS_PREFIX, Flow, MeasurementReport, Unbound};
 pub use forms::ForgePost;
@@ -557,6 +559,7 @@ UPDATE cards SET moved_at = COALESCE((SELECT MAX(at) FROM card_moves WHERE card_
     forms::SCHEMA,
     lane::SCHEMA,
     factory::MEASUREMENT_FREE,
+    factory::AUTHOR_MEASUREMENT,
 ];
 
 #[cfg(test)]

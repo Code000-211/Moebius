@@ -5,7 +5,7 @@
 //!   "owner/repo"` and optionally `trusted: [logins]` it is a repository whose issues are polled from GitHub; with
 //!   `forge: "gitlab"` and `project: "group/project"`, one whose issues are polled from GitLab; with `forge: "forgejo"`
 //!   and `project: "owner/repo"`, one on Forgejo, such as Codeberg.
-//! - `PUT /v1/repositories/{id}` `{trusted, mark_ready, ready_label, agents_take, commands, command_limit, answer_on_forge, merge_reviewed, require_measurement, locked_paths, review_brief, testing_label, measurers, measurement_free_paths}`: replaces the logins a repository on a
+//! - `PUT /v1/repositories/{id}` `{trusted, mark_ready, ready_label, agents_take, commands, command_limit, answer_on_forge, merge_reviewed, require_measurement, locked_paths, review_brief, testing_label, measurers, measurement_free_paths, trust_author_measurement, author_measurement_paths}`: replaces the logins a repository on a
 //!   forge trusts and how it works with others (each key left out stays as it is).
 //! - `POST /v1/repositories/{id}/freeze` and `/unfreeze` `{reason}`: the owner's brake on the factory (see
 //!   [`crate::app::factory::freeze`]); only a person unfreezes.
@@ -132,6 +132,12 @@ pub struct EditedRepository {
     /// The path globs whose changes need no measurement; left out, they stay.
     #[serde(default)]
     pub measurement_free_paths: Option<Vec<String>>,
+    /// Whether an approval of the Reviewer accepts the author's committed measurement; left out, it stays.
+    #[serde(default)]
+    pub trust_author_measurement: Option<bool>,
+    /// The path globs where authors commit their measurements; left out, they stay.
+    #[serde(default)]
+    pub author_measurement_paths: Option<Vec<String>>,
     #[serde(default)]
     pub reason: String,
 }
@@ -192,6 +198,8 @@ async fn edit_repository(
                 testing_label: edited.testing_label,
                 measurers: edited.measurers,
                 measurement_free_paths: edited.measurement_free_paths,
+                trust_author_measurement: edited.trust_author_measurement,
+                author_measurement_paths: edited.author_measurement_paths,
             },
         };
         if edit.mark_ready.is_some()
@@ -207,6 +215,8 @@ async fn edit_repository(
             || edit.factory.testing_label.is_some()
             || edit.factory.measurers.is_some()
             || edit.factory.measurement_free_paths.is_some()
+            || edit.factory.trust_author_measurement.is_some()
+            || edit.factory.author_measurement_paths.is_some()
         {
             repository = app.edit_working_with_others(&by, id, &edit, &edited.reason)?;
         }
@@ -568,6 +578,7 @@ mod tests {
         assert_eq!(repo.testing_label, "ready-for-testing");
         assert!(repo.locked_paths.is_empty() && repo.measurers.is_empty());
         assert!(repo.measurement_free_paths.is_empty());
+        assert!(!repo.trust_author_measurement && repo.author_measurement_paths.is_empty());
         assert!(repo.frozen.is_none());
 
         let put = |token: String, body: serde_json::Value| {
@@ -587,6 +598,8 @@ mod tests {
                 "testing_label": "needs-bench",
                 "measurers": ["ada", "grace"],
                 "measurement_free_paths": ["notes/backlog/closed/**", " notes/backlog/closed/** "],
+                "trust_author_measurement": true,
+                "author_measurement_paths": ["notes/backlog/measurements/**"],
                 "reason": "the owner's bar",
             }),
         )
@@ -600,6 +613,11 @@ mod tests {
         assert_eq!(saved.testing_label, "needs-bench");
         assert_eq!(saved.measurers, ["ada", "grace"]);
         assert_eq!(saved.measurement_free_paths, ["notes/backlog/closed/**"]);
+        assert!(saved.trust_author_measurement);
+        assert_eq!(
+            saved.author_measurement_paths,
+            ["notes/backlog/measurements/**"]
+        );
         assert_eq!(state.app.store.repository(repo.id).unwrap(), Some(saved));
         let judgement = state.app.store.judgements("edit_repository").unwrap();
         assert_eq!(judgement.len(), 1);
@@ -648,6 +666,20 @@ mod tests {
         .unwrap();
         assert_eq!(refused.status(), 403);
         assert!(state.app.repository(repo.id).unwrap().require_measurement);
+        let refused = put(
+            agent.clone(),
+            serde_json::json!({ "trust_author_measurement": false }),
+        )
+        .await
+        .unwrap();
+        assert_eq!(refused.status(), 403);
+        assert!(
+            state
+                .app
+                .repository(repo.id)
+                .unwrap()
+                .trust_author_measurement
+        );
         // It may still change what it always could.
         let allowed = put(agent, serde_json::json!({ "commands": true }))
             .await

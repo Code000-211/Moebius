@@ -249,6 +249,16 @@ posted.
   **not** committed to your repository: the server writes no file to your default branch. A column script or your own
   workflow can copy the comment where you want it.
 
+**When the authors measure their own changes.** Some repositories have the author measure and commit the record with
+the change (say `notes/backlog/measurements/<item>.md`), and the Reviewer checks it against the review brief. Turn on
+**Trust the author's committed measurement** in the box and list where those files live under **Author measurement
+paths** (`notes/backlog/measurements/**`), or `"$MOEBIUS" api PUT /v1/repositories/1 --body
+'{"trust_author_measurement": true, "author_measurement_paths": ["notes/backlog/measurements/**"]}'` (a person's token;
+an agent's is refused). Then a round of the Reviewer that ends `approve` for a head whose merge adds or changes such a
+file accepts that file as the head's measurement, by the author, and the approval merges through the gate. A review you
+asked for yourself does not count, a head without such a file is not measured, and a push needs its own round. The card
+window says the measurement is the author's, reviewed, and so does the digest.
+
 ## Review when the checks are green
 
 By default the author writes `/done` to have a pull request reviewed. Turn on **Review when the checks are green** in the

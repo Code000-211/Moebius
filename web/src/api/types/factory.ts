@@ -106,6 +106,8 @@ export interface DigestLine {
   who: string | null;
   detail: string;
   measured: boolean;
+  /** True when the measurement is the one the author committed with the change, approved by the Reviewer; absent otherwise. */
+  by_author?: boolean;
 }
 
 /** What one repository did since the last digest. */

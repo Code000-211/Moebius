@@ -76,7 +76,9 @@ see, and tell the `text` again from what is left. An owner who is no member of a
 line is about a card by `card`, which every list's line has when it has one.
 
 A section is `{id, name, merged, refused, reverts, review_runs, rounds, taken, released, upkeep, frozen, more}`. Each
-list is of lines `{number, title, who, detail, measured}`; a list longer than 8 is cut and `more` says how many were left out, by list
+list is of lines `{number, title, who, detail, measured}`, and a merged line whose measurement is the author's own,
+committed with the change and approved by the Reviewer, also has `by_author: true` (the text says `measured by the author,
+reviewed`); a list longer than 8 is cut and `more` says how many were left out, by list
 name. `rounds` are the Reviewer's rounds on followed pull requests (`detail` is `round <n>: approved`, `changes
 requested` or `no verdict`), `review_runs` counts the runs of the Reviewer on a card's own change, `upkeep` the stale
 handling's actions (`detail` starts with `released:`, `reminded:` or `closed:`), and `frozen` the cards that are held
@@ -258,6 +260,20 @@ head after the push is answered with the new commit.
 window as `change.measurement`) and in the digest (`measured` on the merged line); no commit is made to the default branch.
 The reason is in [ADR 0033](../adr/0033-measurements-and-reviews-flow-without-the-owners-clicks.md).
 
+## The author's committed measurement
+
+Some repositories have their authors measure their own changes and commit the record with the change (say
+`notes/backlog/measurements/<item>.md`), which the Reviewer checks against the review brief. With the repository's
+`trust_author_measurement` on (default off; only a person sets it, in `PUT /v1/repositories/{id}`), a round of the
+Reviewer of kind `author` or `measurement` (never one a person asked for, kind `person`) that ends `approve` for a head
+whose merge into the default branch adds or changes a file matching one of `author_measurement_paths` (globs read as the
+locked paths are; default none, so nothing counts) is recorded as an accepted measurement of that head before the merge
+gate is asked: a row of `measurements` with the source `author (reviewed)` and the pull request's author as measurer,
+and a log line of kind `measurement` with the author as `who`. The approval's merge then goes through the gate as any
+other. A head without such a file, one whose only such file is deleted, or a merge that cannot be read is not measured by
+this; a push makes a new head that needs its own round. The card window shows it as `change.author_measurement`, the
+digest as `by_author` on the merged line.
+
 ## Review on green checks
 
 `review_on_green` (`GET` and `PUT /v1/repositories/{id}/flow`, off by default) has a followed pull request reviewed
@@ -311,7 +327,7 @@ owner's own) or of Moebius's own, for a pull request against another branch, or 
 | Kind | Written when | `number` | `who` | `data` |
 |---|---|---|---|---|
 | `measurement_read` | a measurement passed the checks and a round was asked for | the issue | the measurer | `change`, `head`, `card` |
-| `measurement` | the Reviewer approved a measurement, so it is accepted for the head | the issue | the measurer | `change`, `head`, `card` |
+| `measurement` | the Reviewer approved a measurement, so it is accepted for the head; or approved a head with the author's committed measurement ([above](#the-authors-committed-measurement), `source` `author (reviewed)`) | the issue | the measurer, or the author | `change`, `head`, `card`, `source` for the author's |
 | `unbound_closed` | a pull request that named no issue was closed | the pull request | its author | `title`; `detail` is why |
 
 ## Status labels on the forge

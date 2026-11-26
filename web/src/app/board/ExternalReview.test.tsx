@@ -109,6 +109,21 @@ describe("the measurement of a followed pull request", () => {
     expect(note.getAttribute("data-state")).toBe("accepted");
   });
 
+  it("says the author's committed measurement was accepted with the Reviewer's approval", () => {
+    render(
+      <ExternalReview
+        review={{ ...round, state: "merged", verdict: "approve", summary: "Meets the brief." }}
+        forge="GitHub"
+        authorMeasurement="alice"
+      />,
+    );
+    const note = screen.getByTestId("measurement-note");
+    expect(note.textContent).toContain(
+      "@alice, the author's, committed with the change and reviewed",
+    );
+    expect(note.getAttribute("data-state")).toBe("author");
+  });
+
   it("says not enough when the Reviewer still wants more, and where to read what", () => {
     render(
       <ExternalReview

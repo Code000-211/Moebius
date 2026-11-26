@@ -73,6 +73,8 @@ export function WorkingWithOthers({ repository }: { repository: Repository }) {
     testing: repository.testing_label ?? DEFAULT_TESTING_LABEL,
     measurers: repository.measurers ?? [],
     free: repository.measurement_free_paths ?? [],
+    trustAuthor: repository.trust_author_measurement ?? false,
+    authorPaths: repository.author_measurement_paths ?? [],
   };
   const [mark, setMark] = useState(stored.mark);
   const [label, setLabel] = useState(stored.label);
@@ -87,6 +89,8 @@ export function WorkingWithOthers({ repository }: { repository: Repository }) {
   const [testing, setTesting] = useState(stored.testing);
   const [measurers, setMeasurers] = useState(stored.measurers.join("\n"));
   const [free, setFree] = useState(stored.free.join("\n"));
+  const [trustAuthor, setTrustAuthor] = useState(stored.trustAuthor);
+  const [authorPaths, setAuthorPaths] = useState(stored.authorPaths.join("\n"));
   const trimmed = label.trim();
   const limitNumber = Number(limit);
   const limitOk =
@@ -99,6 +103,8 @@ export function WorkingWithOthers({ repository }: { repository: Repository }) {
     testingTrimmed !== stored.testing ||
     !same(lines(measurers), stored.measurers) ||
     !same(lines(free), stored.free) ||
+    trustAuthor !== stored.trustAuthor ||
+    !same(lines(authorPaths), stored.authorPaths) ||
     mark !== stored.mark ||
     trimmed !== stored.label ||
     takes !== stored.takes ||
@@ -123,6 +129,8 @@ export function WorkingWithOthers({ repository }: { repository: Repository }) {
         testing_label: testingTrimmed,
         measurers: lines(measurers),
         measurement_free_paths: lines(free),
+        trust_author_measurement: trustAuthor,
+        author_measurement_paths: lines(authorPaths),
       }),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: keys.snapshot });
@@ -305,6 +313,35 @@ export function WorkingWithOthers({ repository }: { repository: Repository }) {
               value={free}
               placeholder="notes/backlog/closed/**"
               onChange={(e) => setFree(e.target.value)}
+            />
+          </Field>
+          <div className="flex items-start justify-between gap-4">
+            <div className="flex min-w-0 flex-col gap-0.5">
+              <span className="text-base font-medium text-text">
+                Trust the author's committed measurement
+              </span>
+              <span className="text-sm text-muted">
+                When the Reviewer approves a head that adds or changes a file under the paths below,
+                that file is the head's measurement, the author's, reviewed. A round a person asked
+                for does not count, and a new push needs its own round.
+              </span>
+            </div>
+            <Switch
+              label="Trust the author's committed measurement"
+              checked={trustAuthor}
+              onChange={setTrustAuthor}
+            />
+          </div>
+          <Field
+            label="Author measurement paths"
+            hint="One glob per line, read as the locked paths are: where authors commit the record of their measurement."
+          >
+            <TextArea
+              mono
+              rows={2}
+              value={authorPaths}
+              placeholder="notes/backlog/measurements/**"
+              onChange={(e) => setAuthorPaths(e.target.value)}
             />
           </Field>
           <Field

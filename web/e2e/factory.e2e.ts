@@ -72,6 +72,8 @@ describe.skipIf(usesRealServer)("the factory", () => {
     await box.getByLabel("Ready for testing").fill("needs-bench");
     await box.getByLabel("Measurers").fill("alice\nbob");
     await box.getByLabel("Measurement-free paths").fill("notes/backlog/closed/**");
+    await box.getByLabel("Trust the author's committed measurement").click();
+    await box.getByLabel("Author measurement paths").fill("notes/backlog/measurements/**");
     await box.getByRole("button", { name: "Save settings" }).click();
     await page.waitForFunction(
       () =>
@@ -91,6 +93,8 @@ describe.skipIf(usesRealServer)("the factory", () => {
       testing_label: "needs-bench",
       measurers: ["alice", "bob"],
       measurement_free_paths: ["notes/backlog/closed/**"],
+      trust_author_measurement: true,
+      author_measurement_paths: ["notes/backlog/measurements/**"],
     });
   });
 

@@ -35,6 +35,13 @@ const digest: Digest = {
       name: "widgets",
       merged: [
         line({ measured: true }),
+        line({
+          number: 15,
+          title: "Faster attention",
+          who: "carol",
+          measured: true,
+          by_author: true,
+        }),
         line({ number: 13, title: "Shorter prompts", who: "moebius" }),
       ],
       refused: [line({ number: 14, title: "Fix lanes", who: null, detail: "the checks failed" })],
@@ -109,6 +116,7 @@ describe("the digest", () => {
     expect(within(merged).getByText("Cache the plan")).toBeTruthy();
     expect(within(merged).getByText("by alice")).toBeTruthy();
     expect(within(merged).getAllByText("measured")).toHaveLength(1);
+    expect(within(merged).getAllByText("measured by the author, reviewed")).toHaveLength(1);
     expect(within(merged).getByText("by moebius")).toBeTruthy();
     expect(within(section).getByText("the checks failed")).toBeTruthy();
     expect(within(section).getByText("it broke the build")).toBeTruthy();

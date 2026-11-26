@@ -91,6 +91,8 @@ describe("the repository's working with others", () => {
       testing_label: "ready-for-testing",
       measurers: [],
       measurement_free_paths: [],
+      trust_author_measurement: false,
+      author_measurement_paths: [],
     });
   });
 
@@ -139,6 +141,8 @@ describe("the repository's working with others", () => {
       testing_label: "ready-for-testing",
       measurers: [],
       measurement_free_paths: [],
+      trust_author_measurement: false,
+      author_measurement_paths: [],
     });
   });
 
@@ -219,6 +223,10 @@ describe("the repository's working with others", () => {
     fireEvent.change(screen.getByLabelText("Measurement-free paths"), {
       target: { value: " notes/backlog/closed/** \n\nnotes/backlog/measurements/**" },
     });
+    fireEvent.click(screen.getByLabelText("Trust the author's committed measurement"));
+    fireEvent.change(screen.getByLabelText("Author measurement paths"), {
+      target: { value: "notes/backlog/measurements/**\n" },
+    });
     fireEvent.click(screen.getByRole("button", { name: "Save settings" }));
     await waitFor(() => expect(fetcher).toHaveBeenCalled());
     expect(sent(fetcher)).toMatchObject({
@@ -228,6 +236,8 @@ describe("the repository's working with others", () => {
       testing_label: "bench",
       measurers: ["alice", "bob"],
       measurement_free_paths: ["notes/backlog/closed/**", "notes/backlog/measurements/**"],
+      trust_author_measurement: true,
+      author_measurement_paths: ["notes/backlog/measurements/**"],
     });
   });
 

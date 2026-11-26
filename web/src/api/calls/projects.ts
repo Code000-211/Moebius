@@ -75,6 +75,8 @@ export interface WorkingWithOthers {
   testing_label?: string;
   measurers?: string[];
   measurement_free_paths?: string[];
+  trust_author_measurement?: boolean;
+  author_measurement_paths?: string[];
 }
 
 /** Sets how the repository works with people on other servers: the ready label and which issues its agents take. */

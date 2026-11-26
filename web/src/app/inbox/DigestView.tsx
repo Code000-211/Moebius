@@ -70,9 +70,13 @@ function Line({ line, kind }: { line: DigestLine; kind: string }) {
       {line.measured && (
         <span
           className="rounded-control px-1.5 text-xs text-complete-text outline outline-1 -outline-offset-1 outline-hairline-strong"
-          title="A measurement came with this change"
+          title={
+            line.by_author
+              ? "The author measured this change and committed the record; the Reviewer approved it"
+              : "A measurement came with this change"
+          }
         >
-          measured
+          {line.by_author ? "measured by the author, reviewed" : "measured"}
         </span>
       )}
       {line.detail !== "" && <span className="text-muted">{line.detail}</span>}
