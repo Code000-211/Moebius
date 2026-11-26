@@ -141,10 +141,7 @@ impl App {
             {
                 continue;
             }
-            if repository
-                .measurers
-                .iter()
-                .any(|m| m.eq_ignore_ascii_case(&comment.author))
+            if super::factory::may_measure(&repository.measurers, &comment.author)
                 && super::flow::measure::is_measurement(&comment.body)
             {
                 let reply = self

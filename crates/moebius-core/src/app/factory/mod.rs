@@ -80,6 +80,26 @@ fn is_repository_path(path: &str) -> std::result::Result<(), String> {
     Ok(())
 }
 
+/// The entry of `measurers` that lets anyone but the author of a pull request measure it.
+pub const ANYONE: &str = "*";
+
+/// Whether `login` may post a measurement in a repository whose measurers are `measurers`: it is listed (any case), or
+/// the list holds [`ANYONE`]. The author of the pull request is refused apart, whatever the list says.
+pub fn may_measure(measurers: &[String], login: &str) -> bool {
+    measurers
+        .iter()
+        .any(|m| m == ANYONE || m.eq_ignore_ascii_case(login))
+}
+
+/// A login of a measurer, or [`ANYONE`].
+fn is_measurer(entry: &str) -> std::result::Result<(), String> {
+    if entry == ANYONE {
+        Ok(())
+    } else {
+        is_login(entry)
+    }
+}
+
 /// A login on a forge.
 fn is_login(login: &str) -> std::result::Result<(), String> {
     if login
@@ -111,7 +131,7 @@ pub fn edited(current: &FactorySettings, edit: &FactoryEdit) -> Result<FactorySe
         None => current.review_brief.clone(),
     };
     let measurers = match &edit.measurers {
-        Some(logins) => clean_list("measurers", logins, is_login)?,
+        Some(logins) => clean_list("measurers", logins, is_measurer)?,
         None => current.measurers.clone(),
     };
     let free = match &edit.measurement_free_paths {
@@ -218,6 +238,20 @@ mod tests {
         assert_eq!(after.review_brief.len(), 2);
         assert_eq!(after.measurers, vec!["ada".to_string()]);
         assert_eq!(after.measurement_free_paths, vec!["notes/**".to_string()]);
+    }
+
+    #[test]
+    fn a_star_among_the_measurers_is_kept_and_means_anyone() {
+        let edit = FactoryEdit {
+            measurers: Some(vec![" * ".into()]),
+            ..Default::default()
+        };
+        let after = edited(&defaults(), &edit).unwrap();
+        assert_eq!(after.measurers, vec!["*".to_string()]);
+        assert!(may_measure(&after.measurers, "Carol"));
+        assert!(may_measure(&["ada".to_string()], "ADA"));
+        assert!(!may_measure(&["ada".to_string()], "carol"));
+        assert!(!may_measure(&[], "carol"));
     }
 
     #[test]

@@ -251,6 +251,50 @@ async fn a_comment_of_somebody_who_is_no_measurer_is_not_read() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
+async fn with_a_star_anyone_but_the_author_measures() {
+    let (f, card, head) = awaiting().await;
+    f.measurers(&["*"]);
+    f.fake.comment(1, "alice", &f.measurement(&head));
+    f.server.poll_github().await;
+    assert!(
+        f.told()
+            .iter()
+            .any(|t| t.contains("you opened this pull request")),
+        "{:?}",
+        f.told()
+    );
+    assert!(f.reports(&card).is_empty());
+
+    f.fake.comment(1, "carol", &f.measurement(&head));
+    f.server.poll_github().await;
+    assert_eq!(f.reviews_of(&card).len(), 2, "a round started by itself");
+    let reports = f.reports(&card);
+    assert_eq!(reports.len(), 1);
+    assert_eq!(reports[0].measurer, "carol");
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn with_a_star_the_issue_is_told_that_anyone_but_the_author_measures() {
+    let (f, card, _) = ready().await;
+    f.measurers(&["*"]);
+    f.author_says_done().await;
+    let run = f.reviews_of(&card).remove(0);
+    f.reviewer_ends(
+        &card,
+        &run,
+        &said("approve_code", "The code is right.", json!([])),
+    )
+    .await;
+    let asked = f
+        .told()
+        .into_iter()
+        .find(|t| t.contains("## Measurement"))
+        .unwrap();
+    assert!(asked.contains("Anyone but the author"), "{asked}");
+    assert!(!asked.contains("@*"), "{asked}");
+}
+
+#[tokio::test(flavor = "multi_thread")]
 async fn a_wrong_or_missing_commit_is_refused_and_says_what_is_wrong() {
     let (f, card, head) = awaiting().await;
     let base = f.merge_base(&head);
