@@ -237,7 +237,7 @@ The output is the same, byte for byte, on all six runs.
   Reviewer reads it.
 - The server checks all of that and answers on the issue with what is wrong, and starts nothing; the measurer posts
   another comment. A comment that holds starts the next round of the Reviewer by itself, with the measurement in what it
-  reads (as data, with the measurer's login), once the checks are green. It counts toward the three rounds. Nobody writes
+  reads (as data, with the measurer's login), once the checks are green. It counts toward the round limit. Nobody writes
   `/done`.
 - The Reviewer judges the measurement against your review brief. `approve` accepts it for that commit and merges through
   the gate (or leaves the pull request in **Ready to merge** if you merge by hand); `approve_code` says it is still not
@@ -396,7 +396,7 @@ to In review.
   repository, or it names no closing keyword for an issue that has a card that is not done, or the issue's card already
   has an open change. A failed fetch of its head is a `forge_error` event; the card is still followed.
 - **`/done` has nothing reviewed.** It is not the author's, the pull request is not followed, the checks are pending or
-  failing (the pull request says so when they fail), its head was reviewed already, or the three rounds are spent.
+  failing (the pull request says so when they fail), its head was reviewed already, or the round limit is spent.
 - **A command is not answered.** `commands` is off, the comment is older than the moment it was turned on, the command is
   not the first word of a line or is in a quote or code block, or **Answer on GitHub** is off (the command still worked; see
   the issue's assignees). A comment that could not be written is a `forge_error` event.

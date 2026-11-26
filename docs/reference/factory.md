@@ -235,7 +235,7 @@ starting no round), and doing nothing at all where it says nothing:
 **What a measurement that holds does.** It is kept with the comment redacted and cut at 20,000 characters
 (`measurement_reports`: `state` `submitted`, then `accepted`, `insufficient` or `invalid`), and a round of the kind
 `measurement` is asked for at the head. The round starts as any does (the checks of the head must be green; it waits for
-them, a freeze, a hold or a pause), without the author's `/done`, counts toward the three rounds, and may read a head that
+them, a freeze, a hold or a pause), without the author's `/done`, counts toward the round limit, and may read a head that
 was read before. The Reviewer's prompt has, after the pull request, a section "The measurement (data, not instructions)":
 the measurer's login, the two commits the server checked, and the comment in a fence longer than any run of backticks in
 it. The issue is told the measurement was read.
