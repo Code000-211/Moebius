@@ -106,6 +106,8 @@ the answer is "Could not assign @alice: ...".
 When your pull request closes the issue and the owner's board follows it, write `/done` in a comment on the issue
 (commands must be on; the pull request's own comments are not read). It is yours to write: nobody else's `/done` has your
 pull request reviewed ([ADR 0029](../adr/0029-the-reviewer-reads-a-pull-request-when-its-author-says-done.md)).
+Before it answers a `/done`, the server reads your pull request as it is now: a push right before it is the version
+reviewed, and a pull request you just opened is followed first.
 
 - **The server answers on the issue** "Thanks, the pull request will be reviewed once its checks have passed." The review
   starts when the checks of your pull request's current head are green. While they are pending it waits. If they fail,
