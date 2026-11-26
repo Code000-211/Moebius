@@ -79,7 +79,6 @@ fn is_repository_path(path: &str) -> std::result::Result<(), String> {
     Ok(())
 }
 
-/// A login on a forge.
 /// The entry of `measurers` that lets anyone but the author of a pull request measure it.
 pub const ANYONE: &str = "*";
 
@@ -100,6 +99,7 @@ fn is_measurer(entry: &str) -> std::result::Result<(), String> {
     }
 }
 
+/// A login on a forge.
 fn is_login(login: &str) -> std::result::Result<(), String> {
     if login
         .chars()
