@@ -233,6 +233,7 @@ pub(super) const ROUTES: &[(&str, &str, Access)] = &[
     ("POST", "/v1/cards/{id}/block", MEMBER),
     ("POST", "/v1/cards/{id}/unblock", MEMBER),
     ("POST", "/v1/cards/{id}/retry", MEMBER),
+    ("POST", "/v1/cards/{id}/move", MEMBER_PERSON),
     ("GET", "/v1/cards/{id}/runs", VIEWER),
     ("GET", "/v1/cards/{id}/history", VIEWER),
     ("POST", "/v1/changes/{id}/merge", MEMBER),

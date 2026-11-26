@@ -45,6 +45,7 @@ mod kinds;
 pub mod lane;
 mod localize;
 mod milestones;
+mod moving;
 mod notices;
 mod packages;
 mod pausing;
@@ -198,6 +199,7 @@ pub use jira::{
 pub use kinds::{CardQuery, KindView};
 pub use lane::{CardLane, LaneRequest, LaneView, RepositoryLane};
 pub use milestones::{MilestoneDetail, MilestoneFields, MilestoneProject, MilestoneView};
+pub use moving::NoteChange;
 pub use projects::{Member, ProjectRepository, ProjectView, Sight, UNQUOTED};
 pub use snapshot::CardLookups;
 pub use stopping::CardStopWaits;
