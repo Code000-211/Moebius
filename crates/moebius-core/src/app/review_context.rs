@@ -115,9 +115,9 @@ fn git_command() -> Command {
     }
 }
 
-/// Runs git in `clone` on objects only (no attributes file, no external diff, no pager, never a prompt, a file over a
-/// megabyte never diffed or merged as text), reads at most `cap` bytes of what it prints and stops it when there is
-/// more, and kills it after [`GIT_TIME`].
+/// Runs git in `clone` on objects only (no attributes file, no external diff, no pager, never a prompt; a file is
+/// binary only when git finds a NUL byte in it, whatever its size), reads at most `cap` bytes of what it prints and
+/// stops it when there is more, and kills it after [`GIT_TIME`].
 fn run_git(clone: &Path, args: &[&str], cap: usize) -> Result<Out, String> {
     let cap = cap.min(GIT_OUTPUT_AT_MOST);
     let mut child = git_command()
@@ -128,8 +128,6 @@ fn run_git(clone: &Path, args: &[&str], cap: usize) -> Result<Out, String> {
             &format!("core.attributesFile={NO_ATTRIBUTES}"),
             "-c",
             "core.pager=cat",
-            "-c",
-            "core.bigFileThreshold=1m",
             "-c",
             "core.packedGitLimit=256m",
         ])
@@ -1377,6 +1375,33 @@ mod tests {
         let error = p.app.review_context(&p.card).unwrap_err();
         assert!(matches!(error, ContextError::Unreadable(_)), "{error}");
         assert!(error.to_string().contains("blob.bin"), "{error}");
+    }
+
+    #[test]
+    fn a_text_file_over_a_megabyte_is_reviewed_as_text() {
+        let (dir, clone) = repository();
+        let line = "int check_something(void) { return 0; }\n";
+        let body = line.repeat(2 * 1024 * 1024 / line.len() + 1);
+        assert!(body.len() > 2 * 1024 * 1024);
+        std::fs::write(clone.join("selftest.cpp"), &body).unwrap();
+        git(&clone, &["add", "."]).unwrap();
+        commit(&clone, "the selftests");
+        git(&clone, &["checkout", "--quiet", "-b", "moebius/pr-7"]).unwrap();
+        std::fs::write(
+            clone.join("selftest.cpp"),
+            format!("{body}int check_the_new_kernel(void) {{ return 0; }}\n"),
+        )
+        .unwrap();
+        git(&clone, &["add", "."]).unwrap();
+        commit(&clone, "a new selftest");
+        let head = git(&clone, &["rev-parse", "HEAD"]).unwrap();
+        git(&clone, &["checkout", "--quiet", "main"]).unwrap();
+        let p = follow(dir, clone, head);
+        let text = p.app.review_context(&p.card).unwrap();
+        assert!(
+            text.contains("+int check_the_new_kernel(void) { return 0; }"),
+            "{text}"
+        );
     }
 
     #[test]
