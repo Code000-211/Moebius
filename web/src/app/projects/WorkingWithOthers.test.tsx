@@ -90,6 +90,7 @@ describe("the repository's working with others", () => {
       review_brief: ["REVIEW.md"],
       testing_label: "ready-for-testing",
       measurers: [],
+      measurement_free_paths: [],
     });
   });
 
@@ -137,6 +138,7 @@ describe("the repository's working with others", () => {
       review_brief: ["REVIEW.md"],
       testing_label: "ready-for-testing",
       measurers: [],
+      measurement_free_paths: [],
     });
   });
 
@@ -214,6 +216,9 @@ describe("the repository's working with others", () => {
       target: { value: " bench " },
     });
     fireEvent.change(screen.getByLabelText("Measurers"), { target: { value: "alice\nbob" } });
+    fireEvent.change(screen.getByLabelText("Measurement-free paths"), {
+      target: { value: " notes/backlog/closed/** \n\nnotes/backlog/measurements/**" },
+    });
     fireEvent.click(screen.getByRole("button", { name: "Save settings" }));
     await waitFor(() => expect(fetcher).toHaveBeenCalled());
     expect(sent(fetcher)).toMatchObject({
@@ -222,6 +227,7 @@ describe("the repository's working with others", () => {
       review_brief: ["REVIEW.md"],
       testing_label: "bench",
       measurers: ["alice", "bob"],
+      measurement_free_paths: ["notes/backlog/closed/**", "notes/backlog/measurements/**"],
     });
   });
 

@@ -71,6 +71,7 @@ describe.skipIf(usesRealServer)("the factory", () => {
     await box.getByLabel("Review brief").fill("notes/backlog/CARDS.md\nAGENTS.md");
     await box.getByLabel("Ready for testing").fill("needs-bench");
     await box.getByLabel("Measurers").fill("alice\nbob");
+    await box.getByLabel("Measurement-free paths").fill("notes/backlog/closed/**");
     await box.getByRole("button", { name: "Save settings" }).click();
     await page.waitForFunction(
       () =>
@@ -89,6 +90,7 @@ describe.skipIf(usesRealServer)("the factory", () => {
       review_brief: ["notes/backlog/CARDS.md", "AGENTS.md"],
       testing_label: "needs-bench",
       measurers: ["alice", "bob"],
+      measurement_free_paths: ["notes/backlog/closed/**"],
     });
   });
 

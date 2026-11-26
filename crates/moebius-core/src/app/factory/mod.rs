@@ -40,6 +40,7 @@ pub fn settings_of(repository: &Repository) -> FactorySettings {
         review_brief: repository.review_brief.clone(),
         testing_label: repository.testing_label.clone(),
         measurers: repository.measurers.clone(),
+        measurement_free_paths: repository.measurement_free_paths.clone(),
     }
 }
 
@@ -133,6 +134,10 @@ pub fn edited(current: &FactorySettings, edit: &FactoryEdit) -> Result<FactorySe
         Some(logins) => clean_list("measurers", logins, is_measurer)?,
         None => current.measurers.clone(),
     };
+    let free = match &edit.measurement_free_paths {
+        Some(paths) => clean_list("measurement_free_paths", paths, |_| Ok(()))?,
+        None => current.measurement_free_paths.clone(),
+    };
     Ok(FactorySettings {
         require_measurement: edit
             .require_measurement
@@ -141,6 +146,7 @@ pub fn edited(current: &FactorySettings, edit: &FactoryEdit) -> Result<FactorySe
         review_brief: brief,
         testing_label: label,
         measurers,
+        measurement_free_paths: free,
     })
 }
 
@@ -198,6 +204,7 @@ pub struct FactoryEdit {
     pub review_brief: Option<Vec<String>>,
     pub testing_label: Option<String>,
     pub measurers: Option<Vec<String>>,
+    pub measurement_free_paths: Option<Vec<String>>,
 }
 
 #[cfg(test)]
@@ -211,6 +218,7 @@ mod tests {
             review_brief: vec!["REVIEW.md".into()],
             testing_label: "ready-for-testing".into(),
             measurers: Vec::new(),
+            measurement_free_paths: Vec::new(),
         }
     }
 
@@ -221,6 +229,7 @@ mod tests {
             locked_paths: Some(vec![" kernels/** ".into(), "".into(), "kernels/**".into()]),
             review_brief: Some(vec!["notes/backlog/CARDS.md".into(), "AGENTS.md".into()]),
             measurers: Some(vec!["ada".into()]),
+            measurement_free_paths: Some(vec![" notes/** ".into(), "notes/**".into()]),
             ..Default::default()
         };
         let after = edited(&defaults(), &edit).unwrap();
@@ -228,6 +237,7 @@ mod tests {
         assert_eq!(after.locked_paths, vec!["kernels/**".to_string()]);
         assert_eq!(after.review_brief.len(), 2);
         assert_eq!(after.measurers, vec!["ada".to_string()]);
+        assert_eq!(after.measurement_free_paths, vec!["notes/**".to_string()]);
     }
 
     #[test]
