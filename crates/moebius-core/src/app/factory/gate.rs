@@ -9,7 +9,8 @@
 //! 2. for what the server does on its own account (a script or an agent; a person's own Merge is their decision): all
 //!    agents are not paused and the card is not held;
 //! 3. the checks of the head have passed;
-//! 4. a measurement is accepted for the head, or the issue carries `no-measurement`, when the repository requires one;
+//! 4. a measurement is accepted for the head, the issue carries `no-measurement`, or the merge changes only the
+//!    repository's `measurement_free_paths`, when the repository requires one;
 //! 5. for the same actors: no path the change touches is locked (see `paths`), which only a person merges;
 //! 6. the repository's rules, as a decision of the kind `merge_check`, decided like a tool call.
 //!
@@ -98,20 +99,23 @@ impl App {
             )));
         }
         let measured = self.measured(change)?;
+        let files = self.merge_paths(repository, change);
         if repository.require_measurement && !measured {
             let labelled = card.is_some_and(|card| {
                 card.labels
                     .iter()
                     .any(|label| label.eq_ignore_ascii_case(NO_MEASUREMENT_LABEL))
             });
-            if !labelled {
+            let free = files
+                .as_deref()
+                .is_ok_and(|files| Self::measurement_free(repository, files));
+            if !labelled && !free {
                 return Ok(Err(format!(
                     "this repository requires a measurement, and none is accepted for this version of the change; \
                      accept one, or label the issue {NO_MEASUREMENT_LABEL}"
                 )));
             }
         }
-        let files = self.merge_paths(repository, change);
         if !by.is_person() {
             match &files {
                 Err(why) => {
@@ -138,6 +142,16 @@ impl App {
             files.ok().as_deref(),
             measured,
         )
+    }
+
+    /// Whether every one of `files` is a path whose change needs no measurement (the repository's
+    /// `measurement_free_paths`). No files, or no such paths, is not.
+    fn measurement_free(repository: &Repository, files: &[String]) -> bool {
+        let free = repository.measurement_free_paths.iter().map(String::as_str);
+        !files.is_empty()
+            && files
+                .iter()
+                .all(|file| paths::locked_by(free.clone(), file).is_some())
     }
 
     /// The first of `files` that a locked path of the repository holds, and the pattern that locks it. The locked paths are

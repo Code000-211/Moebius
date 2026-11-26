@@ -452,7 +452,7 @@ These objects appear in the responses. All ids are numbers; times are Unix secon
 GitLab, such as `group/project`, or the repository on Forgejo as `owner/repo`, or null) and `home_project_id` (the
 [project](#projects) its new issues land in, which was made with it) and `files_of` (the id of the project whose own
 files the repository holds, see [a project's own files](#a-projects-own-files), or null for every repository a person
-added), `mark_ready` (true when the server keeps the ready label on the repository's issues, default false), `ready_label` (the label, default `Ready for agent`) `agents_take` (`all`, the default, or `labelled`), `commands` (true when comments on the repository's issues may give the commands `/take`, `/release` and `/done`, default false), `command_limit` (how many open issues a login may hold that it took with `/take`, default 3) `answer_on_forge` (true when the server writes the result of every command as a comment on the issue, default true) `merge_reviewed` (true when the server merges a followed pull request the Reviewer approved, default true; see [Reviews of followed pull requests](#reviews-of-followed-pull-requests)), and the settings of [the software factory](#the-software-factory): `require_measurement` (default false), `locked_paths` (the owner's path globs, default `[]`), `review_brief` (default `["REVIEW.md"]`), `testing_label` (default `ready-for-testing`), `measurers` (default `[]`) and `frozen` (null, or `{"reason", "source", "since"}` while the repository is frozen); see [`PUT /v1/repositories/{id}`](#put-v1repositoriesid) and [Commands in issue comments](#commands-in-issue-comments).
+added), `mark_ready` (true when the server keeps the ready label on the repository's issues, default false), `ready_label` (the label, default `Ready for agent`) `agents_take` (`all`, the default, or `labelled`), `commands` (true when comments on the repository's issues may give the commands `/take`, `/release` and `/done`, default false), `command_limit` (how many open issues a login may hold that it took with `/take`, default 3) `answer_on_forge` (true when the server writes the result of every command as a comment on the issue, default true) `merge_reviewed` (true when the server merges a followed pull request the Reviewer approved, default true; see [Reviews of followed pull requests](#reviews-of-followed-pull-requests)), and the settings of [the software factory](#the-software-factory): `require_measurement` (default false), `locked_paths` (the owner's path globs, default `[]`), `review_brief` (default `["REVIEW.md"]`), `testing_label` (default `ready-for-testing`), `measurers` (default `[]`), `measurement_free_paths` (the path globs whose changes need no measurement, default `[]`) and `frozen` (null, or `{"reason", "source", "since"}` while the repository is frozen); see [`PUT /v1/repositories/{id}`](#put-v1repositoriesid) and [Commands in issue comments](#commands-in-issue-comments).
 
 `Card`: `id`, `repository_id`, `project_id` (the [project](#projects) whose board it is on), `number` (the number of its issue in its repository: the forge's number for an issue of a forge), `project_number` (its number in its project) and `project_key` (the key of its project), which together name it, `WEB-24`; `title`, `body`, `author`, `column`, `created_at`, `note` (why the card was sent
 back to coding, or null), `retried_after` (the id of the card's latest run when a person last retried it, or null) and
@@ -1708,7 +1708,7 @@ For Forgejo, such as Codeberg, with `[forgejo]` set up, the clone sends the acce
 
 A person, or the Moebius agent, changes a repository on a forge: the logins whose issues need no approval and how it
 works with people on other servers (see [Working with people on other servers](#working-with-people-on-other-servers)).
-Request: `{"trusted": [string], "mark_ready": bool, "ready_label": string, "agents_take": string, "commands": bool, "command_limit": number, "answer_on_forge": bool, "merge_reviewed": bool, "require_measurement": bool, "locked_paths": [string], "review_brief": [string], "testing_label": string, "measurers": [string], "reason": string}`;
+Request: `{"trusted": [string], "mark_ready": bool, "ready_label": string, "agents_take": string, "commands": bool, "command_limit": number, "answer_on_forge": bool, "merge_reviewed": bool, "require_measurement": bool, "locked_paths": [string], "review_brief": [string], "testing_label": string, "measurers": [string], "measurement_free_paths": [string], "reason": string}`;
 every key is optional, and a key left out stays as it is. `reason` is kept with the decision.
 
 - `trusted` replaces the logins whose issues on a repository on a forge need no approval. Each login is trimmed and
@@ -1734,16 +1734,16 @@ every key is optional, and a key left out stays as it is. `reason` is kept with 
   approved on the forge and waits in `Ready to merge` for a person. Turned on, it means foreign code lands without a person
   looking.
 - `require_measurement` (default `false`), `locked_paths` (default `[]`),
-  `review_brief` (default `["REVIEW.md"]`), `testing_label` (default `ready-for-testing`) and `measurers` (default `[]`):
-  the settings of [the software factory](#the-software-factory), which say what the merge gate refuses, what the
+  `review_brief` (default `["REVIEW.md"]`), `testing_label` (default `ready-for-testing`), `measurers` (default `[]`) and
+  `measurement_free_paths` (default `[]`): the settings of [the software factory](#the-software-factory), which say what the merge gate refuses, what the
   Reviewer is told and who may measure. Each list is trimmed, without blanks and repeats, at most 100 entries of at most
-  200 characters. `locked_paths` are globs added to the built-in ones. `review_brief` entries are paths inside the
+  200 characters. `locked_paths` are globs added to the built-in ones; `measurement_free_paths` are globs read as they are. `review_brief` entries are paths inside the
   repository (not absolute, no `..` part). `measurers` are logins (letters, digits, `-_.`). `testing_label` is a label name as `ready_label` is. Only a person changes them: a request
   of an agent's token that names one is refused with `403`.
 
 The decision is recorded (kind `edit_repository`, decider `person` or `agent:Moebius`; its context has `repository`,
 and for `trusted` also `trusted` and `previous_trusted`, the logins joined with `, `, and for the other keys
-`mark_ready`, `ready_label`, `agents_take`, `commands`, `command_limit`, `answer_on_forge`, `merge_reviewed`, `require_measurement`, `locked_paths`, `review_brief`, `testing_label` and `measurers`) and the event `repository_updated` is sent. An edit that changes nothing
+`mark_ready`, `ready_label`, `agents_take`, `commands`, `command_limit`, `answer_on_forge`, `merge_reviewed`, `require_measurement`, `locked_paths`, `review_brief`, `testing_label`, `measurers` and `measurement_free_paths`) and the event `repository_updated` is sent. An edit that changes nothing
 records nothing. Response: the `Repository`. Errors: `404` no such repository; `422` the repository is on no forge, a
 login is blank or has other characters, the label is not allowed, `agents_take` is neither `all` nor `labelled`, or
 `command_limit` is not a number from 1 to 50, or a factory setting does not fit (a `review_brief` path is not inside the repository, a measurer is not a login); `403` an agent's token names a factory setting.
@@ -5047,8 +5047,11 @@ harness configuration repository has no repository's rules and is not asked. In 
    For the server's own changes, checks that are known for the head and are `pending` or `failure` hold back a script or
    an agent, not a person.
 4. **Measurement.** With `require_measurement`, a measurement is accepted for the change's current head
-   (`POST /v1/changes/{id}/measurement`) or the issue carries the label `no-measurement` (in any case). Without a head
-   there is none.
+   (`POST /v1/changes/{id}/measurement`), the issue carries the label `no-measurement` (in any case), or every path the
+   merge into the default branch changes (read as for the locked paths below) matches one of the repository's
+   `measurement_free_paths`, globs read as the locked paths are (for notes that close an item with its numbers, say
+   `notes/backlog/closed/**`). One path outside them, or paths that cannot be read, and the measurement is asked for.
+   Without a head there is no measurement.
 5. **Locked paths.** For a script or an agent: none of the paths the merge into the default branch changes (read with
    `git merge-tree` and `git diff` from objects; a rename or a deletion counts, and a clone that cannot be read is a
    refusal) is locked. A person's own Merge is how a locked path merges. Locked are the built-in globs `.github/**`,

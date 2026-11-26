@@ -72,6 +72,7 @@ export function WorkingWithOthers({ repository }: { repository: Repository }) {
     brief: repository.review_brief ?? DEFAULT_REVIEW_BRIEF,
     testing: repository.testing_label ?? DEFAULT_TESTING_LABEL,
     measurers: repository.measurers ?? [],
+    free: repository.measurement_free_paths ?? [],
   };
   const [mark, setMark] = useState(stored.mark);
   const [label, setLabel] = useState(stored.label);
@@ -85,6 +86,7 @@ export function WorkingWithOthers({ repository }: { repository: Repository }) {
   const [brief, setBrief] = useState(stored.brief.join("\n"));
   const [testing, setTesting] = useState(stored.testing);
   const [measurers, setMeasurers] = useState(stored.measurers.join("\n"));
+  const [free, setFree] = useState(stored.free.join("\n"));
   const trimmed = label.trim();
   const limitNumber = Number(limit);
   const limitOk =
@@ -96,6 +98,7 @@ export function WorkingWithOthers({ repository }: { repository: Repository }) {
     !same(lines(brief), stored.brief) ||
     testingTrimmed !== stored.testing ||
     !same(lines(measurers), stored.measurers) ||
+    !same(lines(free), stored.free) ||
     mark !== stored.mark ||
     trimmed !== stored.label ||
     takes !== stored.takes ||
@@ -119,6 +122,7 @@ export function WorkingWithOthers({ repository }: { repository: Repository }) {
         review_brief: lines(brief),
         testing_label: testingTrimmed,
         measurers: lines(measurers),
+        measurement_free_paths: lines(free),
       }),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: keys.snapshot });
@@ -285,11 +289,24 @@ export function WorkingWithOthers({ repository }: { repository: Repository }) {
               <span className="text-base font-medium text-text">Require a measurement</span>
               <span className="text-sm text-muted">
                 A change merges only with a measurement a registered measurer posted for its head,
-                or the label no-measurement on its issue.
+                the label no-measurement on its issue, or when it changes only measurement-free
+                paths.
               </span>
             </div>
             <Switch label="Require a measurement" checked={measure} onChange={setMeasure} />
           </div>
+          <Field
+            label="Measurement-free paths"
+            hint="One glob per line, read as the locked paths are. A change that touches only these needs no measurement; one path more and it does."
+          >
+            <TextArea
+              mono
+              rows={2}
+              value={free}
+              placeholder="notes/backlog/closed/**"
+              onChange={(e) => setFree(e.target.value)}
+            />
+          </Field>
           <Field
             label="Locked paths"
             hint={`One glob per line. A change that touches one never merges without a person. Always locked, besides these: ${BUILT_IN_LOCKED.join("; ")}.`}

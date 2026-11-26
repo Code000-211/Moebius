@@ -43,6 +43,8 @@ export interface Repository {
   testing_label?: string;
   /** The forge logins whose `## Measurement` comments count. */
   measurers?: string[];
+  /** The path globs whose changes need no measurement: a change of only these merges without one. */
+  measurement_free_paths?: string[];
   /** Why the repository is frozen (nothing is reviewed, merged or started), and since when; none when it is not. */
   frozen?: Frozen | null;
 }
