@@ -4898,10 +4898,10 @@ by the Reviewer when its author says so. The steps are in [the guide](../guide/w
   first, until the rest fits. A diff over its limit is answered ("this pull request is too large to review
   automatically: <why>"), as is one that changes a binary file ("cannot be read whole by the Reviewer"), and both add a
   `review_not_possible` inbox item with the reason; so does a git command that failed or took too long, which is an
-  error and never read as an empty change. The sizes are read from the object headers (`git diff --raw`,
-  `git ls-tree -l`) before any command loads a blob, and a file given as its part of the diff is never loaded. Git runs
-  with no textconv, no external diff, `core.attributesFile=/dev/null` and `core.bigFileThreshold=1m`, under a limit of 2
-  GiB of address space (Unix); its output is read through a cap (2 MB) and stopped when there is more, and a command is
+  error and never read as an empty change. A file is binary when git finds a NUL byte in it, whatever its size. The
+  sizes are read from the object headers (`git diff --raw`, `git ls-tree -l`) before any command loads a blob, and a
+  file given as its part of the diff is never loaded. Git runs with no textconv, no external diff and
+  `core.attributesFile=/dev/null`, under a limit of 2 GiB of address space (Unix); its output is read through a cap (2 MB) and stopped when there is more, and a command is
   killed after 30 seconds. The files that run on the forge (`.github/`, `.forgejo/`, `.gitea/`, `.gitlab-ci.yml`) come
   first. Symlinks and submodules are named (the diff shows them), deleted files too. Nothing is checked out and no git
   filter runs, and no read is of a branch name or of an earlier `code` run's branch. The context of a round is built
