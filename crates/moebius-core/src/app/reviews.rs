@@ -614,6 +614,7 @@ impl App {
                 .move_external_review(round.id, "starting", "wanted");
             return Err(e);
         }
+        self.reviewers_turn(card)?;
         if no_checks {
             self.answer_on_request(
                 repository,
@@ -882,6 +883,7 @@ impl App {
                     "Reviewed pull request #{number}: changes are requested, see the review there. Push your changes, then write /done."
                 ),
             );
+            self.authors_turn(card, &said.summary)?;
             self.bus
                 .publish(crate::bus::Event::CardUpdated(self.card(card.id)?));
             return Ok(());
@@ -1095,6 +1097,43 @@ impl App {
         }
         self.bus
             .publish(crate::bus::Event::CardUpdated(self.card(card.id)?));
+        Ok(())
+    }
+
+    /// The author's turn after a round that asked for changes: the card goes to In progress with the round's summary
+    /// as its note. A card that is already there, or done, stays. The server moves it itself, as on following,
+    /// so no column script runs.
+    fn authors_turn(&self, card: &Card, summary: &str) -> Result<()> {
+        let now = self.card(card.id)?;
+        let class = self.column_class(now.project_id, &now.column);
+        if class == columns::IN_PROGRESS || class == columns::DONE {
+            return Ok(());
+        }
+        self.move_card_from(
+            card.id,
+            &now.column,
+            columns::IN_PROGRESS,
+            Some(summary.trim()),
+            Some(&reviewer()),
+        )?;
+        Ok(())
+    }
+
+    /// The Reviewer's turn again as a round starts: a card that waited for its author in In progress goes back to In
+    /// review, and the note of the round before is taken away. A card in any other column stays.
+    pub(super) fn reviewers_turn(&self, card: &Card) -> Result<()> {
+        let now = self.card(card.id)?;
+        if self.column_class(now.project_id, &now.column) != columns::IN_PROGRESS {
+            return Ok(());
+        }
+        self.store.clear_card_note(card.id)?;
+        self.move_card_from(
+            card.id,
+            &now.column,
+            columns::IN_REVIEW,
+            None,
+            Some(&reviewer()),
+        )?;
         Ok(())
     }
 

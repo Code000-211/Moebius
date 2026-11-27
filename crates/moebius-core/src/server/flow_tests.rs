@@ -12,7 +12,7 @@ use super::taking_tests::{
     alices_request, give_the_remote_a_pull_head, open_issue, push_to_the_pull_request,
 };
 use crate::app::factory::FactoryEdit;
-use crate::app::{FlowEdit, ROUNDS_SPENT, WorkingWithOthers};
+use crate::app::{FlowEdit, ROUNDS_SPENT, WorkingWithOthers, columns};
 use crate::decide::Actor;
 use crate::repos::git;
 use crate::store::{Card, now};
@@ -621,9 +621,15 @@ async fn review_on_green_starts_one_round_after_the_wait_and_not_twice_for_a_hea
     let run = f.reviews_of(&card).remove(0);
     f.reviewer_ends(&card, &run, &said("changes", "Needs work.", json!([])))
         .await;
+    assert_eq!(f.card(1).unwrap().column, columns::IN_PROGRESS);
     f.author_says_done().await;
     f.server.poll_github().await;
     assert_eq!(f.reviews_of(&card).len(), 1);
+    assert_eq!(
+        f.card(1).unwrap().column,
+        columns::IN_PROGRESS,
+        "still the author's turn"
+    );
     // A push is a new head, with a wait of its own.
     let pushed = push_to_the_pull_request(&f);
     f.server.poll_github().await;
@@ -641,6 +647,8 @@ async fn review_on_green_starts_one_round_after_the_wait_and_not_twice_for_a_hea
         .unwrap();
     f.server.poll_github().await;
     assert_eq!(f.reviews_of(&card).len(), 2);
+    // The round on the new head is the Reviewer's turn again.
+    assert_eq!(f.card(1).unwrap().column, columns::IN_REVIEW);
 }
 
 #[tokio::test(flavor = "multi_thread")]

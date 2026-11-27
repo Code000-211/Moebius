@@ -112,7 +112,9 @@ pull request reviewed ([ADR 0029](../adr/0029-the-reviewer-reads-a-pull-request-
   the pull request gets a comment that the checks fail and nothing is reviewed: fix them, push, write `/done` again.
 - **The Reviewer reads it** and the server writes **a review on your pull request**. Changes requested are a review with a
   summary and comments on the exact lines; a comment about a line the diff does not show is in the summary instead.
-  Push your changes, then write `/done` again for the next round.
+  Push your changes, then write `/done` again for the next round. On the owner's board the card moves to **In progress**
+  with the review's summary as its note, as it is your turn; when the next round starts (your `/done`, or with [**Review
+  when the checks are green**](#review-when-the-checks-are-green) a new head whose checks are green) it moves back to **In review**.
 - **Approved**, and the checks of the same head are green: the pull request is approved and merged, and the issue gets
   "Merged, thank you @alice!". If the owner turned **Merge external pull requests the reviewer approves** off, it is
   approved and waits for the owner to merge.

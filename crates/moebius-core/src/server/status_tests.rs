@@ -136,6 +136,8 @@ async fn the_finer_states_take_precedence_in_their_order() {
     f.server.poll_github().await;
     f.server.poll_github().await;
     assert_eq!(f.status_on(1), vec!["status:changes-requested".to_string()]);
+    // The card waits for its author in In progress, and the label stays.
+    assert_eq!(f.card(1).unwrap().column, crate::app::columns::IN_PROGRESS);
     // A frozen repository beats every other state.
     f.server
         .app
