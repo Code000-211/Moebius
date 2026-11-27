@@ -201,7 +201,7 @@ pub struct MeasurementView {
 pub struct ExternalReviewView {
     /// The round's place among the pull request's rounds, from 1; 0 until it starts.
     pub round: i64,
-    /// How many rounds a pull request gets: the repository's `review_round_limit`, 0 for no limit.
+    /// How many rounds a pull request gets.
     pub round_limit: i64,
     /// `author` for a round the author asked for, or a green one the server asked for; `measurement` for one a measurement
     /// started.
@@ -367,9 +367,7 @@ fn card_view(
                         current: change.head.as_deref() == Some(r.head.as_str()),
                         kind: r.kind,
                         round: r.round,
-                        round_limit: lookups.review_round_limit(
-                            change.repository_id.unwrap_or(view.card.repository_id),
-                        ),
+                        round_limit: crate::app::ROUND_LIMIT,
                         state: r.state,
                         verdict: r.verdict,
                         summary: r.summary,

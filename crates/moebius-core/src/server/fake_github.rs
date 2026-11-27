@@ -104,6 +104,8 @@ pub(super) struct Pulls {
     pub(super) merged: Vec<Value>,
     pub(super) pull: Value,
     pub(super) check_runs: Vec<Value>,
+    /// The commit statuses of the head, as `/commits/{sha}/status` lists them.
+    pub(super) statuses: Vec<Value>,
     pub(super) reviews: Vec<Value>,
 }
 
@@ -234,6 +236,7 @@ pub(super) async fn fake_github() -> (String, Arc<FakeGitHub>) {
             merged: Vec::new(),
             pull: pull("open", false),
             check_runs: Vec::new(),
+            statuses: Vec::new(),
             reviews: Vec::new(),
         }),
     });
@@ -595,6 +598,26 @@ pub(super) async fn fake_github() -> (String, Arc<FakeGitHub>) {
                     );
                     let runs = pulls.check_runs.clone();
                     axum::Json(json!({ "total_count": runs.len(), "check_runs": runs }))
+                },
+            ),
+        )
+        .route(
+            "/repos/acme/widgets/commits/{sha}/status",
+            get(
+                |State(fake): State<Arc<FakeGitHub>>, UrlPath(sha): UrlPath<String>| async move {
+                    let pulls = fake.pulls.lock().unwrap();
+                    assert_eq!(
+                        pulls.pull["head"]["sha"], sha,
+                        "the statuses of the pull request's head"
+                    );
+                    let statuses = pulls.statuses.clone();
+                    // GitHub says `pending` for a commit with no statuses at all.
+                    let state = if statuses.is_empty() { "pending" } else { "success" };
+                    axum::Json(json!({
+                        "state": state,
+                        "total_count": statuses.len(),
+                        "statuses": statuses,
+                    }))
                 },
             ),
         )

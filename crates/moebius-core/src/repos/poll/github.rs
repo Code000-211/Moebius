@@ -1,10 +1,10 @@
 //! What GitHub answers, as the poll reads it: issues without the pull requests GitHub lists among them, and a pull
-//! request with the check runs of its head commit and its latest review.
+//! request with the check runs and commit statuses of its head commit and its latest review.
 
 use super::{Polled, Request, Status};
 use crate::app::OpenRequest;
 use crate::repos::forge::{Comment, ForgeError, Issue, Remembered, seconds};
-use crate::repos::github::{self, CheckRun, GitHub};
+use crate::repos::github::{self, CheckRun, CommitStatus, GitHub};
 
 impl From<github::Issue> for Issue {
     fn from(issue: github::Issue) -> Self {
@@ -129,6 +129,7 @@ impl Polled for GitHub {
         }
         let base = pull_request.base.clone();
         let checks = self.check_runs(name, &pull_request.head.sha).await?;
+        let statuses = self.statuses(name, &pull_request.head.sha).await?;
         let review = self
             .reviews(name, number)
             .await?
@@ -136,8 +137,8 @@ impl Polled for GitHub {
             .map(|review| review.state.to_lowercase());
         Ok(Request::Open(Status {
             head: pull_request.head.sha,
-            checks: summarise_checks(&checks),
-            failed: failed_checks(&checks),
+            checks: summarise_checks(&checks, &statuses),
+            failed: failed_checks(&checks, &statuses),
             review,
             base: base.map(|base| base.branch),
         }))
@@ -159,24 +160,31 @@ fn failed(run: &CheckRun) -> bool {
         .is_some_and(|c| FAILED.contains(&c))
 }
 
-/// How the check runs of a commit add up: `failure` if any failed, `pending` if any is still going, `success`
-/// otherwise; none when there are no checks at all.
-fn summarise_checks(runs: &[CheckRun]) -> Option<&'static str> {
-    if runs.is_empty() {
+/// Whether a commit status failed: `failure` or `error`.
+fn status_failed(status: &CommitStatus) -> bool {
+    matches!(status.state.as_str(), "failure" | "error")
+}
+
+/// How the check runs and commit statuses of a commit add up: `failure` if any failed, `pending` if any is still
+/// going, `success` otherwise; none when there are neither check runs nor statuses at all.
+fn summarise_checks(runs: &[CheckRun], statuses: &[CommitStatus]) -> Option<&'static str> {
+    if runs.is_empty() && statuses.is_empty() {
         return None;
     }
-    if runs.iter().any(failed) {
+    if runs.iter().any(failed) || statuses.iter().any(status_failed) {
         return Some("failure");
     }
-    if runs.iter().any(|run| run.status != "completed") {
+    if runs.iter().any(|run| run.status != "completed")
+        || statuses.iter().any(|status| status.state == "pending")
+    {
         return Some("pending");
     }
     Some("success")
 }
 
-/// The failed check runs, one per line: name, how it ended, what it says and where to read more.
-fn failed_checks(runs: &[CheckRun]) -> Option<String> {
-    let lines: Vec<String> = runs
+/// The failed check runs and commit statuses, one per line: name, how it ended, what it says and where to read more.
+fn failed_checks(runs: &[CheckRun], statuses: &[CommitStatus]) -> Option<String> {
+    let mut lines: Vec<String> = runs
         .iter()
         .filter(|run| failed(run))
         .map(|run| {
@@ -190,5 +198,60 @@ fn failed_checks(runs: &[CheckRun]) -> Option<String> {
             line
         })
         .collect();
+    lines.extend(statuses.iter().filter(|s| status_failed(s)).map(|status| {
+        let mut line = format!("{}: {}", status.context, status.state);
+        if let Some(description) = &status.description {
+            line.push_str(&format!(", {description}"));
+        }
+        if let Some(url) = &status.target_url {
+            line.push_str(&format!(" ({url})"));
+        }
+        line
+    }));
     (!lines.is_empty()).then(|| lines.join("\n"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn run(status: &str, conclusion: Option<&str>) -> CheckRun {
+        CheckRun {
+            name: "build".into(),
+            details_url: None,
+            status: status.into(),
+            conclusion: conclusion.map(Into::into),
+            output: None,
+        }
+    }
+
+    fn status(state: &str) -> CommitStatus {
+        CommitStatus {
+            context: "ci/jenkins".into(),
+            state: state.into(),
+            description: Some("Build broke".into()),
+            target_url: Some("https://ci.example/1".into()),
+        }
+    }
+
+    #[test]
+    fn commit_statuses_count_as_checks_and_only_neither_is_no_checks() {
+        assert_eq!(summarise_checks(&[], &[]), None);
+        assert_eq!(summarise_checks(&[], &[status("pending")]), Some("pending"));
+        assert_eq!(summarise_checks(&[], &[status("success")]), Some("success"));
+        assert_eq!(summarise_checks(&[], &[status("error")]), Some("failure"));
+        let green = [run("completed", Some("success"))];
+        assert_eq!(
+            summarise_checks(&green, &[status("pending")]),
+            Some("pending")
+        );
+        assert_eq!(
+            summarise_checks(&green, &[status("failure")]),
+            Some("failure")
+        );
+        assert_eq!(
+            failed_checks(&green, &[status("failure"), status("success")]).unwrap(),
+            "ci/jenkins: failure, Build broke (https://ci.example/1)"
+        );
+    }
 }

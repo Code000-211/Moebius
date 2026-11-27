@@ -95,7 +95,7 @@ progress too.
    replace what it says. A review script that calls `moebius.open_pull_request()` when the `code` run ended opens the
    pull request already while the review reads the change, so the forge runs its checks on it during the review and
    the script can wait for them green before it offers the change (the reference of the column scripts shows how).
-2. The checks run. On GitHub they are the check runs of the pull request, found by the poll, on GitLab the latest
+2. The checks run. On GitHub they are the check runs and commit statuses of the pull request, found by the poll, on GitLab the latest
    pipeline of the merge request's head commit, on Forgejo the commit statuses of the pull request's head commit (such
    as those Forgejo Actions reports); a repository with none
    gets `none` two minutes after the publish. Without a forge they are the command in the `checks` file of the repository's settings,

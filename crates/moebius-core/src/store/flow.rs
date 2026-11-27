@@ -7,6 +7,11 @@ use serde::{Deserialize, Serialize};
 
 use super::{Result, Store, now};
 
+/// Marks a head that was noted green because the forge reported no checks for it at all, so that checks that show up
+/// for it later start the wait again once they pass.
+pub(super) const WITHOUT_CHECKS: &str =
+    "ALTER TABLE green_heads ADD COLUMN without_checks INTEGER NOT NULL DEFAULT 0;";
+
 /// The tables and columns of this part.
 pub(super) const SCHEMA: &str = r#"
 ALTER TABLE external_reviews ADD COLUMN measurement_id INTEGER;
@@ -49,12 +54,6 @@ CREATE TABLE unbound_requests (
 );
 "#;
 
-/// The column of the review round limit (issue #780), added after the flow's first tables.
-pub(super) const ROUND_LIMIT: &str =
-    "ALTER TABLE flow_settings ADD COLUMN review_round_limit INTEGER NOT NULL DEFAULT 3;";
-
-/// The default of `review_round_limit`.
-pub const DEFAULT_REVIEW_ROUND_LIMIT: i64 = 3;
 /// The default of `green_wait_minutes`.
 pub const DEFAULT_GREEN_WAIT_MINUTES: i64 = 5;
 /// The default of `unbound_close_days`.
@@ -80,15 +79,6 @@ pub struct Flow {
     /// round, commits that say what was done, the review as a review of the pull request, and the issue holding only
     /// the status and the link. Only where the forge has drafts.
     pub work_on_forge: bool,
-    /// How many rounds of the Reviewer a followed pull request gets before the owner is asked to look; 0 for no limit.
-    pub review_round_limit: i64,
-}
-
-impl Flow {
-    /// Whether a pull request that has had `rounds` rounds of the Reviewer has spent them: never with no limit.
-    pub fn rounds_spent(&self, rounds: i64) -> bool {
-        self.review_round_limit > 0 && rounds >= self.review_round_limit
-    }
 }
 
 impl Default for Flow {
@@ -100,7 +90,6 @@ impl Default for Flow {
             status_labels: false,
             status_prefix: DEFAULT_STATUS_PREFIX.into(),
             work_on_forge: true,
-            review_round_limit: DEFAULT_REVIEW_ROUND_LIMIT,
         }
     }
 }
@@ -160,8 +149,8 @@ impl Store {
         Ok(self
             .read()
             .query_row(
-                "SELECT review_on_green, green_wait_minutes, unbound_close_days, status_labels, status_prefix, work_on_forge, \
-                 review_round_limit FROM flow_settings WHERE repository_id = ?1",
+                "SELECT review_on_green, green_wait_minutes, unbound_close_days, status_labels, status_prefix, work_on_forge \
+                 FROM flow_settings WHERE repository_id = ?1",
                 [repository_id],
                 |r| {
                     Ok(Flow {
@@ -171,7 +160,6 @@ impl Store {
                         status_labels: r.get(3)?,
                         status_prefix: r.get(4)?,
                         work_on_forge: r.get(5)?,
-                        review_round_limit: r.get(6)?,
                     })
                 },
             )
@@ -183,10 +171,9 @@ impl Store {
     pub fn set_flow(&self, repository_id: i64, flow: &Flow) -> Result<()> {
         self.conn().execute(
             "INSERT INTO flow_settings (repository_id, review_on_green, green_wait_minutes, unbound_close_days, \
-             status_labels, status_prefix, work_on_forge, review_round_limit) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8) \
-             ON CONFLICT (repository_id) DO UPDATE SET \
+             status_labels, status_prefix, work_on_forge) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7) ON CONFLICT (repository_id) DO UPDATE SET \
              review_on_green = ?2, green_wait_minutes = ?3, unbound_close_days = ?4, status_labels = ?5, status_prefix = ?6, \
-             work_on_forge = ?7, review_round_limit = ?8",
+             work_on_forge = ?7",
             params![
                 repository_id,
                 flow.review_on_green,
@@ -194,8 +181,7 @@ impl Store {
                 flow.unbound_close_days,
                 flow.status_labels,
                 flow.status_prefix,
-                flow.work_on_forge,
-                flow.review_round_limit
+                flow.work_on_forge
             ],
         )?;
         Ok(())
@@ -262,11 +248,14 @@ impl Store {
         )?)
     }
 
-    /// Records that the checks of `head` were seen green now, unless they were before.
-    pub fn note_green(&self, change_id: i64, head: &str) -> Result<()> {
+    /// Records that the checks of `head` were seen green now, or none at all when `without_checks`, unless they were
+    /// before. Checks that pass for a head that was noted without any start its wait again, unless a round was asked for.
+    pub fn note_green(&self, change_id: i64, head: &str, without_checks: bool) -> Result<()> {
         self.conn().execute(
-            "INSERT OR IGNORE INTO green_heads (change_id, head, since) VALUES (?1, ?2, ?3)",
-            params![change_id, head, now()],
+            "INSERT INTO green_heads (change_id, head, since, without_checks) VALUES (?1, ?2, ?3, ?4) \
+             ON CONFLICT (change_id, head) DO UPDATE SET since = excluded.since, without_checks = 0 \
+             WHERE green_heads.without_checks = 1 AND excluded.without_checks = 0 AND green_heads.asked = 0",
+            params![change_id, head, now(), without_checks],
         )?;
         Ok(())
     }
@@ -409,24 +398,10 @@ mod tests {
             status_labels: true,
             status_prefix: "s/".into(),
             work_on_forge: false,
-            review_round_limit: 0,
         };
         store.set_flow(1, &own).unwrap();
         assert_eq!(store.flow(1).unwrap(), own);
         assert_eq!(store.flow(2).unwrap(), Flow::default());
-    }
-
-    #[test]
-    fn the_round_limit_holds_at_its_number_and_never_at_zero() {
-        let three = Flow::default();
-        assert!(!three.rounds_spent(2));
-        assert!(three.rounds_spent(3));
-        let none = Flow {
-            review_round_limit: 0,
-            ..Flow::default()
-        };
-        assert!(!none.rounds_spent(0));
-        assert!(!none.rounds_spent(1000));
     }
 
     #[test]
@@ -469,12 +444,35 @@ mod tests {
     fn a_head_is_asked_for_once_and_green_starts_at_the_first_sight() {
         let dir = tempfile::tempdir().unwrap();
         let store = Store::in_memory(dir.path()).unwrap();
-        store.note_green(1, "h1").unwrap();
+        store.note_green(1, "h1", false).unwrap();
         let since = store.green_since(1, "h1").unwrap().unwrap();
-        store.note_green(1, "h1").unwrap();
+        store.note_green(1, "h1", false).unwrap();
+        store.note_green(1, "h1", true).unwrap();
         assert_eq!(store.green_since(1, "h1").unwrap(), Some(since));
         assert_eq!(store.green_since(1, "h2").unwrap(), None);
         assert!(store.ask_green_review(1, "h1").unwrap());
         assert!(!store.ask_green_review(1, "h1").unwrap());
+    }
+
+    #[test]
+    fn checks_that_pass_for_a_head_seen_without_any_start_its_wait_again() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = Store::in_memory(dir.path()).unwrap();
+        store.note_green(1, "h1", true).unwrap();
+        store.set_green_since(1, "h1", 100).unwrap();
+        store.note_green(1, "h1", true).unwrap();
+        assert_eq!(store.green_since(1, "h1").unwrap(), Some(100));
+        store.note_green(1, "h1", false).unwrap();
+        let since = store.green_since(1, "h1").unwrap().unwrap();
+        assert!(since > 100, "the wait starts when the checks pass");
+        store.set_green_since(1, "h1", 100).unwrap();
+        store.note_green(1, "h1", false).unwrap();
+        assert_eq!(store.green_since(1, "h1").unwrap(), Some(100), "once");
+        // A head asked for already keeps its wait.
+        store.note_green(1, "h2", true).unwrap();
+        store.set_green_since(1, "h2", 100).unwrap();
+        assert!(store.ask_green_review(1, "h2").unwrap());
+        store.note_green(1, "h2", false).unwrap();
+        assert_eq!(store.green_since(1, "h2").unwrap(), Some(100));
     }
 }

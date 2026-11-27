@@ -544,7 +544,7 @@ of the card is merged, and the card stays where it is until its last change is m
 same change failing again keeps it, another stop replaces it) and
 `project_label` (`data.label`, `data.repository`; its `title` says the label names no project of the repository, and the card it is about stays where it is: see [the project label](#the-project-label)) and
 `outside_change` (`data.change`, `data.pull_request`, `data.author`, `data.repository`: the card follows a pull request someone else opened; resolved when the request is merged or closed; see [Working with people on other servers](#working-with-people-on-other-servers)) and
-`review_rounds_spent` (`data.change`, `data.pull_request`, `data.author`, `data.repository`: the Reviewer read the pull request the card follows as many times as the repository's `review_round_limit` gives and its author wrote `/done` again, a measurer posted a measurement or the test lane gave its result; the item's text names the number; resolved when the request is merged or closed; see [Reviews of followed pull requests](#reviews-of-followed-pull-requests)) and
+`review_rounds_spent` (`data.change`, `data.pull_request`, `data.author`, `data.repository`: the Reviewer read the pull request the card follows three times and its author wrote `/done` again; resolved when the request is merged or closed; see [Reviews of followed pull requests](#reviews-of-followed-pull-requests)) and
 `review_not_possible` (`data.change`, `data.pull_request`, `data.author`, `data.repository`, `data.reason`: the pull request the card follows could not be given to the Reviewer, because it is too large to be read whole, changes a binary file, git could not read it, its repository's review brief is more than 40 KB or could not be read, or the run of a review a person asked for could not start; resolved when the request is merged or closed; the same choices as for `outside_change`) and
 `merge_refused` (`data.change`, `data.branch`, `data.pull_request`, `data.repository`, `data.reason`: [the merge gate](#the-merge-gate) refused to merge the change, and the card is in `Ready to merge`; asked again with the same reason it stays one item, another reason replaces it, and a merge resolves it) and
 `factory_frozen` (`data.repository`, `data.repository_id`, `data.reason`, `data.source`; no card: the repository is frozen, see [the software factory](#the-software-factory); resolved when a person unfreezes it) and
@@ -4704,16 +4704,16 @@ an `edit_upkeep` decision.
 How a repository lets reviews and pull requests flow ([ADR
 0033](../adr/0033-measurements-and-reviews-flow-without-the-owners-clicks.md); the contracts are on [the
 factory](factory.md#review-on-green-checks)), with the defaults for one that has set none: `{"review_on_green": false,
-"green_wait_minutes": 5, "unbound_close_days": 14, "status_labels": false, "status_prefix": "status:", "work_on_forge": true, "review_round_limit": 3}`. Any role that may see the repository.
+"green_wait_minutes": 5, "unbound_close_days": 14, "status_labels": false, "status_prefix": "status:", "work_on_forge": true}`. Any role that may see the repository.
 
 ### `PUT /v1/repositories/{id}/flow`
 
 Owner, and a person: an agent's token is `403`. Request: `{"review_on_green": bool, "green_wait_minutes": number,
-"unbound_close_days": number, "status_labels": bool, "status_prefix": string, "work_on_forge": bool, "review_round_limit": number, "reason": string}`; each key is optional
+"unbound_close_days": number, "status_labels": bool, "status_prefix": string, "work_on_forge": bool, "reason": string}`; each key is optional
 and stays as it is when left out. `green_wait_minutes` is from 0 to 120 and `unbound_close_days` from 0 (never close) to
-365, `review_round_limit` from 0 (no limit) to 100, and `status_prefix` 1 to 30 characters with no comma or new line, else `422`; `422` too for a
+365, and `status_prefix` 1 to 30 characters with no comma or new line, else `422`; `422` too for a
 repository on no forge. Answers the settings as they are now, and sends `repository_updated`. Recorded as an `edit_flow`
-decision (context `repository`, `review_on_green`, `green_wait_minutes`, `unbound_close_days`, `status_labels`, `status_prefix`, `work_on_forge`, `review_round_limit`); an edit that changes
+decision (context `repository`, `review_on_green`, `green_wait_minutes`, `unbound_close_days`, `status_labels`, `status_prefix`, `work_on_forge`); an edit that changes
 nothing records nothing.
 
 `work_on_forge` says whether Moebius's own agents work on the forge as people do ([ADR
@@ -4895,12 +4895,12 @@ by the Reviewer when its author says so. The steps are in [the guide](../guide/w
   and `success`: `pending` checks, or checks not yet read for the head after a push, make it wait; `failure` ends the round
   with a comment on the pull request ("The checks of this pull request fail, so nothing was reviewed...") and nothing is
   reviewed. Nobody else's `/done` has it reviewed.
-- **Rounds.** At most `review_round_limit` rounds per forge pull request (a repository's [flow setting](#get-v1repositoriesidflow), 3 by default, 0 for no limit), counted across the change rows that followed it, so closing and reopening a pull request does not begin again, and a head read once is not read again whichever row follows it. Rounds of one pull request never run side by side: a round waits while another is starting, running or writing its review. Every round whose run started counts, whatever came of
-  it (a verdict, no verdict, or a head that moved), so that no author can have the Reviewer read a pull request for ever. Rounds a person asked for (`POST /v1/changes/{id}/review`) do not count. The next `/done` once they are spent is answered "The pull request was reviewed 3 times already; a person will look." (with the repository's number: "once", "twice", "5 times") and adds a `review_rounds_spent` inbox item for the card.
+- **Rounds.** At most three rounds per forge pull request (`ROUND_LIMIT`), counted across the change rows that followed it, so closing and reopening a pull request does not begin again, and a head read once is not read again whichever row follows it. Rounds of one pull request never run side by side: a round waits while another is starting, running or writing its review. Every round whose run started counts, whatever came of
+  it (a verdict, no verdict, or a head that moved), so that no author can have the Reviewer read a pull request for ever. A fourth `/done` is answered "a person will look" and adds a `review_rounds_spent` inbox item for the card.
   A new `/done` after a push starts the next round. A head is never read twice: a `/done` for a head that has a round is
   answered that it was reviewed already. A round whose run did not end, or whose answer is no verdict, is `failed`, and one dropped because the head moved
   before the verdict was used is `stale`: the author may write `/done` again for the same head, and each such round has
-  counted toward the limit. A round that ended before its run started (the checks failed, the pull request was refused) does
+  counted toward the three. A round that ended before its run started (the checks failed, the pull request was refused) does
   not count.
 - **The run.** A `review` run of the card by the Reviewer, started restricted (below), whose prompt holds the issue as
   data in a fence (its title and body only: no comments, wiki pages or lessons, which are the organisation's and could be
@@ -4941,13 +4941,8 @@ by the Reviewer when its author says so. The steps are in [the guide](../guide/w
 - **Changes requested.** The server writes a review that asks for changes, tied to the head that was read, with the summary
   as its body. A comment whose file and line are in the diff of the request (the lines of its hunks, three lines of
   context included) is a comment on that line; the others are appended to the body as `` `path` line N: text``. A forge
-  that refuses the review with lines gets it again with every comment in the body. It is the author's turn: the card
-  moves to `In progress` with the round's summary as its note (a card already there or done stays), the status label
-  stays `status:changes-requested`, and the issue gets "Reviewed pull request #7: changes are requested...". When the
-  next round starts (the author's `/done`, with `review_on_green` a new head whose checks are green, or a review a
-  person asks for), a card in `In progress` moves back to `In review` and loses that note. These moves are the
-  server's own, as the move to `In review` on following is: no column script runs for a followed pull request. A
-  pull request closed while its card waits in `In progress` sends the card back as it does from `In review`.
+  that refuses the review with lines gets it again with every comment in the body. The card stays in `In review`, and the
+  issue gets "Reviewed pull request #7: changes are requested...".
   GitHub `POST /repos/{repo}/pulls/{n}/reviews` with `event` `REQUEST_CHANGES` and `comments` of `path`, `line`, `side`
   `RIGHT`; Forgejo the same route with `event` `REQUEST_CHANGES` and `comments` of `path`, `new_position`; GitLab, which has
   no review that asks for changes, a note that starts "Changes requested." and one discussion on the diff per comment

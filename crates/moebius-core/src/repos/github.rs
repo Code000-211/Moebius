@@ -187,6 +187,23 @@ struct CheckRuns {
     check_runs: Vec<CheckRun>,
 }
 
+/// A commit status, as CI that does not use check runs reports it: the latest of its context.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+pub struct CommitStatus {
+    pub context: String,
+    /// `success`, `failure`, `error` or `pending`.
+    pub state: String,
+    #[serde(default)]
+    pub description: Option<String>,
+    #[serde(default)]
+    pub target_url: Option<String>,
+}
+
+#[derive(Deserialize)]
+struct CombinedStatus {
+    statuses: Vec<CommitStatus>,
+}
+
 /// A review of a pull request.
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 pub struct Review {
@@ -986,6 +1003,23 @@ impl GitHub {
             )
             .await?;
         Ok(runs.check_runs)
+    }
+
+    /// The commit statuses of the commit `sha`, the latest of each context.
+    pub async fn statuses(
+        &self,
+        github: &str,
+        sha: &str,
+    ) -> Result<Vec<CommitStatus>, GitHubError> {
+        let combined: CombinedStatus = self
+            .repository_call(
+                github,
+                Method::GET,
+                &format!("/commits/{sha}/status?per_page=100"),
+                None,
+            )
+            .await?;
+        Ok(combined.statuses)
     }
 
     /// The reviews of a pull request, oldest first.

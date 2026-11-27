@@ -7,7 +7,7 @@
 //! [`App::advance_external_reviews`], which the poll calls after it read the checks of the request and the engine calls
 //! for the card at each tick:
 //!
-//! - `/done` of the author adds a `wanted` round, unless the pull request has spent its repository's rounds (the owner is
+//! - `/done` of the author adds a `wanted` round, unless the pull request was reviewed three times already (the owner is
 //!   asked instead) or its head was reviewed;
 //! - a `wanted` round starts once the checks of the head are green: pending checks wait, red ones are answered on the
 //!   pull request and nothing is reviewed;
@@ -34,26 +34,19 @@ use crate::repos::forge::ReviewPost;
 use crate::repos::git;
 use crate::store::{Card, Change, ExternalReview, Repository, ReviewComment, Run};
 
+/// How many rounds of the Reviewer a followed pull request gets; the owner is asked after that.
+pub const ROUND_LIMIT: i64 = 3;
+
 /// The column a project may have, for a card whose pull request waits for a measurement.
 pub const READY_FOR_TESTING: &str = "Ready for testing";
 
-/// The kind of the inbox item that asks the owner to look at a pull request the Reviewer read as many times as
-/// its repository's `review_round_limit` allows.
+/// The kind of the inbox item that asks the owner to look at a pull request the Reviewer read [`ROUND_LIMIT`] times.
 pub const ROUNDS_SPENT: &str = "review_rounds_spent";
 /// What the owner is told when a review was not written to the end.
 pub(super) const REVIEW_NOT_POSSIBLE_REASON_POSTING: &str =
     "the Reviewer's review was not written to the end, so it may be on the forge in part";
 /// The kind of the inbox item that says a followed pull request could not be given to the Reviewer.
 pub const REVIEW_NOT_POSSIBLE: &str = "review_not_possible";
-
-/// "once", "twice" or "`n` times": how often the Reviewer read a pull request.
-fn times(n: i64) -> String {
-    match n {
-        1 => "once".into(),
-        2 => "twice".into(),
-        n => format!("{n} times"),
-    }
-}
 
 fn reviewer() -> Actor {
     Actor::Script {
@@ -197,22 +190,6 @@ impl App {
         }
     }
 
-    /// Whether the pull request of `change`, which `card` follows, has spent the rounds of the Reviewer its repository
-    /// gives (`review_round_limit`; 0 is no limit). Rounds a person asked for are not counted.
-    pub(in crate::app) fn review_rounds_spent(&self, card: &Card, change: &Change) -> Result<bool> {
-        let flow = self.store.flow(card.repository_id)?;
-        Ok(flow.rounds_spent(self.store.external_review_rounds(change.id)?))
-    }
-
-    /// What the author, a measurer or the lane is told when the pull request's rounds are spent: names the number.
-    pub(in crate::app) fn rounds_spent_reply(&self, card: &Card) -> Result<String> {
-        let limit = self.store.flow(card.repository_id)?.review_round_limit;
-        Ok(format!(
-            "The pull request was reviewed {} already; a person will look.",
-            times(limit)
-        ))
-    }
-
     /// `/done` of the author of the pull request the card follows: asks for a round of the Reviewer on its head. The
     /// answer says what comes of it.
     pub(in crate::app) fn review_on_done(
@@ -221,9 +198,11 @@ impl App {
         card: &Card,
         change: &Change,
     ) -> Result<String> {
-        if self.review_rounds_spent(card, change)? {
+        if self.store.external_review_rounds(change.id)? >= ROUND_LIMIT {
             self.ask_owner_to_look(card, change)?;
-            return self.rounds_spent_reply(card);
+            return Ok(
+                "The pull request was reviewed three times already; a person will look.".into(),
+            );
         }
         // A frozen repository starts no round: the author is told, and writes `/done` again once it is lifted.
         if self.frozen(repository.id)?.is_some() {
@@ -330,14 +309,12 @@ impl App {
         if self.store.has_open_inbox_item(card.id, ROUNDS_SPENT)? {
             return Ok(());
         }
-        let limit = self.store.flow(card.repository_id)?.review_round_limit;
         self.store.add_inbox_item(
             ROUNDS_SPENT,
             Some(card.id),
             &format!(
-                "Pull request #{} was reviewed {}: {}",
+                "Pull request #{} was reviewed {ROUND_LIMIT} times: {}",
                 change.pull_request.unwrap_or_default(),
-                times(limit),
                 card.title
             ),
             &serde_json::json!({
@@ -470,7 +447,7 @@ impl App {
         let Some(head) = change.head.as_deref() else {
             return Ok(());
         };
-        if self.review_rounds_spent(card, change)? {
+        if self.store.external_review_rounds(change.id)? >= ROUND_LIMIT {
             self.store
                 .set_external_review_verdict(round.id, "failed", "", "rounds spent", &[])?;
             return self.ask_owner_to_look(card, change);
@@ -614,7 +591,6 @@ impl App {
                 .move_external_review(round.id, "starting", "wanted");
             return Err(e);
         }
-        self.reviewers_turn(card)?;
         if no_checks {
             self.answer_on_request(
                 repository,
@@ -885,7 +861,6 @@ impl App {
                     "Reviewed pull request #{number}: changes are requested, see the review there. Push your changes, then write /done."
                 ),
             );
-            self.authors_turn(card, &said.summary)?;
             self.bus
                 .publish(crate::bus::Event::CardUpdated(self.card(card.id)?));
             return Ok(());
@@ -1099,43 +1074,6 @@ impl App {
         }
         self.bus
             .publish(crate::bus::Event::CardUpdated(self.card(card.id)?));
-        Ok(())
-    }
-
-    /// The author's turn after a round that asked for changes: the card goes to In progress with the round's summary
-    /// as its note. A card that is already there, or done, stays. The server moves it itself, as on following,
-    /// so no column script runs.
-    fn authors_turn(&self, card: &Card, summary: &str) -> Result<()> {
-        let now = self.card(card.id)?;
-        let class = self.column_class(now.project_id, &now.column);
-        if class == columns::IN_PROGRESS || class == columns::DONE {
-            return Ok(());
-        }
-        self.move_card_from(
-            card.id,
-            &now.column,
-            columns::IN_PROGRESS,
-            Some(summary.trim()),
-            Some(&reviewer()),
-        )?;
-        Ok(())
-    }
-
-    /// The Reviewer's turn again as a round starts: a card that waited for its author in In progress goes back to In
-    /// review, and the note of the round before is taken away. A card in any other column stays.
-    pub(super) fn reviewers_turn(&self, card: &Card) -> Result<()> {
-        let now = self.card(card.id)?;
-        if self.column_class(now.project_id, &now.column) != columns::IN_PROGRESS {
-            return Ok(());
-        }
-        self.store.clear_card_note(card.id)?;
-        self.move_card_from(
-            card.id,
-            &now.column,
-            columns::IN_REVIEW,
-            None,
-            Some(&reviewer()),
-        )?;
         Ok(())
     }
 

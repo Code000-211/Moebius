@@ -8,7 +8,7 @@
 //! - [`bind`] and [`unbound`]: a pull request that names no issue with a closing keyword is bound to the issue its title
 //!   or branch names, or asked once to name one and closed politely when it does not;
 //! - this file: the settings of a repository (`GET` and `PUT /v1/repositories/{id}/flow`) and `review_on_green`, which
-//!   has a followed pull request reviewed once the checks of its head have been green for a few minutes.
+//!   has a followed pull request reviewed once the checks of its head have been green, or absent, for a few minutes.
 //!
 //! Nothing here acts for a card that is held, in a frozen repository, or while all agents are paused.
 
@@ -29,8 +29,6 @@ use crate::store::{Card, Change, Flow, now};
 pub const GREEN_WAIT_AT_MOST: i64 = 120;
 /// The most days a pull request that names no issue may stay open.
 pub const UNBOUND_DAYS_AT_MOST: i64 = 365;
-/// The most rounds of the Reviewer a repository may give a followed pull request, short of no limit (0).
-pub const ROUND_LIMIT_AT_MOST: i64 = 100;
 /// The label a pull request that names no issue gets.
 pub const UNBOUND_LABEL: &str = "unbound";
 
@@ -67,7 +65,6 @@ impl App {
                 .as_deref()
                 .map_or(before.status_prefix.clone(), |p| p.trim().to_string()),
             work_on_forge: edit.work_on_forge.unwrap_or(before.work_on_forge),
-            review_round_limit: edit.review_round_limit.unwrap_or(before.review_round_limit),
         };
         let prefix = &after.status_prefix;
         if prefix.is_empty() || prefix.len() > 30 || prefix.contains([',', '\n', '\r']) {
@@ -87,12 +84,6 @@ impl App {
                 after.unbound_close_days
             )));
         }
-        if !(0..=ROUND_LIMIT_AT_MOST).contains(&after.review_round_limit) {
-            return Err(AppError::Invalid(format!(
-                "review_round_limit is a number from 0 (no limit) to {ROUND_LIMIT_AT_MOST}, not {}",
-                after.review_round_limit
-            )));
-        }
         if after == before {
             return Ok(after);
         }
@@ -110,10 +101,6 @@ impl App {
             ("status_labels".into(), after.status_labels.to_string()),
             ("status_prefix".into(), after.status_prefix.clone()),
             ("work_on_forge".into(), after.work_on_forge.to_string()),
-            (
-                "review_round_limit".into(),
-                after.review_round_limit.to_string(),
-            ),
         ]);
         self.record_action(by, "edit_flow", None, None, context, reason)?;
         self.store.set_flow(repository_id, &after)?;
@@ -122,13 +109,15 @@ impl App {
         Ok(after)
     }
 
-    /// Records that the checks of the followed pull request's head are green, the first time they are seen so: the few
-    /// minutes `review_on_green` waits count from then, and a push, which is a new head, begins them again.
+    /// Records that the checks of the followed pull request's head are green, or that the forge reports none at all for
+    /// it, the first time they are seen so: the few minutes `review_on_green` waits count from then, and a push, which is
+    /// a new head, begins them again.
     pub(in crate::app) fn note_green_head(&self, change: &Change) -> Result<()> {
-        if let (Some(head), Some("success")) = (change.head.as_deref(), change.checks.as_deref())
-            && change.checks_head.as_deref() == Some(head)
+        if let Some(head) = change.head.as_deref()
+            && green(change, head)
         {
-            self.store.note_green(change.id, head)?;
+            self.store
+                .note_green(change.id, head, change.checks.is_none())?;
         }
         Ok(())
     }
@@ -146,9 +135,7 @@ impl App {
         let Some(head) = change.head.as_deref() else {
             return Ok(());
         };
-        if change.checks.as_deref() != Some("success")
-            || change.checks_head.as_deref() != Some(head)
-        {
+        if !green(change, head) {
             return Ok(());
         }
         let Some(since) = self.store.green_since(change.id, head)? else {
@@ -172,18 +159,26 @@ impl App {
         if !self.store.ask_green_review(change.id, head)? {
             return Ok(());
         }
-        if flow.rounds_spent(self.store.external_review_rounds(change.id)?) {
+        if self.store.external_review_rounds(change.id)? >= super::ROUND_LIMIT {
             return self.ask_owner_to_look(card, change);
         }
         self.store.add_external_review(change.id, head)?;
         self.answer(
             &repository,
             card.id,
-            &format!(
-                "The checks of this version of the pull request have been green for {} minutes, so the Reviewer reads it now. \
-                 Nothing needs to be written for that.",
-                flow.green_wait_minutes
-            ),
+            &if change.checks.is_none() {
+                format!(
+                    "This version of the pull request has no checks and no push for {} minutes, so the Reviewer reads it now. \
+                     Nothing needs to be written for that.",
+                    flow.green_wait_minutes
+                )
+            } else {
+                format!(
+                    "The checks of this version of the pull request have been green for {} minutes, so the Reviewer reads it now. \
+                     Nothing needs to be written for that.",
+                    flow.green_wait_minutes
+                )
+            },
         );
         Ok(())
     }
@@ -224,6 +219,13 @@ impl App {
     }
 }
 
+/// Whether the checks of `head` count as green for `review_on_green`: the forge read them for this head and found them
+/// `success`, or found no check runs or statuses at all. A head that gets checks later is pending or red until they pass.
+fn green(change: &Change, head: &str) -> bool {
+    change.checks_head.as_deref() == Some(head)
+        && matches!(change.checks.as_deref(), Some("success") | None)
+}
+
 /// The first seven characters of a commit.
 pub(super) fn short(commit: &str) -> &str {
     commit.get(..7).unwrap_or(commit)
@@ -238,5 +240,4 @@ pub struct FlowEdit {
     pub status_labels: Option<bool>,
     pub status_prefix: Option<String>,
     pub work_on_forge: Option<bool>,
-    pub review_round_limit: Option<i64>,
 }

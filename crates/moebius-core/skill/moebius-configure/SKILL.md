@@ -157,7 +157,7 @@ the App. The token is the simple way; with it Moebius acts as the token's user, 
 that user's name, and GitHub does not let that user approve their own pull request. Never ask for the token's value or
 write it into a setting: the person stores it (`moebius secrets set github`) or puts it in a file, and you set only the
 name or the path. A fine-grained token needs the repository permissions Metadata read, Contents, Issues and Pull
-requests read and write, and Checks read; a classic one the scope `repo`. The server does not start when GitHub refuses
+requests read and write, Checks read and Commit statuses read; a classic one the scope `repo`. The server does not start when GitHub refuses
 the token (`docs/reference/configuration.md`, `[github]`).
 
 ## Skills and MCP servers

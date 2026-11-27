@@ -113,7 +113,7 @@ end
 | `card.issue` | table or nil | What the issue's body says, read by the repository's [issue template](templates.md#the-issue-template): `card.issue.fields` is the text of each section by the slug of its heading, `card.issue.missing` the required sections it lacks. nil for an issue a backlog sync made. |
 | `card.change` | table or nil | The first of `card.changes`, the change of the card's own repository, so a script reads `card.change.fields` and `card.change.missing`; nil until the card has a change. |
 | `card.changes[i].checks` | string | `pending`, `success`, `failure` or `none`, for the change's current commit. See Checks and conflicts. |
-| `card.changes[i].failed_checks` | string or nil | On GitHub, the failing check runs, one per line; nil unless `checks` is `failure`. |
+| `card.changes[i].failed_checks` | string or nil | On GitHub, the failing check runs and commit statuses, one per line; nil unless `checks` is `failure`. |
 | `card.changes[i].check_output` | string or nil | Without a forge, the end of the output of the repository's `checks`, once they ended for the current commit. |
 | `card.changes[i].conflict` | string or nil | The files that conflict with the change's `base`, one per line; nil when the change merges cleanly. |
 | `card.attempts` | table (array) | The card's attempts that have not been settled, oldest first; empty (never nil) when it has none. See Attempts. |
@@ -634,10 +634,10 @@ with what its own repository has.
 
 The `checks` of a change in `card.changes` say how the checks of the change's current commit stand:
 
-- On GitHub, the poll records the check runs of the pull request's head commit. Checks recorded for another commit do
+- On GitHub, the poll records the check runs and commit statuses of the pull request's head commit. Checks recorded for another commit do
   not count. Until they are recorded for the published commit, `checks` is `pending` for 2 minutes after the publish
   (the checks have not started yet), and then `none`, so that a repository without CI does not wait for ever.
-  The change's `failed_checks` lists the failing check runs, one per line: the name, how it ended, what it says and
+  The change's `failed_checks` lists the failing check runs and statuses, one per line: the name, how it ended, what it says and
   where to read more, such as `lint: failure, 3 warnings (https://ci.example/runs/1)`.
 - Without a forge, a repository may have a file `checks` in its settings: a shell command. It is read from the settings,
   never from the change, so that the change cannot decide how it is checked. `moebius.run_checks()`

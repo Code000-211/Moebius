@@ -350,7 +350,7 @@ async fn changes_requested_are_a_review_with_comments_on_lines_and_the_rest_in_t
     );
     assert!(body.contains("`elsewhere.rs` line 1"), "{body}");
     assert!(f.merged_requests().is_empty());
-    assert_eq!(f.card(1).unwrap().column, columns::IN_PROGRESS);
+    assert_eq!(f.card(1).unwrap().column, columns::IN_REVIEW);
 
     let change = f.server.app.followed_change(&card).unwrap().unwrap();
     let round = &f.server.app.store.external_reviews(change.id).unwrap()[0];
@@ -389,69 +389,6 @@ async fn changes_requested_are_a_review_with_comments_on_lines_and_the_rest_in_t
     assert_eq!(posts.len(), 1);
     assert!(posts[0]["comments"].as_array().unwrap().is_empty());
     assert!(posts[0]["body"].as_str().unwrap().contains("line 2: Hm."));
-}
-
-#[tokio::test(flavor = "multi_thread")]
-async fn changes_are_the_authors_turn_and_the_next_done_the_reviewers() {
-    let (f, card, _) = ready().await;
-    f.author_says_done().await;
-    assert_eq!(f.card(1).unwrap().column, columns::IN_REVIEW);
-    let run = f.reviews_of(&card).remove(0);
-    f.reviewer_ends(&card, &run, &said("changes", "Two problems.", json!([])))
-        .await;
-    // The author is to act: the card waits in In progress with the round's summary as its note.
-    let waiting = f.card(1).unwrap();
-    assert_eq!(waiting.column, columns::IN_PROGRESS);
-    assert_eq!(waiting.note.as_deref(), Some("Two problems."));
-    let moves = f.server.app.store.moves_for_card(card.id).unwrap();
-    let last = moves.last().unwrap();
-    assert_eq!(
-        (last.from.as_str(), last.to.as_str()),
-        (columns::IN_REVIEW, columns::IN_PROGRESS)
-    );
-
-    // The author pushes and says done: the round starts and the card is the Reviewer's again.
-    push_to_the_pull_request(&f);
-    f.checks_are("completed", "success");
-    f.server.poll_github().await;
-    assert_eq!(
-        f.card(1).unwrap().column,
-        columns::IN_PROGRESS,
-        "a push alone"
-    );
-    f.author_says_done().await;
-    assert_eq!(f.reviews_of(&card).len(), 2);
-    let reviewed = f.card(1).unwrap();
-    assert_eq!(reviewed.column, columns::IN_REVIEW);
-    assert_eq!(reviewed.note, None);
-
-    // An approval of the new head ends where it always did.
-    let run = f.reviews_of(&card).remove(1);
-    f.reviewer_ends(&card, &run, &said("approve", "Right now.", json!([])))
-        .await;
-    assert_eq!(f.card(1).unwrap().column, columns::DONE);
-}
-
-#[tokio::test(flavor = "multi_thread")]
-async fn closing_a_pull_request_that_waits_for_its_author_sends_the_card_back() {
-    let (f, card, _) = ready().await;
-    let change = f.server.app.followed_change(&card).unwrap().unwrap();
-    f.server
-        .app
-        .store
-        .set_change_outside(change.id, "alice", columns::NOT_STARTED)
-        .unwrap();
-    f.author_says_done().await;
-    let run = f.reviews_of(&card).remove(0);
-    f.reviewer_ends(&card, &run, &said("changes", "Two problems.", json!([])))
-        .await;
-    assert_eq!(f.card(1).unwrap().column, columns::IN_PROGRESS);
-    f.fake.set_pull("closed", false);
-    *f.fake.listed_pulls.lock().unwrap() = Vec::new();
-    f.server.poll_github().await;
-    let back = f.card(1).unwrap();
-    assert_eq!(back.column, columns::NOT_STARTED);
-    assert_eq!(back.note, None);
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -585,135 +522,6 @@ async fn the_fourth_round_asks_the_owner_instead() {
             .iter()
             .any(|i| i.kind == ROUNDS_SPENT && i.resolved_at.is_none()),
         "{inbox:?}"
-    );
-}
-
-/// Sets the repository's `review_round_limit` as its owner does in the "Review flow" box.
-fn limit_rounds(f: &Fixture, limit: i64) {
-    f.server
-        .app
-        .edit_flow(
-            &Actor::first_owner(),
-            f.repository.id,
-            &crate::app::FlowEdit {
-                review_round_limit: Some(limit),
-                ..Default::default()
-            },
-            "",
-        )
-        .unwrap();
-}
-
-/// Has the Reviewer ask for changes on its latest round, then pushes and has the author say `/done` again.
-async fn another_round(f: &Fixture, card: &Card) {
-    let runs = f.reviews_of(card);
-    f.reviewer_ends(
-        card,
-        runs.last().unwrap(),
-        &said("changes", "Again.", json!([])),
-    )
-    .await;
-    push_to_the_pull_request(f);
-    f.checks_are("completed", "success");
-    f.server.poll_github().await;
-    f.author_says_done().await;
-}
-
-#[tokio::test(flavor = "multi_thread")]
-async fn the_repository_sets_how_many_rounds_and_the_reply_names_its_number() {
-    let (f, card, _) = ready().await;
-    limit_rounds(&f, 2);
-    f.author_says_done().await;
-    another_round(&f, &card).await;
-    assert_eq!(f.reviews_of(&card).len(), 2);
-    another_round(&f, &card).await;
-    assert_eq!(f.reviews_of(&card).len(), 2, "no third round");
-    let told = f.on_the_issue();
-    assert!(
-        told.iter()
-            .any(|t| t.contains("reviewed twice already; a person will look")),
-        "{told:?}"
-    );
-    let inbox = f.server.app.store.inbox_for_card(card.id).unwrap();
-    assert!(inbox.iter().any(|i| i.kind == ROUNDS_SPENT), "{inbox:?}");
-}
-
-#[tokio::test(flavor = "multi_thread")]
-async fn a_limit_of_zero_never_stops_the_rounds() {
-    let (f, card, _) = ready().await;
-    limit_rounds(&f, 0);
-    f.author_says_done().await;
-    for _ in 0..4 {
-        another_round(&f, &card).await;
-    }
-    assert_eq!(f.reviews_of(&card).len(), 5, "a fifth round and more");
-    assert!(
-        !f.on_the_issue()
-            .iter()
-            .any(|t| t.contains("a person will look")),
-        "{:?}",
-        f.on_the_issue()
-    );
-    let inbox = f.server.app.store.inbox_for_card(card.id).unwrap();
-    assert!(!inbox.iter().any(|i| i.kind == ROUNDS_SPENT), "{inbox:?}");
-}
-
-#[tokio::test(flavor = "multi_thread")]
-async fn a_round_a_person_asks_for_does_not_count_toward_the_limit() {
-    let (f, card, _) = ready().await;
-    limit_rounds(&f, 1);
-    let change = f.server.app.followed_change(&card).unwrap().unwrap();
-    let (app, id) = (f.server.app.clone(), change.id);
-    let run = tokio::task::spawn_blocking(move || {
-        app.review_outside_change(&Actor::first_owner(), &ReviewerRuns, id, "")
-    })
-    .await
-    .unwrap()
-    .unwrap();
-    f.reviewer_ends(&card, &run, &said("changes", "Look.", json!([])))
-        .await;
-    push_to_the_pull_request(&f);
-    f.checks_are("completed", "success");
-    f.server.poll_github().await;
-    f.author_says_done().await;
-    assert_eq!(
-        f.reviews_of(&card).len(),
-        2,
-        "the author's one round runs after the person's"
-    );
-    assert!(
-        !f.on_the_issue()
-            .iter()
-            .any(|t| t.contains("a person will look")),
-        "{:?}",
-        f.on_the_issue()
-    );
-}
-
-#[tokio::test(flavor = "multi_thread")]
-async fn a_round_limit_out_of_range_is_refused() {
-    let (f, _, _) = ready().await;
-    for limit in [-1, crate::app::ROUND_LIMIT_AT_MOST + 1] {
-        let edit = crate::app::FlowEdit {
-            review_round_limit: Some(limit),
-            ..Default::default()
-        };
-        assert!(
-            f.server
-                .app
-                .edit_flow(&Actor::first_owner(), f.repository.id, &edit, "")
-                .is_err(),
-            "{limit}"
-        );
-    }
-    assert_eq!(
-        f.server
-            .app
-            .store
-            .flow(f.repository.id)
-            .unwrap()
-            .review_round_limit,
-        3
     );
 }
 
@@ -1577,19 +1385,8 @@ async fn a_review_a_person_asks_for_is_written_on_the_pull_request() {
         told.iter().any(|t| t.contains("changes are requested")),
         "{told:?}"
     );
-    // The person merges the pull request where they asked for the review; the author is to act first.
+    // The person merges the pull request where they asked for the review.
     assert!(f.merged_requests().is_empty());
-    assert_eq!(f.card(1).unwrap().column, columns::IN_PROGRESS);
-    // A review the person asks for again is the Reviewer's turn.
-    push_to_the_pull_request(&f);
-    f.server.poll_github().await;
-    let (app, id) = (f.server.app.clone(), change.id);
-    tokio::task::spawn_blocking(move || {
-        app.review_outside_change(&Actor::first_owner(), &ReviewerRuns, id, "")
-    })
-    .await
-    .unwrap()
-    .unwrap();
     assert_eq!(f.card(1).unwrap().column, columns::IN_REVIEW);
 }
 
