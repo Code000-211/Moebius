@@ -1,7 +1,7 @@
 //! The software factory's state (ADR 0031): what the store keeps so that every merge the server makes can be held to a
 //! repository's rules. A repository keeps its factory settings in columns of `repositories` (whether a measurement is
-//! required, the owner's locked paths, the review brief, the ready-for-testing label, the measurers and the paths whose
-//! changes need no measurement) and, while it is frozen, why. A merged change keeps the commit its merge made. A
+//! required, the owner's locked paths, the review brief, the ready-for-testing label, the measurers, the paths whose
+//! changes need no measurement, and whether and where an author's committed measurement counts) and, while it is frozen, why. A merged change keeps the commit its merge made. A
 //! measurement is accepted for one head of one change. A revert of a merged change is kept once, with the time of the
 //! revert commit, which the automatic freeze counts.
 
@@ -56,6 +56,16 @@ CREATE TABLE reverts (
 pub(super) const MEASUREMENT_FREE: &str =
     "ALTER TABLE repositories ADD COLUMN measurement_free_paths TEXT NOT NULL DEFAULT '[]';";
 
+/// The source of a measurement the author committed with the change and the Reviewer approved (issue #781).
+pub const AUTHOR_REVIEWED: &str = "author (reviewed)";
+
+/// The columns that say whether an author's committed measurement counts once the Reviewer approved it, and which paths
+/// hold one (issue #781).
+pub(super) const AUTHOR_MEASUREMENT: &str = "\
+ALTER TABLE repositories ADD COLUMN trust_author_measurement INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE repositories ADD COLUMN author_measurement_paths TEXT NOT NULL DEFAULT '[]';
+";
+
 /// Why a repository is frozen, and since when. A frozen repository starts no review round, merges nothing and starts no
 /// agent run.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -78,6 +88,8 @@ pub struct FactorySettings {
     pub testing_label: String,
     pub measurers: Vec<String>,
     pub measurement_free_paths: Vec<String>,
+    pub trust_author_measurement: bool,
+    pub author_measurement_paths: Vec<String>,
 }
 
 /// The three columns of a repository select that say why it is frozen: all the causes' reasons together, the first
@@ -107,10 +119,12 @@ pub(super) fn read_factory(
         testing_label: r.get(at + 3)?,
         measurers: list(r.get(at + 4)?),
         measurement_free_paths: list(r.get(at + 5)?),
+        trust_author_measurement: r.get(at + 6)?,
+        author_measurement_paths: list(r.get(at + 7)?),
     };
-    let reason: Option<String> = r.get(at + 6)?;
-    let source: Option<String> = r.get(at + 7)?;
-    let since: Option<i64> = r.get(at + 8)?;
+    let reason: Option<String> = r.get(at + 8)?;
+    let source: Option<String> = r.get(at + 9)?;
+    let since: Option<i64> = r.get(at + 10)?;
     let frozen = reason.map(|reason| Frozen {
         reason,
         source: source.unwrap_or_else(|| "manual".into()),
@@ -124,8 +138,8 @@ impl Store {
     pub fn set_repository_factory(&self, id: i64, settings: &FactorySettings) -> Result<()> {
         self.conn().execute(
             "UPDATE repositories SET require_measurement = ?1, locked_paths = ?2, \
-             review_brief = ?3, testing_label = ?4, measurers = ?5, measurement_free_paths = ?6 \
-             WHERE id = ?7",
+             review_brief = ?3, testing_label = ?4, measurers = ?5, measurement_free_paths = ?6, \
+             trust_author_measurement = ?7, author_measurement_paths = ?8 WHERE id = ?9",
             params![
                 settings.require_measurement,
                 serde_json::to_string(&settings.locked_paths)?,
@@ -133,6 +147,8 @@ impl Store {
                 settings.testing_label,
                 serde_json::to_string(&settings.measurers)?,
                 serde_json::to_string(&settings.measurement_free_paths)?,
+                settings.trust_author_measurement,
+                serde_json::to_string(&settings.author_measurement_paths)?,
                 id
             ],
         )?;
@@ -240,6 +256,20 @@ impl Store {
             params![change_id, head, accepted_by, source, now()],
         )?;
         Ok(())
+    }
+
+    /// Who measured this head of the change when the measurement accepted for it is the author's own, committed with the
+    /// change and approved by the Reviewer (source [`AUTHOR_REVIEWED`]); none otherwise.
+    pub fn author_measurement(&self, change_id: i64, head: &str) -> Result<Option<String>> {
+        Ok(self
+            .read()
+            .query_row(
+                "SELECT accepted_by FROM measurements WHERE change_id = ?1 AND head = ?2 AND source = ?3 \
+                 ORDER BY id LIMIT 1",
+                params![change_id, head, AUTHOR_REVIEWED],
+                |r| r.get(0),
+            )
+            .optional()?)
     }
 
     /// Whether a measurement is accepted for exactly this head of the change.

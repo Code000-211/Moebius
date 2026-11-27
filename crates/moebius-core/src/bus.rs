@@ -547,6 +547,8 @@ mod tests {
             testing_label: "ready-for-testing".into(),
             measurers: Vec::new(),
             measurement_free_paths: Vec::new(),
+            trust_author_measurement: false,
+            author_measurement_paths: Vec::new(),
             frozen: None,
         }
     }

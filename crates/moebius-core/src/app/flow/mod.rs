@@ -1,8 +1,10 @@
-//! Reviews and measurements that flow without the owner's clicks (ADR 0033). Three parts, each a module:
+//! Reviews and measurements that flow without the owner's clicks (ADR 0033). Four parts, each a module:
 //!
 //! - [`measure`]: a comment of a registered measurer that starts with `## Measurement` is read at the poll, checked
 //!   (who wrote it, which commits it names, which fields it has) and, when it holds, starts the next round of the
 //!   Reviewer with the measurement in its context;
+//! - [`committed`]: in a repository that trusts it, the measurement the author committed with the change is accepted
+//!   for the head the Reviewer approved;
 //! - [`bind`] and [`unbound`]: a pull request that names no issue with a closing keyword is bound to the issue its title
 //!   or branch names, or asked once to name one and closed politely when it does not;
 //! - this file: the settings of a repository (`GET` and `PUT /v1/repositories/{id}/flow`) and `review_on_green`, which
@@ -11,6 +13,7 @@
 //! Nothing here acts for a card that is held, in a frozen repository, or while all agents are paused.
 
 mod bind;
+mod committed;
 pub mod measure;
 mod status;
 mod unbound;

@@ -32,9 +32,17 @@ function pending(review: Round, measurement?: Measurement): string | null {
 
 /**
  * What the measurement of the pull request is, in a sentence: waiting for one, accepted for a commit, not enough, or
- * counting for nothing since the pull request has a new commit. Null while there is nothing to say.
+ * counting for nothing since the pull request has a new commit, or the author's own, committed with the change and
+ * accepted with the Reviewer's approval. Null while there is nothing to say.
  */
-function measurementNote(review: Round, measurement?: Measurement): string | null {
+function measurementNote(
+  review: Round,
+  measurement?: Measurement,
+  authorMeasurement?: string,
+): string | null {
+  if (authorMeasurement) {
+    return `Measurement by @${authorMeasurement}, the author's, committed with the change and reviewed: accepted for ${short(review.head)}.`;
+  }
   if (measurement?.state === "accepted" && measurement.accepted) {
     return `Measurement by @${measurement.measurer} accepted for ${short(measurement.head)}.`;
   }
@@ -54,10 +62,13 @@ export function ExternalReview({
   review,
   forge,
   measurement,
+  authorMeasurement,
 }: {
   review: Round;
   forge: string;
   measurement?: Measurement;
+  /** The author's login when the accepted measurement is the one they committed, reviewed. */
+  authorMeasurement?: string;
 }) {
   const waiting = pending(review, measurement);
   if (waiting) {
@@ -67,7 +78,7 @@ export function ExternalReview({
       </p>
     );
   }
-  const note = measurementNote(review, measurement);
+  const note = measurementNote(review, measurement, authorMeasurement);
   const approved = review.verdict === "approve" || review.verdict === "approve_code";
   const needsMeasurement = review.verdict === "approve_code";
   const merged = review.state === "merged";
@@ -115,7 +126,7 @@ export function ExternalReview({
       {note && (
         <p
           data-testid="measurement-note"
-          data-state={measurement?.state ?? "waiting"}
+          data-state={authorMeasurement ? "author" : (measurement?.state ?? "waiting")}
           className="m-0 text-sm text-secondary"
         >
           {note}

@@ -167,6 +167,10 @@ pub struct ChangeView {
     /// The latest measurement a registered measurer posted on that pull request (ADR 0033); left out while there is none.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub measurement: Option<MeasurementView>,
+    /// The forge login of the author when the measurement accepted for the pull request as it is now is the author's
+    /// own, committed with the change and approved by the Reviewer (`trust_author_measurement`); left out otherwise.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub author_measurement: Option<String>,
     /// Whether the pull request is still a draft (ADR 0034); left out when it is not.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub draft: bool,
@@ -386,6 +390,7 @@ fn card_view(
                     accepted,
                     at: report.at,
                 }),
+            author_measurement: lookups.author_measurement(change.id),
             draft: change.draft,
             pull: change
                 .pull_fields
@@ -1248,6 +1253,83 @@ mod tests {
         );
         // `change` stays the change in the card's own repository.
         assert_eq!(shown.change.as_ref().map(|c| c.id), Some(first.id));
+    }
+
+    #[tokio::test]
+    async fn the_snapshot_shows_a_measurement_of_the_authors_own_as_reviewed() {
+        let (dir, state, addr) = start().await;
+        let app = &state.app;
+        let repo = app
+            .add_repository("demo", origin(dir.path()).to_str().unwrap())
+            .unwrap();
+        let store = &app.store;
+        // Three followed pull requests of alice's: one measured by the author and approved by the Reviewer, one by a
+        // measurer, one measured by the author for a head it no longer has.
+        let mut changes = Vec::new();
+        for (n, (head, source)) in [
+            ("abc", crate::store::AUTHOR_REVIEWED),
+            ("def", "comment of bob"),
+            ("ghi", crate::store::AUTHOR_REVIEWED),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let card = store
+                .add_card(
+                    repo.id,
+                    &format!("Work {n}"),
+                    "",
+                    "person",
+                    "Ready to merge",
+                )
+                .unwrap();
+            let change = store
+                .add_change(
+                    repo.id,
+                    Some(card.id),
+                    &format!("alice/{n}"),
+                    Some(n as i64 + 1),
+                    head,
+                )
+                .unwrap();
+            store
+                .set_change_outside(change.id, "alice", "Not started")
+                .unwrap();
+            let measured = if n == 2 { "old" } else { head };
+            store
+                .add_measurement(change.id, measured, "alice", source)
+                .unwrap();
+            changes.push((card.number, change.id));
+        }
+
+        let snap: Snapshot = reqwest::Client::new()
+            .get(format!("http://{addr}/v1/snapshot"))
+            .bearer_auth(&*state.token)
+            .send()
+            .await
+            .unwrap()
+            .json()
+            .await
+            .unwrap();
+        let board = snap
+            .boards
+            .iter()
+            .find(|b| b.repository.id == repo.id)
+            .unwrap();
+        let shown: Vec<_> = changes
+            .iter()
+            .map(|(number, id)| {
+                let card = board
+                    .cards
+                    .iter()
+                    .find(|c| c.card.number == *number)
+                    .unwrap();
+                let change = card.change.as_ref().unwrap();
+                assert_eq!(change.id, *id);
+                change.author_measurement.clone()
+            })
+            .collect();
+        assert_eq!(shown, [Some("alice".to_string()), None, None]);
     }
 
     #[tokio::test]
