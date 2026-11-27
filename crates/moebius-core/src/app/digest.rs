@@ -33,6 +33,9 @@ struct Line {
     who: Option<String>,
     detail: String,
     measured: bool,
+    /// Whether the measurement is the author's own, committed with the change and approved by the Reviewer.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    by_author: bool,
 }
 
 /// What one repository's section holds, by kind.
@@ -257,6 +260,7 @@ impl App {
                 who: None,
                 detail: format!("reverted by {}", commit.get(..8).unwrap_or(&commit)),
                 measured: false,
+                by_author: false,
             });
         }
         for (repository, pull_request, round, verdict) in
@@ -363,6 +367,7 @@ impl App {
             who: a.who.clone(),
             detail: a.detail.clone(),
             measured: false,
+            by_author: false,
         };
         match a.kind.as_str() {
             "merged" => {
@@ -371,8 +376,12 @@ impl App {
                 line.measured = match a.data["change"].as_i64() {
                     Some(change) => {
                         let head = self.store.change(change)?.and_then(|c| c.head);
-                        let accepted = match head {
-                            Some(head) => self.store.has_measurement(change, &head)?,
+                        let accepted = match &head {
+                            Some(head) => self.store.has_measurement(change, head)?,
+                            None => false,
+                        };
+                        line.by_author = match &head {
+                            Some(head) => self.store.author_measurement(change, head)?.is_some(),
                             None => false,
                         };
                         accepted || self.store.has_activity_for_change("measurement", change)?
@@ -471,7 +480,9 @@ pub fn digest_text(data: &Value) -> String {
                 "- merged {} by {}{}",
                 name(&l),
                 l["who"].as_str().unwrap_or("moebius"),
-                if l["measured"].as_bool().unwrap_or(false) {
+                if l["by_author"].as_bool().unwrap_or(false) {
+                    ", measured by the author, reviewed"
+                } else if l["measured"].as_bool().unwrap_or(false) {
                     ", measured"
                 } else {
                     ""

@@ -1239,6 +1239,8 @@ export function createPagesAFake(send: Send, board: BoardFake): PagesAFake {
                 "testing_label",
                 "measurers",
                 "measurement_free_paths",
+                "trust_author_measurement",
+                "author_measurement_paths",
               ]
                 .filter((key) => key in body)
                 .map((key) => [key, body[key]]),

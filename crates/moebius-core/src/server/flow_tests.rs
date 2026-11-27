@@ -1297,3 +1297,168 @@ async fn the_unbound_label_goes_once_the_pull_request_names_an_issue_even_if_it_
         vec![(7, "unbound".to_string())]
     );
 }
+
+/// A pull request of alice's, ready for review, whose one commit adds `path`, in a repository that requires a
+/// measurement and, when `trusted`, accepts the author's own committed under `notes/backlog/measurements/**`.
+async fn committing(path: &str, trusted: bool) -> (Fixture, Card, String) {
+    let f = Fixture::new().await;
+    f.fake.threads.lock().unwrap().insert(1, Vec::new());
+    f.fake.writers.lock().unwrap().push("alice".into());
+    f.server
+        .app
+        .store
+        .set_repository_commands(f.repository.id, true, 3, true)
+        .unwrap();
+    f.server
+        .app
+        .set_review_runs(std::sync::Arc::new(super::taking_tests::ReviewerRuns));
+    let card = super::taking_tests::following(&f).await;
+    let head = f.pull_adds(path);
+    f.checks_are("completed", "success");
+    f.server.poll_github().await;
+    f.edit_factory(FactoryEdit {
+        require_measurement: Some(true),
+        trust_author_measurement: Some(trusted),
+        author_measurement_paths: Some(vec!["notes/backlog/measurements/**".into()]),
+        ..Default::default()
+    });
+    (f, card, head)
+}
+
+/// The author says `/done` and the Reviewer approves the round that starts.
+async fn reviewer_approves(f: &Fixture, card: &Card) {
+    let change = f.change_of(card);
+    f.author_says_done().await;
+    let run = f.reviews_of(card).pop().unwrap();
+    f.reviewer_ends(
+        card,
+        &run,
+        &said("approve", "The measurement meets the brief.", json!([])),
+    )
+    .await;
+    let rounds = f.server.app.store.external_reviews(change.id).unwrap();
+    assert_eq!(rounds.last().unwrap().verdict.as_deref(), Some("approve"));
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn an_approved_head_with_the_authors_committed_measurement_is_measured_and_merges() {
+    let (f, card, head) = committing("notes/backlog/measurements/K-47.md", true).await;
+    let change = f.change_of(&card);
+    reviewer_approves(&f, &card).await;
+    assert!(
+        f.server
+            .app
+            .store
+            .has_measurement(change.id, &head)
+            .unwrap()
+    );
+    assert_eq!(
+        f.server
+            .app
+            .store
+            .author_measurement(change.id, &head)
+            .unwrap()
+            .as_deref(),
+        Some("alice")
+    );
+    assert_eq!(
+        f.merged_requests().len(),
+        1,
+        "{:?}",
+        f.on_the_pull_request()
+    );
+    // The log tells it was the author who measured.
+    let accepted: Vec<_> = f
+        .server
+        .app
+        .store
+        .activity_after(0, i64::MAX)
+        .unwrap()
+        .into_iter()
+        .filter(|a| a.kind == "measurement")
+        .collect();
+    assert_eq!(accepted.len(), 1);
+    assert_eq!(accepted[0].who.as_deref(), Some("alice"));
+    assert!(
+        accepted[0].detail.contains("author"),
+        "{}",
+        accepted[0].detail
+    );
+    // So does the digest, on the merged line.
+    f.server
+        .app
+        .store
+        .set_digest_epoch(crate::store::now() - 3 * 86_400)
+        .unwrap();
+    let app = f.server.app.clone();
+    let item = tokio::task::spawn_blocking(move || app.make_digest("2099-01-02", None))
+        .await
+        .unwrap()
+        .unwrap()
+        .unwrap();
+    let merged = &item.data["repositories"][0]["merged"][0];
+    assert_eq!(merged["by_author"], json!(true), "{merged}");
+    let text = item.data["text"].as_str().unwrap();
+    assert!(
+        text.contains(", measured by the author, reviewed"),
+        "{text}"
+    );
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn with_the_setting_off_the_authors_committed_measurement_counts_for_nothing() {
+    let (f, card, head) = committing("notes/backlog/measurements/K-47.md", false).await;
+    let change = f.change_of(&card);
+    reviewer_approves(&f, &card).await;
+    assert!(
+        !f.server
+            .app
+            .store
+            .has_measurement(change.id, &head)
+            .unwrap()
+    );
+    assert!(f.merged_requests().is_empty());
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_head_without_a_measurement_file_is_not_measured_by_its_approval() {
+    let (f, card, head) = committing("src/lib.rs", true).await;
+    let change = f.change_of(&card);
+    reviewer_approves(&f, &card).await;
+    assert!(
+        !f.server
+            .app
+            .store
+            .has_measurement(change.id, &head)
+            .unwrap()
+    );
+    assert!(f.merged_requests().is_empty());
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_review_a_person_asked_for_does_not_accept_the_authors_measurement() {
+    let (f, card, head) = committing("notes/backlog/measurements/K-47.md", true).await;
+    let change = f.change_of(&card);
+    let (app, id) = (f.server.app.clone(), change.id);
+    let run = tokio::task::spawn_blocking(move || {
+        app.review_outside_change(&owner(), &super::taking_tests::ReviewerRuns, id, "")
+    })
+    .await
+    .unwrap()
+    .unwrap();
+    f.reviewer_ends(&card, &run, &said("approve", "Looks right.", json!([])))
+        .await;
+    let round = f.rounds(&card).pop().unwrap();
+    assert_eq!(
+        (round.kind.as_str(), round.verdict.as_deref()),
+        ("person", Some("approve"))
+    );
+    assert!(
+        !f.server
+            .app
+            .store
+            .has_measurement(change.id, &head)
+            .unwrap()
+    );
+    assert!(f.merged_requests().is_empty());
+}

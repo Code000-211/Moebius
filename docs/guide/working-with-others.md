@@ -106,6 +106,8 @@ the answer is "Could not assign @alice: ...".
 When your pull request closes the issue and the owner's board follows it, write `/done` in a comment on the issue
 (commands must be on; the pull request's own comments are not read). It is yours to write: nobody else's `/done` has your
 pull request reviewed ([ADR 0029](../adr/0029-the-reviewer-reads-a-pull-request-when-its-author-says-done.md)).
+Before it answers a `/done`, the server reads your pull request as it is now: a push right before it is the version
+reviewed, and a pull request you just opened is followed first.
 
 - **The server answers on the issue** "Thanks, the pull request will be reviewed once its checks have passed." The review
   starts when the checks of your pull request's current head are green. While they are pending it waits. If they fail,
@@ -248,6 +250,16 @@ posted.
 - The measurement is kept in the card window (who measured which commit, and what came of it) and in the daily digest. It is
   **not** committed to your repository: the server writes no file to your default branch. A column script or your own
   workflow can copy the comment where you want it.
+
+**When the authors measure their own changes.** Some repositories have the author measure and commit the record with
+the change (say `notes/backlog/measurements/<item>.md`), and the Reviewer checks it against the review brief. Turn on
+**Trust the author's committed measurement** in the box and list where those files live under **Author measurement
+paths** (`notes/backlog/measurements/**`), or `"$MOEBIUS" api PUT /v1/repositories/1 --body
+'{"trust_author_measurement": true, "author_measurement_paths": ["notes/backlog/measurements/**"]}'` (a person's token;
+an agent's is refused). Then a round of the Reviewer that ends `approve` for a head whose merge adds or changes such a
+file accepts that file as the head's measurement, by the author, and the approval merges through the gate. A review you
+asked for yourself does not count, a head without such a file is not measured, and a push needs its own round. The card
+window says the measurement is the author's, reviewed, and so does the digest.
 
 ## Review when the checks are green
 

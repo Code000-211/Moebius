@@ -35,6 +35,11 @@ pub struct CardLookups {
     /// The latest measurement a measurer posted on each such pull request, and whether a measurement is accepted for its
     /// head now.
     measurements: HashMap<i64, (crate::store::MeasurementReport, bool)>,
+    /// Who measured the head of each such pull request when the measurement accepted for it is the author's own,
+    /// committed with the change and approved by the Reviewer (see `app::flow::committed`).
+    author_measurements: HashMap<i64, String>,
+    /// The `review_round_limit` of each repository with such a pull request, by repository.
+    review_round_limits: HashMap<i64, i64>,
 }
 
 impl CardLookups {
@@ -50,6 +55,19 @@ impl CardLookups {
     /// The latest measurement posted for the change, and whether one is accepted for its head.
     pub fn measurement(&self, change_id: i64) -> Option<(crate::store::MeasurementReport, bool)> {
         self.measurements.get(&change_id).cloned()
+    }
+
+    /// Who measured the change's head, when the measurement accepted for it is the author's own and reviewed.
+    pub fn author_measurement(&self, change_id: i64) -> Option<String> {
+        self.author_measurements.get(&change_id).cloned()
+    }
+
+    /// How many rounds of the Reviewer a followed pull request of the repository gets; 0 for no limit.
+    pub fn review_round_limit(&self, repository_id: i64) -> i64 {
+        self.review_round_limits
+            .get(&repository_id)
+            .copied()
+            .unwrap_or(crate::store::DEFAULT_REVIEW_ROUND_LIMIT)
     }
 
     /// The repository `id`, as `App::repository` says it.
@@ -187,8 +205,15 @@ impl App {
         }
         let mut external_reviews = HashMap::new();
         let mut measurements = HashMap::new();
+        let mut author_measurements = HashMap::new();
+        let mut review_round_limits = HashMap::new();
         for change in open_changes.values().filter(|c| c.outside_author.is_some()) {
             external_reviews.insert(change.id, self.store.external_reviews(change.id)?);
+            if let Some(head) = change.head.as_deref()
+                && let Some(author) = self.store.author_measurement(change.id, head)?
+            {
+                author_measurements.insert(change.id, author);
+            }
             if let Some(report) = self.store.measurement_reports(change.id)?.pop() {
                 let accepted = match change.head.as_deref() {
                     Some(head) => self.store.has_measurement(change.id, head)?,
@@ -214,6 +239,8 @@ impl App {
             closed,
             external_reviews,
             measurements,
+            author_measurements,
+            review_round_limits,
         })
     }
 }

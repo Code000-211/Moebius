@@ -64,6 +64,7 @@ export function FollowedRequest({
           review={card.change.external_review}
           forge={forge}
           measurement={card.change.measurement}
+          authorMeasurement={card.change.author_measurement}
         />
       )}
       {author &&

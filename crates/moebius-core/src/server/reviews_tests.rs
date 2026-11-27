@@ -7,7 +7,10 @@ use std::sync::Arc;
 use serde_json::{Value, json};
 
 use super::fake_github::{Fixture, check};
-use super::taking_tests::{ReviewerRuns, following, push_to_the_pull_request};
+use super::taking_tests::{
+    ReviewerRuns, alices_request, following, give_the_remote_a_pull_head, open_issue,
+    push_to_the_pull_request,
+};
 use crate::app::{REVIEW_NOT_POSSIBLE, ROUNDS_SPENT, columns};
 use crate::decide::Actor;
 use crate::decide::check::{CheckRequest, decide_call};
@@ -220,6 +223,70 @@ async fn done_with_green_checks_has_the_pull_request_reviewed_once() {
     f.fake.comment(1, "mallory", "/done");
     f.server.poll_github().await;
     assert_eq!(f.reviews_of(&card).len(), 1);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn done_right_after_a_push_is_answered_for_the_new_head() {
+    let (f, card, _) = ready().await;
+    f.author_says_done().await;
+    let run = f.reviews_of(&card).remove(0);
+    f.reviewer_ends(&card, &run, &said("changes", "Again.", json!([])))
+        .await;
+    // The author pushes and writes `/done` before a poll has read the push.
+    let pushed = push_to_the_pull_request(&f);
+    f.author_says_done().await;
+    assert!(
+        !f.on_the_issue()
+            .iter()
+            .any(|t| t.contains("reviewed already")),
+        "{:?}",
+        f.on_the_issue()
+    );
+    let change = f.server.app.followed_change(&card).unwrap().unwrap();
+    let rounds = f.server.app.store.external_reviews(change.id).unwrap();
+    assert_eq!(rounds.len(), 2, "{rounds:?}");
+    assert_eq!(rounds[1].head, pushed);
+    assert_eq!(f.reviews_of(&card).len(), 2);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn done_before_the_pull_request_is_followed_has_it_reviewed() {
+    let f = Fixture::new().await;
+    f.fake.threads.lock().unwrap().insert(1, Vec::new());
+    f.fake.writers.lock().unwrap().push("alice".into());
+    f.server
+        .app
+        .store
+        .set_repository_commands(f.repository.id, true, 3, true)
+        .unwrap();
+    f.server.app.set_review_runs(Arc::new(ReviewerRuns));
+    give_the_remote_a_pull_head(&f);
+    let mut taken = open_issue(1, "One.");
+    taken["assignees"] = json!([{ "login": "alice" }]);
+    f.fake.set_issues("\"v1\"", vec![taken]);
+    f.server.poll_github().await;
+    f.put_in(1, "In progress");
+    // Alice opens her pull request and writes `/done` before a poll has followed it.
+    *f.fake.listed_pulls.lock().unwrap() = vec![alices_request()];
+    f.fake.set_pull("open", false);
+    f.checks_are("completed", "success");
+    f.author_says_done().await;
+    let card = f.card(1).unwrap();
+    let change = f.server.app.followed_change(&card).unwrap().unwrap();
+    assert_eq!(
+        f.server
+            .app
+            .store
+            .external_reviews(change.id)
+            .unwrap()
+            .len(),
+        1
+    );
+    let inbox = f.server.app.store.inbox_for_card(card.id).unwrap();
+    assert!(
+        !inbox.iter().any(|i| i.kind == crate::app::DONE_ASKED),
+        "{inbox:?}"
+    );
 }
 
 #[tokio::test(flavor = "multi_thread")]

@@ -352,7 +352,9 @@ impl App {
             || edit.factory.review_brief.is_some()
             || edit.factory.testing_label.is_some()
             || edit.factory.measurers.is_some()
-            || edit.factory.measurement_free_paths.is_some();
+            || edit.factory.measurement_free_paths.is_some()
+            || edit.factory.trust_author_measurement.is_some()
+            || edit.factory.author_measurement_paths.is_some();
         if touches_factory && !by.is_person() {
             return Err(AppError::Forbidden(
                 "only a person changes the factory settings of a repository".into(),
@@ -394,6 +396,14 @@ impl App {
             (
                 "measurement_free_paths".into(),
                 factory.measurement_free_paths.join(","),
+            ),
+            (
+                "trust_author_measurement".into(),
+                factory.trust_author_measurement.to_string(),
+            ),
+            (
+                "author_measurement_paths".into(),
+                factory.author_measurement_paths.join(","),
             ),
         ]);
         self.record_action(by, "edit_repository", None, None, context, reason)?;

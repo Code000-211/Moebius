@@ -755,6 +755,8 @@ impl App {
         if round.kind == "measurement" {
             self.judge_measurement(card, change, round, said.verdict)?;
         }
+        // So is the author's own committed measurement, where the repository trusts one (see `app::flow::committed`).
+        self.accept_author_measurement(repository, card, change, round, said.verdict)?;
         if approve && merges {
             // Merged only when the checks of the head that was read are green; pending ones are waited for.
             if change.head.as_deref() != Some(round.head.as_str()) {

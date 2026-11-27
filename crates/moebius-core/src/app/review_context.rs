@@ -496,6 +496,22 @@ pub(crate) fn merged_paths(
         .collect())
 }
 
+/// The paths merging `head` into `base` adds or changes, leaving out the ones it deletes: where an author's committed
+/// measurement is looked for (see `app::flow::committed`).
+pub(crate) fn merged_writes(
+    repository: &Repository,
+    base: &str,
+    head: &str,
+) -> Result<Vec<String>, ContextError> {
+    let clone = Path::new(&repository.path);
+    let merged = effect_of(clone, base, head)?;
+    Ok(changes_of(clone, base, &merged)?
+        .into_iter()
+        .filter(|c| c.mode != "000000")
+        .map(|c| c.path)
+        .collect())
+}
+
 /// The paths the commit `head` changes against where it left the default branch, which a merge that conflicts has no
 /// other list of. A path that is not valid UTF-8 is an error: it could not be matched against a lock.
 pub(crate) fn branch_paths(repository: &Repository, head: &str) -> Result<Vec<String>, String> {

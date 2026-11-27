@@ -77,6 +77,13 @@ pub struct Repository {
     /// without one where `require_measurement` is on.
     #[serde(default)]
     pub measurement_free_paths: Vec<String>,
+    /// Whether an approval of the Reviewer accepts the measurement the author committed under `author_measurement_paths`
+    /// for the head it read.
+    #[serde(default)]
+    pub trust_author_measurement: bool,
+    /// The path globs where an author commits a measurement of their change.
+    #[serde(default)]
+    pub author_measurement_paths: Vec<String>,
     /// Why the repository is frozen; none when it is not.
     #[serde(default)]
     pub frozen: Option<super::factory::Frozen>,
@@ -276,7 +283,7 @@ fn card_records_last(runs: &str, changes: &str, cards: &str) -> Vec<String> {
 
 fn repository_columns() -> String {
     format!(
-        "id, name, path, forge, default_branch, github, trusted, project, home_project_id, files_of, mark_ready, ready_label, agents_take, commands, command_limit, answer_on_forge, merge_reviewed, require_measurement, locked_paths, review_brief, testing_label, measurers, measurement_free_paths, {}",
+        "id, name, path, forge, default_branch, github, trusted, project, home_project_id, files_of, mark_ready, ready_label, agents_take, commands, command_limit, answer_on_forge, merge_reviewed, require_measurement, locked_paths, review_brief, testing_label, measurers, measurement_free_paths, trust_author_measurement, author_measurement_paths, {}",
         super::factory::FROZEN_COLUMNS
     )
 }
@@ -310,6 +317,8 @@ fn repository_from_row(r: &rusqlite::Row) -> rusqlite::Result<Repository> {
         testing_label: factory.testing_label,
         measurers: factory.measurers,
         measurement_free_paths: factory.measurement_free_paths,
+        trust_author_measurement: factory.trust_author_measurement,
+        author_measurement_paths: factory.author_measurement_paths,
         frozen,
     })
 }
@@ -413,6 +422,8 @@ impl Store {
             testing_label: default_testing_label(),
             measurers: Vec::new(),
             measurement_free_paths: Vec::new(),
+            trust_author_measurement: false,
+            author_measurement_paths: Vec::new(),
             frozen: None,
         })
     }

@@ -41,6 +41,8 @@ pub fn settings_of(repository: &Repository) -> FactorySettings {
         testing_label: repository.testing_label.clone(),
         measurers: repository.measurers.clone(),
         measurement_free_paths: repository.measurement_free_paths.clone(),
+        trust_author_measurement: repository.trust_author_measurement,
+        author_measurement_paths: repository.author_measurement_paths.clone(),
     }
 }
 
@@ -138,6 +140,10 @@ pub fn edited(current: &FactorySettings, edit: &FactoryEdit) -> Result<FactorySe
         Some(paths) => clean_list("measurement_free_paths", paths, |_| Ok(()))?,
         None => current.measurement_free_paths.clone(),
     };
+    let author_paths = match &edit.author_measurement_paths {
+        Some(paths) => clean_list("author_measurement_paths", paths, |_| Ok(()))?,
+        None => current.author_measurement_paths.clone(),
+    };
     Ok(FactorySettings {
         require_measurement: edit
             .require_measurement
@@ -147,6 +153,10 @@ pub fn edited(current: &FactorySettings, edit: &FactoryEdit) -> Result<FactorySe
         testing_label: label,
         measurers,
         measurement_free_paths: free,
+        trust_author_measurement: edit
+            .trust_author_measurement
+            .unwrap_or(current.trust_author_measurement),
+        author_measurement_paths: author_paths,
     })
 }
 
@@ -205,6 +215,8 @@ pub struct FactoryEdit {
     pub testing_label: Option<String>,
     pub measurers: Option<Vec<String>>,
     pub measurement_free_paths: Option<Vec<String>>,
+    pub trust_author_measurement: Option<bool>,
+    pub author_measurement_paths: Option<Vec<String>>,
 }
 
 #[cfg(test)]
@@ -219,6 +231,8 @@ mod tests {
             testing_label: "ready-for-testing".into(),
             measurers: Vec::new(),
             measurement_free_paths: Vec::new(),
+            trust_author_measurement: false,
+            author_measurement_paths: Vec::new(),
         }
     }
 
@@ -230,6 +244,8 @@ mod tests {
             review_brief: Some(vec!["notes/backlog/CARDS.md".into(), "AGENTS.md".into()]),
             measurers: Some(vec!["ada".into()]),
             measurement_free_paths: Some(vec![" notes/** ".into(), "notes/**".into()]),
+            trust_author_measurement: Some(true),
+            author_measurement_paths: Some(vec![" measurements/** ".into(), "".into()]),
             ..Default::default()
         };
         let after = edited(&defaults(), &edit).unwrap();
@@ -238,6 +254,11 @@ mod tests {
         assert_eq!(after.review_brief.len(), 2);
         assert_eq!(after.measurers, vec!["ada".to_string()]);
         assert_eq!(after.measurement_free_paths, vec!["notes/**".to_string()]);
+        assert!(after.trust_author_measurement);
+        assert_eq!(
+            after.author_measurement_paths,
+            vec!["measurements/**".to_string()]
+        );
     }
 
     #[test]
