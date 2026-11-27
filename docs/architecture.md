@@ -196,7 +196,7 @@ finds the server again by that directory: it answers, or it is started again wit
    published. A card has one change, one branch and one pull request for all its rounds.
     The forge's own checks are read from the pull request, so a forge's checks come after the offer; `merge.luau` sends
     the card back when they fail.
-10. **The change is checked.** On GitHub the poll records the check runs of the pull request's head commit, on GitLab
+10. **The change is checked.** On GitHub the poll records the check runs and commit statuses of the pull request's head commit, on GitLab
     the latest pipeline of the merge request's head commit and its failed jobs, on Forgejo the commit statuses of the
     pull request's head commit (`poll::poll_requests`, which reads them
     as a `poll::Request` through the client's `Polled::request`, then `App::record_change_status`), with the head they
@@ -888,7 +888,7 @@ At the top:
 | `repos/jira_fake.rs` | A fake Jira on a port of its own for the tests: a project with an epic, a story, a sub-task, duplicate bugs and sprints. |
 | `repos/forgejo.rs` | The Forgejo client (Codeberg, Forgejo, Gitea): the access token, issues with ETags where given, pull requests, commit statuses, reviews, merge. |
 | `repos/poll/mod.rs` | The poll of the forges: the loop over their repositories, issues into cards, and what became of each change (`Polled`, `Request`). |
-| `repos/poll/github.rs` | What GitHub answers, read for the poll: issues, a pull request with its check runs and latest review. |
+| `repos/poll/github.rs` | What GitHub answers, read for the poll: issues, a pull request with its check runs, commit statuses and latest review. |
 | `repos/poll/gitlab.rs` | What GitLab answers, read for the poll: issues, a merge request with its latest pipeline, failed jobs and approvals. |
 | `repos/poll/forgejo.rs` | What Forgejo answers, read for the poll: issues, a pull request with the statuses of its head commit and its latest review. |
 | `repos/settings.rs` | A repository's settings (what is about its code; the column scripts are a project's), for `GET /v1/repositories/{id}/settings` and its `PUT` and `DELETE` per file: listed, checked and committed to the harness configuration repository, with the `.moebius/` files still on the default branch. |

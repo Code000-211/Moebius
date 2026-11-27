@@ -1,5 +1,10 @@
 # Measurements and reviews flow without the owner's clicks
 
+Amended 2026-11-26: `review_on_green` no longer leaves a repository with no checks to `/done`. A head for which the
+forge reports no check runs or statuses at all counts as green, its wait counting from the first poll that finds it so,
+as [0029](0029-the-reviewer-reads-a-pull-request-when-its-author-says-done.md) already has such a pull request reviewed
+and merged; a head that gets checks later waits until they pass, and its wait starts again then.
+
 [0031](0031-one-merge-gate-and-a-brake-for-the-factory.md) made the merge gate hold a change for a measurement, and gave
 the Reviewer a verdict, `approve_code`, for a pull request whose code is right and whose measurement is missing. What
 was left to the owner was the rest of the loop: reading the measurement a person posted and pressing "accept"
@@ -72,7 +77,7 @@ without removing a rule.
   checks of its head have been green for `green_wait_minutes` (default 5) with no push. The first poll that sees the head's
   checks green starts the wait (`green_heads.since`); a push is a new head and starts its own. The head is asked for once
   (`green_heads.asked`), whatever became of the round, so a round that failed is not made again every tick. Only checks
-  that are `success` count: a repository with no checks is left to `/done`. The round limit, a freeze, a hold and Pause all
+  that are `success`, or none at all, count (see the amendment above). The round limit, a freeze, a hold and Pause all
   stop it as they stop every round. `/done` still works: whichever comes first adds the round, and the other finds it
   asked for.
 - **A pull request with no closing keyword is bound, or asked, or closed.**

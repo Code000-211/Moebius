@@ -591,6 +591,7 @@ changes to files under `.github/workflows`):
 | Issues | read and write | Lists the issues and their comments (`GET /repos/{owner}/{repo}/issues`, `.../issues/{n}/comments`); opens, edits, closes and reopens issues; sets labels; writes comments; reads and changes sub-issues (`.../issues/{n}/sub_issues`) and issue dependencies (`.../issues/{n}/dependencies/blocked_by`). Adds the login of a person who took an issue to its assignees (`POST .../issues/{n}/assignees`; see [Working with people on other servers](desktop-api.md#working-with-people-on-other-servers)). |
 | Pull requests | read and write | Opens, updates, reads and merges pull requests, lists the open ones (`/pulls?state=open`) to follow those of people on other servers, and reads their reviews (`/pulls`, `/pulls/{n}`, `/pulls/{n}/reviews`, `/pulls/{n}/merge`; the one Moebius opened is updated with `PATCH /pulls/{n}`). |
 | Checks | read | Reads the check runs of a pull request's head commit (`/commits/{sha}/check-runs`). |
+| Commit statuses | read | Reads the commit statuses of a pull request's head commit (`/commits/{sha}/status`), which CI that does not use check runs reports. |
 | Workflows | read and write | Only to push changes to files under `.github/workflows`. |
 
 At start the server asks `GET /user` with the token and refuses to start when GitHub answers 401 or 403 (the token is

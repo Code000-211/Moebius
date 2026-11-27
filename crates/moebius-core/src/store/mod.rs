@@ -94,9 +94,7 @@ pub use deletions::{ChatRemoved, ResearchRemoved};
 pub use events::Event;
 pub use factory::{DEFAULT_REVIEW_BRIEF, DEFAULT_TESTING_LABEL, FactorySettings, Frozen};
 pub use favourites::{PLACE_KINDS, Place, RECENT_LIMIT};
-pub use flow::{
-    DEFAULT_REVIEW_ROUND_LIMIT, DEFAULT_STATUS_PREFIX, Flow, MeasurementReport, Unbound,
-};
+pub use flow::{DEFAULT_STATUS_PREFIX, Flow, MeasurementReport, Unbound};
 pub use forms::ForgePost;
 pub use found::Found;
 pub use grillings::{Grilling, GrillingIssue};
@@ -559,7 +557,7 @@ UPDATE cards SET moved_at = COALESCE((SELECT MAX(at) FROM card_moves WHERE card_
     forms::SCHEMA,
     lane::SCHEMA,
     factory::MEASUREMENT_FREE,
-    flow::ROUND_LIMIT,
+    flow::WITHOUT_CHECKS,
 ];
 
 #[cfg(test)]

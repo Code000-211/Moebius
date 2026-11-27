@@ -17,7 +17,7 @@ use std::sync::LazyLock;
 use regex::Regex;
 
 use super::short;
-use crate::app::{App, Result};
+use crate::app::{App, ROUND_LIMIT, Result};
 use crate::repos::forge::Comment;
 use crate::repos::git;
 use crate::store::{Card, Change, MeasurementReport, Repository};
@@ -221,9 +221,11 @@ impl App {
                     .into(),
             ));
         }
-        if self.review_rounds_spent(card, &change)? {
+        if self.store.external_review_rounds(change.id)? >= ROUND_LIMIT {
             self.ask_owner_to_look(card, &change)?;
-            return Ok(Some(self.rounds_spent_reply(card)?));
+            return Ok(Some(
+                "The pull request was reviewed three times already; a person will look.".into(),
+            ));
         }
         let Some(head) = change.head.clone() else {
             return Ok(Some(

@@ -166,7 +166,7 @@ in WSL (see [On Windows](#on-windows)). Every key named here is in the
    request). Create a fine-grained token (GitHub, Settings, Developer settings, Personal access tokens) whose resource
    owner is the account or organization of the repositories, with access to the repositories Moebius works on and these
    repository permissions: Metadata read, Contents read and write, Issues read and write, Pull requests read and write,
-   Checks read (and Workflows read and write to push changes under `.github/workflows`). A classic token with the scope
+   Checks read, Commit statuses read (and Workflows read and write to push changes under `.github/workflows`). A classic token with the scope
    `repo` works too. Give it to the server in a file only you can read, or as a secret (`moebius secrets set github`
    reads it from standard input; then write `token_secret = "github"` instead of `token_file`), so that it is never in
    `moebius.toml`:
@@ -186,8 +186,8 @@ in WSL (see [On Windows](#on-windows)). Every key named here is in the
    the token or a classic token lacks `repo`. In the app, the "+" of the sidebar does the same with the forge GitHub.
    The server polls the repository's issues every `github.poll_seconds`: open issues become cards, issues by the
    trusted logins move on without your approval, and "blocked by #n" in an issue, sub-issues and issue dependencies
-   become dependencies. Changes are pushed with the token and opened as pull requests; the check runs of a pull
-   request's head commit are its checks, its latest review is its review, and a merge on GitHub, or in the app,
+   become dependencies. Changes are pushed with the token and opened as pull requests; the check runs and commit
+   statuses of a pull request's head commit are its checks, its latest review is its review, and a merge on GitHub, or in the app,
    finishes its card. As the other way, create a GitHub App with the same permissions, install it on the repositories,
    and write `app_id` and `private_key_file` (the App's PEM key) in `[github]` instead of the token: Moebius then acts
    as the App. Exactly one of the two is set. See [configuration](../reference/configuration.md#github).
