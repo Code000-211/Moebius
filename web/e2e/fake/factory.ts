@@ -28,6 +28,7 @@ interface Flow {
   status_labels: boolean;
   status_prefix: string;
   work_on_forge: boolean;
+  review_round_limit: number;
 }
 
 interface Backlog {
@@ -69,6 +70,7 @@ export function createFactoryFake(): FactoryFake {
     status_labels: false,
     status_prefix: "status:",
     work_on_forge: true,
+    review_round_limit: 3,
   });
   let backlog: Backlog | null = null;
   const defaults = (): Upkeep => ({

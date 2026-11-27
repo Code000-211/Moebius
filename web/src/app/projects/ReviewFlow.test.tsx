@@ -21,6 +21,7 @@ function show(
     status_labels: false,
     status_prefix: "status:",
     work_on_forge: true,
+    review_round_limit: 3,
   },
 ) {
   const fetcher = vi.fn(async (_url: string, init?: RequestInit) =>
@@ -69,6 +70,7 @@ describe("the review flow box", () => {
         status_labels: false,
         status_prefix: "status:",
         work_on_forge: true,
+        review_round_limit: 3,
       });
     });
   });
@@ -99,6 +101,22 @@ describe("the review flow box", () => {
       const put = fetcher.mock.calls.find(([, init]) => init?.method === "PUT");
       const body = JSON.parse(String(put?.[1]?.body));
       expect([body.status_labels, body.status_prefix]).toEqual([true, "state/"]);
+    });
+  });
+
+  it("shows the round limit, saves 0 for no limit, and refuses one past 100", async () => {
+    const fetcher = show();
+    const rounds = () => input("Review rounds per pull request");
+    await waitFor(() => expect(rounds().value).toBe("3"));
+    fireEvent.change(rounds(), { target: { value: "101" } });
+    expect(screen.getByText("A number from 0 to 100.")).toBeTruthy();
+    expect(save().disabled).toBe(true);
+    fireEvent.change(rounds(), { target: { value: "0" } });
+    expect(save().disabled).toBe(false);
+    fireEvent.click(save());
+    await waitFor(() => {
+      const put = fetcher.mock.calls.find(([, init]) => init?.method === "PUT");
+      expect(JSON.parse(String(put?.[1]?.body)).review_round_limit).toBe(0);
     });
   });
 

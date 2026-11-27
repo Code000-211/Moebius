@@ -5,9 +5,10 @@
 //!   after how many days the stale handling releases an issue that was taken, reminds and closes a followed pull
 //!   request; 0 turns one off (see [`crate::app::Upkept`]).
 //! - `GET /v1/repositories/{id}/flow` and `PUT` `{review_on_green, green_wait_minutes, unbound_close_days, status_labels,
-//!   status_prefix, work_on_forge, reason}`: whether a followed pull request is reviewed once its checks have been green
-//!   for a few minutes, and after how many days one that names no issue is closed (ADR 0033); and whether Moebius's own
-//!   agents work on the forge as people do (ADR 0034).
+//!   status_prefix, work_on_forge, review_round_limit, reason}`: whether a followed pull request is reviewed once its
+//!   checks have been green for a few minutes, and after how many days one that names no issue is closed (ADR 0033);
+//!   whether Moebius's own agents work on the forge as people do (ADR 0034); and how many rounds of the Reviewer a
+//!   followed pull request gets before the owner is asked, 0 for no limit.
 //! - `GET /v1/repositories/{id}/templates`: the pull request and comment templates in effect, and whether each is the
 //!   shipped one or the project's. `POST /v1/repositories/{id}/templates/sync` `{reason}` opens a pull request that brings
 //!   the repository's copies of them (`.github/PULL_REQUEST_TEMPLATE.md`, `.github/moebius/*.md`) up to date; `.github/`
@@ -136,6 +137,8 @@ pub(super) struct EditedFlow {
     #[serde(default)]
     work_on_forge: Option<bool>,
     #[serde(default)]
+    review_round_limit: Option<i64>,
+    #[serde(default)]
     reason: String,
 }
 
@@ -167,6 +170,7 @@ async fn put_flow(
                 status_labels: edit.status_labels,
                 status_prefix: edit.status_prefix,
                 work_on_forge: edit.work_on_forge,
+                review_round_limit: edit.review_round_limit,
             },
             &edit.reason,
         )?;
