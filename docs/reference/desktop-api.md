@@ -4865,7 +4865,9 @@ the steps are in [the guide](../guide/working-with-others.md#helpers-without-a-r
   the server's own again unless someone else is assigned.
 - **`/done`** of the author of a pull request the card follows (the card has an open `outside_change`) has the pull
   request reviewed (see [Reviews of followed pull requests](#reviews-of-followed-pull-requests)), whoever the issue is
-  assigned to; anybody else's `/done` on such a card is only thanked. For any other card it asks the owner. A `done_asked` inbox item is added for the card, with the login and the
+  assigned to; anybody else's `/done` on such a card is only thanked. Before it decides, the server reads the issue's
+  open pull requests as they are now: an open pull request that closes the issue with a keyword and is not followed yet
+  is followed first, so its author's `/done` has it reviewed. For any other card it asks the owner. A `done_asked` inbox item is added for the card, with the login and the
   rest of the comment (up to 500 characters) as `data.login` and `data.reason`, and the card window draws the "Moebius needs
   you" block with the reason and three buttons, which call [`POST /v1/cards/{id}/done`](#post-v1cardsiddone) with `close`,
   `give_back` and `release`. A second `/done` while one waits is only answered.
@@ -4887,7 +4889,8 @@ by the Reviewer when its author says so. The steps are in [the guide](../guide/w
 
 - **When.** The login that opened the request writes `/done` in a comment on the issue (the commands of
   [Commands in issue comments](#commands-in-issue-comments) must be on; comments on the pull request itself are not
-  read). The poll that reads it adds a round, and the round starts once the checks of the request's current head are known
+  read). The poll that reads it first reads the request's current head from the forge, so a push just before the `/done`
+  is the head the round is for, not the head of the last poll, and then adds a round; the round starts once the checks of the request's current head are known
   and `success`: `pending` checks, or checks not yet read for the head after a push, make it wait; `failure` ends the round
   with a comment on the pull request ("The checks of this pull request fail, so nothing was reviewed...") and nothing is
   reviewed. Nobody else's `/done` has it reviewed.

@@ -15,7 +15,7 @@ use std::collections::BTreeMap;
 use std::future::Future;
 use std::sync::Arc;
 
-use crate::app::{App, OpenRequest};
+use crate::app::{App, Command, OpenRequest};
 use crate::bus::Event;
 use crate::repos::forge::{Comment, ForgeError, Issue, Remembered};
 use crate::store::{Change, Repository};
@@ -286,11 +286,25 @@ async fn sync_listed<F: Polled>(
             issue.blocked_by = client.blockers(name, issue.number, &issue.updated).await;
         }
     }
+    // A `/done` is answered for the pull request as it is now: its head is read, and one opened for the issue is
+    // followed, after the comment was and before it is acted on. A failure here is reported by the poll's own reads of
+    // the requests after the issues.
+    if issues.iter().any(asks_done) {
+        let _ = poll_requests(app, client, repository, name).await;
+        let _ = poll_outside_requests(app, client, repository, name).await;
+    }
     let (app, repository) = (app.clone(), repository.clone());
     // On a failure the forge would answer "not modified" next time; forgetting lists the issues again.
     blocking(move || app.sync_issues_read_at(&repository, &issues, read_at))
         .await
         .inspect_err(|_| client.forget_issues(name))
+}
+
+/// Whether a comment the poll read on `issue` is a `/done`.
+fn asks_done(issue: &Issue) -> bool {
+    issue.comments.iter().flatten().any(|c| {
+        crate::app::command_in(&c.body).is_some_and(|(command, _)| command == Command::Done)
+    })
 }
 
 /// Reads the blockers of the open issues again that were read long ago, a few each poll, whether or not the forge listed
