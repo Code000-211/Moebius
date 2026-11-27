@@ -271,7 +271,9 @@ locked paths are; default none, so nothing counts) is recorded as an accepted me
 gate is asked: a row of `measurements` with the source `author (reviewed)` and the pull request's author as measurer,
 and a log line of kind `measurement` with the author as `who`. The approval's merge then goes through the gate as any
 other. A head without such a file, one whose only such file is deleted, or a merge that cannot be read is not measured by
-this; a push makes a new head that needs its own round. The card window shows it as `change.author_measurement`, the
+this; a push makes a new head that needs its own round. Every merge asked of the gate (the approval's own, a person's
+Merge, a script's) weighs the latest such round of the change's current head again, so a round approved before the
+setting or the paths were set counts once they are. The card window shows it as `change.author_measurement`, the
 digest as `by_author` on the merged line.
 
 ## Review on green checks

@@ -9,7 +9,8 @@
 //! 2. for what the server does on its own account (a script or an agent; a person's own Merge is their decision): all
 //!    agents are not paused and the card is not held;
 //! 3. the checks of the head have passed;
-//! 4. a measurement is accepted for the head, the issue carries `no-measurement`, or the merge changes only the
+//! 4. a measurement is accepted for the head (the author's committed one, on an approved round of the head, is accepted
+//!    first, see `app::flow::committed`), the issue carries `no-measurement`, or the merge changes only the
 //!    repository's `measurement_free_paths`, when the repository requires one;
 //! 5. for the same actors: no path the change touches is locked (see `paths`), which only a person merges;
 //! 6. the repository's rules, as a decision of the kind `merge_check`, decided like a tool call.
@@ -55,6 +56,11 @@ impl App {
         };
         let repository = self.repository(repository_id)?;
         let card = change.card_id.map(|id| self.card(id)).transpose()?;
+        // The author's committed measurement on an approved round of the head counts even when the round was approved
+        // before the repository trusted it (see `app::flow::committed`).
+        if let Some(card) = &card {
+            self.accept_approved_author_measurement(&repository, card, change)?;
+        }
         match self.gate_says(by, change, &repository, card.as_ref())? {
             Ok(()) => Ok(()),
             Err(reason) => {

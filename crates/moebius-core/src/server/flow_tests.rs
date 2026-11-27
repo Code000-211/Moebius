@@ -1470,3 +1470,53 @@ async fn a_review_a_person_asked_for_does_not_accept_the_authors_measurement() {
     );
     assert!(f.merged_requests().is_empty());
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_round_approved_before_the_author_was_trusted_is_accepted_when_the_merge_is_asked() {
+    let (f, card, head) = committing("notes/backlog/measurements/K-47.md", false).await;
+    let change = f.change_of(&card);
+    reviewer_approves(&f, &card).await;
+    assert!(f.merged_requests().is_empty());
+    f.edit_factory(FactoryEdit {
+        trust_author_measurement: Some(true),
+        ..Default::default()
+    });
+    let (app, id) = (f.server.app.clone(), change.id);
+    tokio::task::spawn_blocking(move || app.merge_change(&owner(), id, ""))
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        f.server
+            .app
+            .store
+            .author_measurement(change.id, &head)
+            .unwrap()
+            .as_deref(),
+        Some("alice")
+    );
+    assert_eq!(f.merged_requests().len(), 1);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_merge_asked_without_an_approved_round_of_the_head_accepts_no_measurement() {
+    let (f, card, head) = committing("notes/backlog/measurements/K-47.md", true).await;
+    let change = f.change_of(&card);
+    let (app, id) = (f.server.app.clone(), change.id);
+    let refused = tokio::task::spawn_blocking(move || app.merge_change(&owner(), id, ""))
+        .await
+        .unwrap()
+        .unwrap_err();
+    assert!(
+        refused.to_string().contains("requires a measurement"),
+        "{refused}"
+    );
+    assert!(
+        !f.server
+            .app
+            .store
+            .has_measurement(change.id, &head)
+            .unwrap()
+    );
+    assert!(f.merged_requests().is_empty());
+}

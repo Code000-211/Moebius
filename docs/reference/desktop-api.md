@@ -5083,7 +5083,9 @@ harness configuration repository has no repository's rules and is not asked. In 
    or changes a file matching one of `author_measurement_paths` (say `notes/backlog/measurements/**`) is recorded as an
    accepted measurement of that head, with the source `author (reviewed)` and the author as measurer, before the gate is
    asked; the activity `measurement` says so. A head without such a file, a deleted one, or a merge that cannot be read
-   is not measured by this, and a push makes a new head that needs its own round. The card's `change` then carries
+   is not measured by this, and a push makes a new head that needs its own round. Every merge asked of the gate weighs
+   the latest such round of the change's current head again, so a round approved before `trust_author_measurement` or
+   `author_measurement_paths` were set counts once they are. The card's `change` then carries
    `author_measurement` (the author's login) and the digest's line `by_author: true`.
 5. **Locked paths.** For a script or an agent: none of the paths the merge into the default branch changes (read with
    `git merge-tree` and `git diff` from objects; a rename or a deletion counts, and a clone that cannot be read is a
