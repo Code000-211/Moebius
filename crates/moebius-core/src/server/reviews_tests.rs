@@ -458,6 +458,135 @@ async fn the_fourth_round_asks_the_owner_instead() {
     );
 }
 
+/// Sets the repository's `review_round_limit` as its owner does in the "Review flow" box.
+fn limit_rounds(f: &Fixture, limit: i64) {
+    f.server
+        .app
+        .edit_flow(
+            &Actor::first_owner(),
+            f.repository.id,
+            &crate::app::FlowEdit {
+                review_round_limit: Some(limit),
+                ..Default::default()
+            },
+            "",
+        )
+        .unwrap();
+}
+
+/// Has the Reviewer ask for changes on its latest round, then pushes and has the author say `/done` again.
+async fn another_round(f: &Fixture, card: &Card) {
+    let runs = f.reviews_of(card);
+    f.reviewer_ends(
+        card,
+        runs.last().unwrap(),
+        &said("changes", "Again.", json!([])),
+    )
+    .await;
+    push_to_the_pull_request(f);
+    f.checks_are("completed", "success");
+    f.server.poll_github().await;
+    f.author_says_done().await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn the_repository_sets_how_many_rounds_and_the_reply_names_its_number() {
+    let (f, card, _) = ready().await;
+    limit_rounds(&f, 2);
+    f.author_says_done().await;
+    another_round(&f, &card).await;
+    assert_eq!(f.reviews_of(&card).len(), 2);
+    another_round(&f, &card).await;
+    assert_eq!(f.reviews_of(&card).len(), 2, "no third round");
+    let told = f.on_the_issue();
+    assert!(
+        told.iter()
+            .any(|t| t.contains("reviewed twice already; a person will look")),
+        "{told:?}"
+    );
+    let inbox = f.server.app.store.inbox_for_card(card.id).unwrap();
+    assert!(inbox.iter().any(|i| i.kind == ROUNDS_SPENT), "{inbox:?}");
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_limit_of_zero_never_stops_the_rounds() {
+    let (f, card, _) = ready().await;
+    limit_rounds(&f, 0);
+    f.author_says_done().await;
+    for _ in 0..4 {
+        another_round(&f, &card).await;
+    }
+    assert_eq!(f.reviews_of(&card).len(), 5, "a fifth round and more");
+    assert!(
+        !f.on_the_issue()
+            .iter()
+            .any(|t| t.contains("a person will look")),
+        "{:?}",
+        f.on_the_issue()
+    );
+    let inbox = f.server.app.store.inbox_for_card(card.id).unwrap();
+    assert!(!inbox.iter().any(|i| i.kind == ROUNDS_SPENT), "{inbox:?}");
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_round_a_person_asks_for_does_not_count_toward_the_limit() {
+    let (f, card, _) = ready().await;
+    limit_rounds(&f, 1);
+    let change = f.server.app.followed_change(&card).unwrap().unwrap();
+    let (app, id) = (f.server.app.clone(), change.id);
+    let run = tokio::task::spawn_blocking(move || {
+        app.review_outside_change(&Actor::first_owner(), &ReviewerRuns, id, "")
+    })
+    .await
+    .unwrap()
+    .unwrap();
+    f.reviewer_ends(&card, &run, &said("changes", "Look.", json!([])))
+        .await;
+    push_to_the_pull_request(&f);
+    f.checks_are("completed", "success");
+    f.server.poll_github().await;
+    f.author_says_done().await;
+    assert_eq!(
+        f.reviews_of(&card).len(),
+        2,
+        "the author's one round runs after the person's"
+    );
+    assert!(
+        !f.on_the_issue()
+            .iter()
+            .any(|t| t.contains("a person will look")),
+        "{:?}",
+        f.on_the_issue()
+    );
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_round_limit_out_of_range_is_refused() {
+    let (f, _, _) = ready().await;
+    for limit in [-1, crate::app::ROUND_LIMIT_AT_MOST + 1] {
+        let edit = crate::app::FlowEdit {
+            review_round_limit: Some(limit),
+            ..Default::default()
+        };
+        assert!(
+            f.server
+                .app
+                .edit_flow(&Actor::first_owner(), f.repository.id, &edit, "")
+                .is_err(),
+            "{limit}"
+        );
+    }
+    assert_eq!(
+        f.server
+            .app
+            .store
+            .flow(f.repository.id)
+            .unwrap()
+            .review_round_limit,
+        3
+    );
+}
+
 #[tokio::test(flavor = "multi_thread")]
 async fn a_review_that_gives_no_verdict_writes_nothing_and_may_be_asked_again() {
     let (f, card, _) = ready().await;

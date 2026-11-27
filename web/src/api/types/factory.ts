@@ -26,6 +26,8 @@ export interface Flow {
   status_prefix: string;
   /** Whether Moebius's own agents work on the forge as people do (ADR 0034): a draft pull request from the first round, the verdict as a review. */
   work_on_forge: boolean;
+  /** How many rounds of the Reviewer a followed pull request gets before the owner is asked to look; 0 for no limit. */
+  review_round_limit: number;
 }
 
 export const DEFAULT_FLOW: Flow = {
@@ -35,6 +37,7 @@ export const DEFAULT_FLOW: Flow = {
   status_labels: false,
   status_prefix: "status:",
   work_on_forge: true,
+  review_round_limit: 3,
 };
 
 /** One template in effect for a repository (ADR 0034). */

@@ -424,7 +424,7 @@ async fn a_measurement_that_is_still_not_enough_says_what_is_missing_and_merges_
     f.fake.comment(1, "bob", &f.measurement(&head));
     f.server.poll_github().await;
     assert_eq!(f.reviews_of(&card).len(), 3, "the limit holds");
-    assert!(f.told().pop().unwrap().contains("three times"));
+    assert!(f.told().pop().unwrap().contains("reviewed 3 times already"));
     assert!(
         f.server
             .app

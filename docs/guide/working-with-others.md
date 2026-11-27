@@ -117,8 +117,9 @@ pull request reviewed ([ADR 0029](../adr/0029-the-reviewer-reads-a-pull-request-
   "Merged, thank you @alice!". If the owner turned **Merge external pull requests the reviewer approves** off, it is
   approved and waits for the owner to merge.
 - **Limits.** A version of your pull request is read once ("This version of the pull request was reviewed already; push
-  your changes, then write /done again."), at most three times in all. The fourth `/done` is answered "a person will look" and
-  the owner gets an Inbox item. A push while the review runs drops its verdict: write `/done` again.
+  your changes, then write /done again."), at most three times in all, or as many as the owner set in **Review rounds per pull request** of the **Review flow**
+  box (`review_round_limit`, 0 for no limit). The `/done` after that is answered "a person will look" and the owner gets an
+  Inbox item. Rounds the owner asks for themselves do not count. A push while the review runs drops its verdict: write `/done` again.
 
 For the owner: **Working with others**, **Pull requests of others**, **Merge external pull requests the reviewer
 approves** (`merge_reviewed`, on by default). Turned on, an approved pull request lands without a person looking, so
@@ -236,7 +237,7 @@ The output is the same, byte for byte, on all six runs.
   Reviewer reads it.
 - The server checks all of that and answers on the issue with what is wrong, and starts nothing; the measurer posts
   another comment. A comment that holds starts the next round of the Reviewer by itself, with the measurement in what it
-  reads (as data, with the measurer's login), once the checks are green. It counts toward the three rounds. Nobody writes
+  reads (as data, with the measurer's login), once the checks are green. It counts toward the round limit. Nobody writes
   `/done`.
 - The Reviewer judges the measurement against your review brief. `approve` accepts it for that commit and merges through
   the gate (or leaves the pull request in **Ready to merge** if you merge by hand); `approve_code` says it is still not
@@ -264,7 +265,7 @@ window says the measurement is the author's, reviewed, and so does the digest.
 By default the author writes `/done` to have a pull request reviewed. Turn on **Review when the checks are green** in the
 **Review flow** box (or `"$MOEBIUS" api PUT /v1/repositories/1/flow --body '{"review_on_green": true}'`) and the round
 starts by itself once the checks of the head have been green for **Green for (minutes)** (default 5) with no push; a push
-is a new head with its own wait. One round for each head, the three-round limit holds, and a freeze, a hold or Pause all
+is a new head with its own wait. One round for each head, the round limit holds, and a freeze, a hold or Pause all
 stops it. `/done` still works, and whichever comes first starts the round.
 
 ## Pull requests that name no issue
@@ -405,7 +406,7 @@ to In review.
   repository, or it names no closing keyword for an issue that has a card that is not done, or the issue's card already
   has an open change. A failed fetch of its head is a `forge_error` event; the card is still followed.
 - **`/done` has nothing reviewed.** It is not the author's, the pull request is not followed, the checks are pending or
-  failing (the pull request says so when they fail), its head was reviewed already, or the three rounds are spent.
+  failing (the pull request says so when they fail), its head was reviewed already, or the round limit is spent.
 - **A command is not answered.** `commands` is off, the comment is older than the moment it was turned on, the command is
   not the first word of a line or is in a quote or code block, or **Answer on GitHub** is off (the command still worked; see
   the issue's assignees). A comment that could not be written is a `forge_error` event.
