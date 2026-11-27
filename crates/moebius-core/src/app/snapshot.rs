@@ -208,6 +208,12 @@ impl App {
         let mut author_measurements = HashMap::new();
         let mut review_round_limits = HashMap::new();
         for change in open_changes.values().filter(|c| c.outside_author.is_some()) {
+            if let Some(repository) = change.repository_id
+                && !review_round_limits.contains_key(&repository)
+            {
+                let limit = self.store.flow(repository)?.review_round_limit;
+                review_round_limits.insert(repository, limit);
+            }
             external_reviews.insert(change.id, self.store.external_reviews(change.id)?);
             if let Some(head) = change.head.as_deref()
                 && let Some(author) = self.store.author_measurement(change.id, head)?

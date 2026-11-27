@@ -54,6 +54,13 @@ CREATE TABLE unbound_requests (
 );
 "#;
 
+/// The column of the review round limit (issue #780), added after the flow's first tables.
+pub(super) const ROUND_LIMIT: &str =
+    "ALTER TABLE flow_settings ADD COLUMN review_round_limit INTEGER NOT NULL DEFAULT 3;";
+
+/// The default of `review_round_limit`.
+pub const DEFAULT_REVIEW_ROUND_LIMIT: i64 = 3;
+
 /// The default of `green_wait_minutes`.
 pub const DEFAULT_GREEN_WAIT_MINUTES: i64 = 5;
 /// The default of `unbound_close_days`.
@@ -79,6 +86,15 @@ pub struct Flow {
     /// round, commits that say what was done, the review as a review of the pull request, and the issue holding only
     /// the status and the link. Only where the forge has drafts.
     pub work_on_forge: bool,
+    /// How many rounds of the Reviewer a followed pull request gets before the owner is asked to look; 0 for no limit.
+    pub review_round_limit: i64,
+}
+
+impl Flow {
+    /// Whether a pull request that has had `rounds` rounds of the Reviewer has spent them: never with no limit.
+    pub fn rounds_spent(&self, rounds: i64) -> bool {
+        self.review_round_limit > 0 && rounds >= self.review_round_limit
+    }
 }
 
 impl Default for Flow {
@@ -90,6 +106,7 @@ impl Default for Flow {
             status_labels: false,
             status_prefix: DEFAULT_STATUS_PREFIX.into(),
             work_on_forge: true,
+            review_round_limit: DEFAULT_REVIEW_ROUND_LIMIT,
         }
     }
 }
@@ -149,8 +166,8 @@ impl Store {
         Ok(self
             .read()
             .query_row(
-                "SELECT review_on_green, green_wait_minutes, unbound_close_days, status_labels, status_prefix, work_on_forge \
-                 FROM flow_settings WHERE repository_id = ?1",
+                "SELECT review_on_green, green_wait_minutes, unbound_close_days, status_labels, status_prefix, work_on_forge, \
+                 review_round_limit FROM flow_settings WHERE repository_id = ?1",
                 [repository_id],
                 |r| {
                     Ok(Flow {
@@ -160,6 +177,7 @@ impl Store {
                         status_labels: r.get(3)?,
                         status_prefix: r.get(4)?,
                         work_on_forge: r.get(5)?,
+                        review_round_limit: r.get(6)?,
                     })
                 },
             )
@@ -171,9 +189,10 @@ impl Store {
     pub fn set_flow(&self, repository_id: i64, flow: &Flow) -> Result<()> {
         self.conn().execute(
             "INSERT INTO flow_settings (repository_id, review_on_green, green_wait_minutes, unbound_close_days, \
-             status_labels, status_prefix, work_on_forge) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7) ON CONFLICT (repository_id) DO UPDATE SET \
+             status_labels, status_prefix, work_on_forge, review_round_limit) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8) \
+             ON CONFLICT (repository_id) DO UPDATE SET \
              review_on_green = ?2, green_wait_minutes = ?3, unbound_close_days = ?4, status_labels = ?5, status_prefix = ?6, \
-             work_on_forge = ?7",
+             work_on_forge = ?7, review_round_limit = ?8",
             params![
                 repository_id,
                 flow.review_on_green,
@@ -181,7 +200,8 @@ impl Store {
                 flow.unbound_close_days,
                 flow.status_labels,
                 flow.status_prefix,
-                flow.work_on_forge
+                flow.work_on_forge,
+                flow.review_round_limit
             ],
         )?;
         Ok(())
@@ -398,10 +418,24 @@ mod tests {
             status_labels: true,
             status_prefix: "s/".into(),
             work_on_forge: false,
+            review_round_limit: 0,
         };
         store.set_flow(1, &own).unwrap();
         assert_eq!(store.flow(1).unwrap(), own);
         assert_eq!(store.flow(2).unwrap(), Flow::default());
+    }
+
+    #[test]
+    fn the_round_limit_holds_at_its_number_and_never_at_zero() {
+        let three = Flow::default();
+        assert!(!three.rounds_spent(2));
+        assert!(three.rounds_spent(3));
+        let none = Flow {
+            review_round_limit: 0,
+            ..Flow::default()
+        };
+        assert!(!none.rounds_spent(0));
+        assert!(!none.rounds_spent(1000));
     }
 
     #[test]

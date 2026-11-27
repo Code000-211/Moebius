@@ -146,7 +146,7 @@ export function kindTag(item: InboxItem): { label: string; mark: StateMark } {
     case DONE_ASKED:
       return { label: "Says it is done", mark: "none" };
     case REVIEW_ROUNDS_SPENT:
-      return { label: "Reviewed three times", mark: "none" };
+      return { label: "Review rounds spent", mark: "none" };
     case REVIEW_NOT_POSSIBLE:
       return { label: "Could not be reviewed", mark: "none" };
     case MERGE_REFUSED:

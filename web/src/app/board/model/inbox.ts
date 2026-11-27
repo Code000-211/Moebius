@@ -36,7 +36,7 @@ export function waitingWords(kind: string | undefined): string {
     case DONE_ASKED:
       return "Says it is done";
     case REVIEW_ROUNDS_SPENT:
-      return "Reviewed three times";
+      return "Review rounds spent";
     case REVIEW_NOT_POSSIBLE:
       return "Could not be reviewed";
     case MERGE_REFUSED:

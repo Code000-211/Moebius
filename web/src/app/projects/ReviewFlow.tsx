@@ -1,7 +1,8 @@
 /**
  * The "Review flow" box of a repository on a forge (ADR 0033): whether a followed pull request is reviewed once the
  * checks of its head have been green for a few minutes, without its author's /done, and after how many days a pull
- * request that names no issue is closed. A freeze, a hold and Pause all stop both; the round limit holds. Saved with one
+ * request that names no issue is closed. A freeze, a hold and Pause all stop both; the round limit, which the box sets
+ * too (0 for none), holds. Saved with one
  * button. Also whether Moebius's own agents work on the forge as people do (ADR 0034): a draft pull request from the first
  * round and the verdict as a review of it.
  */
@@ -21,6 +22,7 @@ import { Switch } from "../../ui/page/Switch";
 
 const MOST_MINUTES = 120;
 const MOST_DAYS = 365;
+const MOST_ROUNDS = 100;
 
 /** A whole number from 0 to `most`, or null. */
 function whole(text: string, most: number): number | null {
@@ -54,9 +56,14 @@ function Form({ repository, stored }: { repository: number; stored: Flow }) {
   const [statusOn, setStatusOn] = useState(stored.status_labels);
   const [prefix, setPrefix] = useState(stored.status_prefix);
   const [onForge, setOnForge] = useState(stored.work_on_forge);
-  const [w, c] = [whole(wait, MOST_MINUTES), whole(close, MOST_DAYS)];
+  const [rounds, setRounds] = useState(String(stored.review_round_limit));
+  const [w, c, r] = [
+    whole(wait, MOST_MINUTES),
+    whole(close, MOST_DAYS),
+    whole(rounds, MOST_ROUNDS),
+  ];
   const prefixOk = prefix.trim() !== "" && prefix.length <= 30 && !/[,\n]/.test(prefix);
-  const valid = w !== null && c !== null && prefixOk;
+  const valid = w !== null && c !== null && r !== null && prefixOk;
   const changed =
     valid &&
     (onGreen !== stored.review_on_green ||
@@ -64,6 +71,7 @@ function Form({ repository, stored }: { repository: number; stored: Flow }) {
       c !== stored.unbound_close_days ||
       statusOn !== stored.status_labels ||
       onForge !== stored.work_on_forge ||
+      r !== stored.review_round_limit ||
       prefix.trim() !== stored.status_prefix);
   const save = useMutation({
     mutationFn: () =>
@@ -74,6 +82,7 @@ function Form({ repository, stored }: { repository: number; stored: Flow }) {
         status_labels: statusOn,
         status_prefix: prefix.trim(),
         work_on_forge: onForge,
+        review_round_limit: r ?? DEFAULT_FLOW.review_round_limit,
       }),
     onSuccess: (next) => {
       queryClient.setQueryData(keys.flow(repository), next);
@@ -90,7 +99,7 @@ function Form({ repository, stored }: { repository: number; stored: Flow }) {
       <p className="m-0 text-base text-secondary">
         What lets reviews and pull requests move without a click of yours. Nothing starts for a card
         that is held, in a frozen repository, or while all agents are paused, and a pull request is
-        read at most three times.
+        read at most as often as the round limit below says.
       </p>
       <div className="flex items-start justify-between gap-4">
         <div className="flex min-w-0 flex-col gap-0.5">
@@ -148,6 +157,24 @@ function Form({ repository, stored }: { repository: number; stored: Flow }) {
           onChange={(e) => {
             save.reset();
             setClose(e.target.value);
+          }}
+        />
+      </Field>
+      <Field
+        label="Review rounds per pull request"
+        hint="How many times the Reviewer reads a pull request someone else opened before you are asked to look. Rounds you ask for yourself do not count. 0 is no limit."
+        error={r === null ? `A number from 0 to ${MOST_ROUNDS}.` : undefined}
+      >
+        <Input
+          type="number"
+          inputMode="numeric"
+          min={0}
+          max={MOST_ROUNDS}
+          value={rounds}
+          autoComplete="off"
+          onChange={(e) => {
+            save.reset();
+            setRounds(e.target.value);
           }}
         />
       </Field>
