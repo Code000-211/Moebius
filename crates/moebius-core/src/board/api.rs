@@ -37,7 +37,8 @@
 //! - `moebius.merge_change(reason) -> commit, failure`: merges the card's changes on their forges, in the order the card
 //!   names their repositories, and moves the card to "Done"; the judgement is recorded as the column's script
 //!   (`script:<column>`). The optional `reason` says why. A merge that fails stops the rest: the card waits where it is,
-//!   marked with an inbox item `merge_stopped`, and the call returns nil and why (see `App::merge_card`).
+//!   marked with an inbox item `merge_stopped`, and the call returns nil and why; the same change at the same head is
+//!   tried again only after a wait that doubles with each failure (see `App::merge_card`).
 //! - `moebius.lane_job() -> job, why`: asks the test lane for a job for the card's change at its head (see `app::lane`):
 //!   `job` is the card's latest job for that head, a table with `id`, `state` (`queued`, `running`, `measured`, `passed`,
 //!   `failed`, `errored` or `cancelled`), `lane`, `head`, `step`, `failed_step` and `summary`, or nil when none can be

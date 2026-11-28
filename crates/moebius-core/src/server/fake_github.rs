@@ -670,6 +670,14 @@ pub(super) async fn fake_github() -> (String, Arc<FakeGitHub>) {
                         return StatusCode::INTERNAL_SERVER_ERROR.into_response();
                     }
                     let mut pulls = fake.pulls.lock().unwrap();
+                    // As GitHub does, it refuses to merge a draft.
+                    if pulls.pull["draft"] == true {
+                        return (
+                            StatusCode::METHOD_NOT_ALLOWED,
+                            axum::Json(json!({ "message": "Pull Request is still a draft" })),
+                        )
+                            .into_response();
+                    }
                     // As GitHub does, it refuses a merge pinned to a commit that is no longer the head.
                     if body.get("sha").is_some_and(|sha| *sha != pulls.pull["head"]["sha"])
                         && !pulls.pull["head"]["sha"].is_null()

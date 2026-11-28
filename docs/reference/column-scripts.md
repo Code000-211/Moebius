@@ -374,7 +374,11 @@ forges at once, so a merge that fails stops there (ADR 0019): the changes before
 stay open, and the card stays where it is. It waits with the reason `the merge in <repository> failed: <the error>`,
 which the second value is too, and is marked with an inbox item `merge_stopped` (see `InboxItem` in `desktop-api.md`)
 that names the repositories whose changes are merged and those whose changes are still open; the same change failing
-again keeps the item. A later merge of the rest, by this function or by a person, finishes the card. The judgement is recorded as the column's script
+again keeps the item. A change that failed is not tried again at once: until the item's `retry_at` (30 seconds after
+the first failure, twice as long after each failure in a row, at most ten minutes) a call returns nil and the last
+reason without asking the gate or the forge and without recording a judgement; a new head of the change, or the item
+resolved by a person, has it tried at the next call. A change whose pull request the server opened as a draft (where
+the agents work on the forge) is taken out of draft before the forge is asked to merge it. A later merge of the rest, by this function or by a person, finishes the card. The judgement is recorded as the column's script
 (`script:<column>`, see [the decision model](decision-model.md)), not as a person. Raises `the card has no open change to
 merge` when the card has no change. A script is not a person, so the [merge gate](desktop-api.md#the-merge-gate) holds its merges to the
 repository's locked paths, hold and pause, and the rest: a refusal is the second value (the reason of the gate, such as `the change touches .github/workflows/ci.yml, which is locked by .github/**: only a person merges it`), the card goes to `Ready to merge`, and an inbox item `merge_refused` names the reason; no `merge_stopped` item is made for it. A repository that merges

@@ -180,6 +180,16 @@ impl Store {
             .optional()?)
     }
 
+    /// Replaces the data of an open inbox item and nothing else: its time stays when it was made.
+    pub fn set_inbox_item_data(&self, id: i64, data: &serde_json::Value) -> Result<()> {
+        let data = redact_json(data);
+        self.conn().execute(
+            "UPDATE inbox_items SET data = ?1 WHERE id = ?2 AND resolved_at IS NULL",
+            params![serde_json::to_string(&data)?, id],
+        )?;
+        Ok(())
+    }
+
     /// Replaces what a grilling's inbox item holds with what the chat left at a later publish, kind included, since
     /// the grilling may have gone from issues to a report or back.
     pub fn update_inbox_item(
