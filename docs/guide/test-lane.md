@@ -109,6 +109,10 @@ put back (and its hashes checked) before every measuring run, so a build step th
 measurement runs. List what a hostile change must not be able to rewrite: the bench scripts and
 the benchmark's sources. Only a person saves `lane.toml`: an agent's save is refused.
 
+While a job of a card is queued or running, its issue has the label `measuring`, so that people on the issue see that a
+machine is at it; it comes off when the job ends, errs or is cancelled. `in_progress = "none"` at the top of `lane.toml`
+leaves the issue alone.
+
 The build runs on both sides (`on = "both"`): the merge base is built too, since the measurement needs it. A measuring
 step runs `runs` times on each side, the merge base and the head by turns, and the lines of its output that start with
 `MEASURE ` (`MEASURE decode_tps 41.5 tok/s`) and the rows of the JSON file it writes are the rows. The bytes of
