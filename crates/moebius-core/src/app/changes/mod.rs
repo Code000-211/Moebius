@@ -526,9 +526,15 @@ impl App {
             }
         };
         let commit = match &repository {
-            Some(repository) => self
-                .forge(repository)?
-                .merge(repository, &change, &message)?,
+            Some(repository) => {
+                // A draft is one the server opened for its own agents (see `publish_in`), and a forge refuses to merge
+                // a draft: it is taken out of draft first.
+                if change.draft {
+                    self.make_ready(vec![change.clone()])?;
+                }
+                self.forge(repository)?
+                    .merge(repository, &change, &message)?
+            }
             None => self
                 .harness_repo()?
                 .merge_branch(self, by, &change.branch, &message)?,

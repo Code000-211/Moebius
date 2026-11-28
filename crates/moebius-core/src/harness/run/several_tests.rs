@@ -702,6 +702,96 @@ fn a_failing_second_merge_leaves_the_first_merged_and_the_card_marked_until_the_
 }
 
 #[test]
+fn a_merge_that_keeps_failing_is_tried_again_only_after_a_wait_that_doubles_or_at_once_on_a_new_head()
+ {
+    let setup = setup();
+    let (card, web, changes) = offered_over_two(&setup);
+    let by = Actor::first_owner();
+    setup.app.merge_change(&by, changes[0].id, "").unwrap();
+    let clone = Path::new(&web.path);
+    std::fs::write(clone.join("done.txt"), "someone else\n").unwrap();
+    git(clone, &["add", "."]).unwrap();
+    git(clone, &["commit", "--quiet", "-m", "conflict"]).unwrap();
+    let script = Actor::Script {
+        column: "In review".into(),
+    };
+    let merges = || {
+        setup
+            .app
+            .store
+            .judgements_for_card(card.id)
+            .unwrap()
+            .iter()
+            .filter(|j| j.kind == "merge")
+            .count()
+    };
+    let item = || {
+        setup
+            .app
+            .store
+            .inbox_for_card(card.id)
+            .unwrap()
+            .into_iter()
+            .find(|item| item.kind == "merge_stopped" && item.resolved_at.is_none())
+            .expect("the card is marked")
+    };
+    let before = merges();
+
+    let first = setup.app.merge_card(&script, card.id, "").unwrap();
+    let (_, why) = first.stopped.expect("the merge in web fails");
+    assert_eq!(merges(), before + 1);
+    let wait = |item: &crate::store::InboxItem| {
+        item.data["retry_at"].as_i64().unwrap() - crate::store::now()
+    };
+    assert_eq!(item().data["failures"], 1);
+    assert!((25..=30).contains(&wait(&item())), "{:?}", item().data);
+
+    // The next ticks do not merge again while the wait lasts: they answer the last failure.
+    for _ in 0..3 {
+        let again = setup.app.merge_card(&script, card.id, "").unwrap();
+        assert_eq!(
+            again.stopped.map(|(c, w)| (c.id, w)),
+            Some((changes[1].id, why.clone()))
+        );
+    }
+    assert_eq!(merges(), before + 1, "no merge is decided while it waits");
+
+    // Once the wait is over it is tried again, and the next wait is twice as long.
+    let mut data = item().data;
+    data["retry_at"] = serde_json::json!(crate::store::now() - 1);
+    setup
+        .app
+        .store
+        .set_inbox_item_data(item().id, &data)
+        .unwrap();
+    assert!(
+        setup
+            .app
+            .merge_card(&script, card.id, "")
+            .unwrap()
+            .stopped
+            .is_some()
+    );
+    assert_eq!(merges(), before + 2);
+    assert_eq!(item().data["failures"], 2);
+    assert!((55..=60).contains(&wait(&item())), "{:?}", item().data);
+
+    // A new head of the change is tried at once: the merge gate is asked again, and here it refuses the unknown head.
+    setup
+        .app
+        .store
+        .set_change_head(changes[1].id, "0123456789abcdef", crate::store::now())
+        .unwrap();
+    let (_, now_why) = setup
+        .app
+        .merge_card(&script, card.id, "")
+        .unwrap()
+        .stopped
+        .expect("the gate refuses");
+    assert_ne!(now_why, why);
+}
+
+#[test]
 fn a_person_s_failing_merge_of_the_second_change_marks_the_card_too() {
     let setup = setup();
     let (card, web, changes) = offered_over_two(&setup);

@@ -671,6 +671,29 @@ async fn an_approval_is_a_review_and_takes_the_pull_request_out_of_draft_and_the
 }
 
 #[tokio::test(flavor = "multi_thread")]
+async fn a_scripts_merge_of_its_own_draft_takes_it_out_of_draft_first() {
+    let (f, card) = reported().await;
+    let engine = f.reviewing_engine();
+    f.tick(&engine, &card).await;
+    assert!(f.own_change(&card).draft);
+    f.green(&card).await;
+    // A column script that merges what the Reviewer approved, without offering it to a person first.
+    let (app, id) = (f.server.app.clone(), card.id);
+    let merge = tokio::task::spawn_blocking(move || {
+        let by = Actor::Script {
+            column: "In review".into(),
+        };
+        app.merge_card(&by, id, "approved by the Reviewer").unwrap()
+    })
+    .await
+    .unwrap();
+    assert!(merge.stopped.is_none(), "{:?}", merge.stopped);
+    assert_eq!(f.fake.pulls.lock().unwrap().ready.len(), 1);
+    assert_eq!(f.merged_requests().len(), 1);
+    assert_eq!(f.card(1).unwrap().column, "Done");
+}
+
+#[tokio::test(flavor = "multi_thread")]
 async fn where_the_setting_is_off_the_pull_request_opens_when_the_change_is_offered() {
     let (f, card) = reported().await;
     super::fake_github::classic_flow(&f.server.app, &f.repository);
