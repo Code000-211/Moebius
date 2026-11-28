@@ -202,6 +202,7 @@ impl App {
             });
         };
         let job = self.store.lane_job(id)?;
+        self.mark_lane_in_progress(card.id);
         self.bus
             .publish(crate::bus::Event::CardUpdated(self.card(card.id)?));
         Ok(LaneRequest { job, why: None })
@@ -291,6 +292,7 @@ impl App {
                         None,
                         "the card or the change is gone",
                     )?;
+                    self.mark_lane_in_progress(job.card_id);
                     continue;
                 };
                 let repository = self.repository(job.repository_id)?;

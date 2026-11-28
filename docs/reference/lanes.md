@@ -58,11 +58,12 @@ Every `[[step]]` has these keys, and no other is accepted. There are at least on
 | `on` | no | `head` (the default) runs the step in the checkout of the head only; `both` runs it in the checkout of the merge base first and then in the head's, such as a build the measurement needs on both sides. A measuring step runs on both whatever it says. |
 | `measure` | no | A table that makes the step a measurement. |
 
-Besides the steps the file has one top-level key:
+Besides the steps the file has two top-level keys:
 
 | Key | Meaning |
 |---|---|
 | `harness` | A list of paths of the checkout (files or directories, such as `["bench/", "tools/rad-kbench"]`; at most 50, none with `..`) that **measure**: the scripts and tools a measuring step runs. For the head they are taken from the merge base: before the steps run, the head's copy of each path is removed and the merge base's put in its place. A change that touches a harness path is **not measured by the lane**: no job is queued, the reason says `the change touches <file>, which is in the measuring harness of the lane (<path>): it is not measured by itself, a person looks first`, and the owner gets one Inbox item `lane_needs_a_person` (`data.reason`) for the card. The paths also count as locked paths for the [merge gate](desktop-api.md#the-merge-gate), so only a person merges such a change. |
+| `in_progress` | What shows on the card's issue while a job is queued or running: `label` (the default) gives the issue the label `measuring` when a job is queued and takes it off when no job of the card is queued or running any more, whether it ended, `errored` or was `cancelled` (a new push, a closed change); `none` leaves the issue alone. A forge that refuses the label is told once as a forge error and the job goes on. |
 
 A `[step.measure]` table has these keys, and no other:
 

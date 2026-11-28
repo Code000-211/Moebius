@@ -22,6 +22,9 @@
 //! measuring step runs. They are taken from the merge base for the head too, and a change that touches one is not measured
 //! by the lane but looked at by a person (the paths count as locked paths).
 //!
+//! `in_progress = "label"` (the default) puts the label [`IN_PROGRESS_LABEL`] on the card's issue while a job of the change
+//! is queued or running; `in_progress = "none"` leaves the issue alone.
+//!
 //! A definition with any mistake is refused as a whole, with every mistake it has.
 
 use serde::Deserialize;
@@ -38,6 +41,20 @@ pub const RUNS_AT_LEAST: usize = 3;
 const RUNS_AT_MOST: usize = 20;
 /// The file in a project's settings that holds the definition.
 pub const LANE_FILE: &str = "lane.toml";
+
+/// The label on the card's issue while a job of its change is queued or running.
+pub const IN_PROGRESS_LABEL: &str = "measuring";
+
+/// What shows on the card's issue that a job is queued or running.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum InProgress {
+    /// The label [`IN_PROGRESS_LABEL`], taken off when the job ends, errs or is cancelled.
+    #[default]
+    Label,
+    /// Nothing.
+    None,
+}
 
 /// Where a step runs.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
@@ -77,6 +94,8 @@ pub struct Definition {
     pub steps: Vec<Step>,
     /// Paths of the checkout (files or directories) that measure: from the merge base on both sides.
     pub harness: Vec<String>,
+    /// What shows on the issue while a job is queued or running.
+    pub in_progress: InProgress,
 }
 
 #[derive(Deserialize)]
@@ -84,6 +103,8 @@ pub struct Definition {
 struct File {
     #[serde(default)]
     harness: Vec<String>,
+    #[serde(default)]
+    in_progress: InProgress,
     #[serde(default)]
     step: Vec<RawStep>,
 }
@@ -214,6 +235,7 @@ pub fn parse(text: &str) -> Result<Definition, String> {
         Ok(Definition {
             steps,
             harness: file.harness,
+            in_progress: file.in_progress,
         })
     } else {
         Err(format!("{LANE_FILE}: {}", problems.join("; ")))
@@ -269,6 +291,17 @@ mod tests {
             .unwrap_err();
             assert!(wrong.contains("harness"), "{wrong}");
         }
+    }
+
+    #[test]
+    fn the_issue_is_labelled_unless_the_file_says_none() {
+        let step = "[[step]]\nname = \"a\"\ncommand = \"x\"\n";
+        assert_eq!(parse(step).unwrap().in_progress, InProgress::Label);
+        let quiet = parse(&format!("in_progress = \"none\"\n{step}")).unwrap();
+        assert_eq!(quiet.in_progress, InProgress::None);
+        let label = parse(&format!("in_progress = \"label\"\n{step}")).unwrap();
+        assert_eq!(label.in_progress, InProgress::Label);
+        assert!(parse(&format!("in_progress = \"loud\"\n{step}")).is_err());
     }
 
     #[test]

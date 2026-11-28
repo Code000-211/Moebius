@@ -292,6 +292,77 @@ async fn a_card_entering_the_column_that_is_marked_queues_a_job_at_the_pinned_he
     assert_eq!(lane.jobs().len(), 1);
 }
 
+impl Lane {
+    /// The labels of the card's issue, as the forge was last asked to set them.
+    fn issue_labels(&self) -> Vec<String> {
+        let number = self.f.card(1).unwrap().number as u64;
+        self.f
+            .fake
+            .label_writes
+            .lock()
+            .unwrap()
+            .iter()
+            .rfind(|(n, _)| *n == number)
+            .map(|(_, labels)| labels.clone())
+            .unwrap_or_default()
+    }
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn the_issue_is_labelled_measuring_while_its_job_is_queued_or_running() {
+    let lane = Lane::new(Isolation::Off, &one_step("true")).await;
+    lane.code_approved().await;
+    assert_eq!(lane.the_job().state, "queued");
+    assert!(lane.issue_labels().contains(&"measuring".into()));
+    assert!(lane.f.card(1).unwrap().labels.contains(&"measuring".into()));
+    lane.pass().await;
+    assert_eq!(lane.the_job().state, "passed");
+    assert!(!lane.issue_labels().contains(&"measuring".into()));
+    assert!(!lane.f.card(1).unwrap().labels.contains(&"measuring".into()));
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_job_that_errs_takes_the_label_off() {
+    let lane = Lane::new(Isolation::Always, &one_step("true")).await;
+    // The container runtime cannot start the container: the lane is to blame.
+    std::fs::write(format!("{}.fail", lane.podman.display()), "").unwrap();
+    lane.code_approved().await;
+    assert!(lane.issue_labels().contains(&"measuring".into()));
+    lane.pass().await;
+    assert_eq!(lane.the_job().state, "errored", "{:?}", lane.the_job());
+    assert!(!lane.issue_labels().contains(&"measuring".into()));
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_new_push_that_cancels_the_job_takes_the_label_off() {
+    let lane = Lane::new(Isolation::Off, &one_step("true")).await;
+    lane.code_approved().await;
+    assert!(lane.issue_labels().contains(&"measuring".into()));
+    push_to_the_pull_request(&lane.f);
+    lane.f.server.poll_github().await;
+    assert_eq!(lane.the_job().state, "cancelled");
+    assert!(!lane.issue_labels().contains(&"measuring".into()));
+    assert!(!lane.f.card(1).unwrap().labels.contains(&"measuring".into()));
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_lane_that_says_in_progress_none_leaves_the_issue_alone() {
+    let lane = Lane::new(
+        Isolation::Off,
+        &format!("in_progress = \"none\"\n{}", one_step("true")),
+    )
+    .await;
+    lane.code_approved().await;
+    assert_eq!(lane.the_job().state, "queued");
+    lane.pass().await;
+    assert_eq!(lane.the_job().state, "passed");
+    let writes = lane.f.fake.label_writes.lock().unwrap().clone();
+    assert!(
+        writes.iter().all(|(_, l)| !l.contains(&"measuring".into())),
+        "{writes:?}"
+    );
+}
+
 #[tokio::test(flavor = "multi_thread")]
 async fn a_column_that_is_not_marked_queues_nothing() {
     let lane = Lane::new(Isolation::Always, PIN).await;
@@ -929,13 +1000,14 @@ async fn a_freeze_a_hold_a_pause_and_a_locked_path_start_nothing() {
         locked_paths: Some(vec![]),
         ..Default::default()
     });
-    assert!(
-        lane.app()
-            .request_lane_job(lane.card.id)
-            .unwrap()
-            .job
-            .is_some()
-    );
+    // Queuing labels the issue on the forge, which is not done from inside the runtime.
+    let app = lane.app();
+    let card = lane.card.id;
+    let asked = tokio::task::spawn_blocking(move || app.request_lane_job(card))
+        .await
+        .unwrap()
+        .unwrap();
+    assert!(asked.job.is_some());
     // Each hold stops the start of the job that is queued, and lifting it lets it go.
     let app = lane.app();
     let repository = lane.f.repository.id;

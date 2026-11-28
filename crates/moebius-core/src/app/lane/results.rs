@@ -9,11 +9,14 @@
 //! - **The lane failed**: three jobs in a row that ended for a reason of the lane's pause it and tell the owner.
 //! - **A new push** cancels the queued and running jobs of the change and makes the results of the old head count for
 //!   nothing.
+//! - **The issue's label**: while a job of the card is queued or running its issue has the label `measuring`, unless the
+//!   project's `lane.toml` says `in_progress = "none"`; a job that ends, errs or is cancelled takes it off.
 //!
 //! Handing a result on is the server acting for the owner, so a hold, a pause and a freeze delay it: the pass tries again.
 
 use serde_json::{Value, json};
 
+use super::definition::{IN_PROGRESS_LABEL, InProgress};
 use super::report::failure_reply;
 use super::{LANE_PAUSED, MEASURER_PREFIX};
 use crate::app::{App, Result, columns};
@@ -49,6 +52,7 @@ impl App {
             // It was cancelled meanwhile: the cancellation stands.
             _ => return,
         }
+        self.mark_lane_in_progress(job.card_id);
         let card = self.store.card(job.card_id).ok().flatten();
         let _ = self.store.note_activity(
             "lane",
@@ -73,6 +77,26 @@ impl App {
         if let Ok(card) = self.card(job.card_id) {
             self.bus.publish(crate::bus::Event::CardUpdated(card));
         }
+    }
+
+    /// Puts the label [`IN_PROGRESS_LABEL`] on the card's issue while a job of the card is queued or running, and takes it
+    /// off when none is, unless the project's definition says `in_progress = "none"`. A definition that cannot be read
+    /// adds nothing but still takes the label off, so that no ended job leaves it behind. A forge that refuses is told
+    /// once as a forge error; the job goes on.
+    pub(super) fn mark_lane_in_progress(&self, card_id: i64) {
+        let Ok(Some(_)) = self.store.card(card_id) else {
+            return;
+        };
+        let active = self.store.lane_jobs_of_card(card_id).is_ok_and(|jobs| {
+            jobs.iter()
+                .any(|j| matches!(j.state.as_str(), "queued" | "running"))
+        });
+        let wanted = match self.lane_definition_of(card_id) {
+            Ok(definition) if definition.in_progress == InProgress::None => return,
+            Ok(_) => active,
+            Err(_) => false,
+        };
+        let _ = self.set_labels_for_script(card_id, &[(IN_PROGRESS_LABEL.to_string(), wanted)]);
     }
 
     /// Pauses the lane when its last [`INFRASTRUCTURE_FAILURES`] jobs ended for a reason of its own, and tells the owner.
@@ -354,6 +378,11 @@ impl App {
             "the pull request has a new commit, so the job of the old one counts for nothing",
         )?;
         self.store.set_lane_results_invalid(change.id, head)?;
+        if let Some(card_id) = change.card_id
+            && !cancelled.is_empty()
+        {
+            self.mark_lane_in_progress(card_id);
+        }
         if !cancelled.is_empty()
             && let Some(card) = change.card_id.map(|id| self.card(id)).transpose()?
         {
@@ -376,6 +405,7 @@ impl App {
                     open_head.as_deref(),
                     "the change was closed or has a new commit",
                 )?;
+                self.mark_lane_in_progress(job.card_id);
             }
         }
         Ok(())
